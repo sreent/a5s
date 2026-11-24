@@ -211,7 +211,7 @@ def over(conn: db.Connection, models: dict[str, ModelConfig], spending: Spending
         budget = spending.agents[agent]
         month = _shown(agent, found["agents"][agent] if agent in found["agents"] else _blank(),
                        budget, left)
-        whose = agent if language == words.THAI else f"The {agent}"
+        whose = f"The {agent}"
         if month["spent"] > budget:
             what = words.say(language, "{whose} has spent {amount} this month, past its budget of "
                              "{budget}", whose=whose, amount=said(month["spent"], currency),
@@ -223,8 +223,7 @@ def over(conn: db.Connection, models: dict[str, ModelConfig], spending: Spending
                              budget=said(budget, currency))
         else:
             what = None
-        why = [words.say(language, "you own {what}",
-                         what=agent if language == words.THAI else "the " + agent)]
+        why = [words.say(language, "you own {what}", what="the " + agent)]
         go = f"/studio/spending#agent-{agent}"
         if what:
             items.append({"kind": "spending", "what": what, "why": why, "go": go})

@@ -5,7 +5,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { get, type Place, type Shell } from "./api";
 import { FindButton } from "./Find";
-import { setLanguage, t } from "./i18n";
+import { t } from "./i18n";
 import { Icon } from "./icons";
 import { inside, Link, useRoute } from "./router";
 
@@ -16,10 +16,7 @@ let shell: Promise<Shell> | null = null;
  * anything does each time it opens, so a role lost meanwhile takes its page away (round 13, B6). */
 export function shellOf(afresh = false): Promise<Shell> {
   if (afresh) shell = null;
-  shell ??= get<Shell>("/shell/api").then((found) => {
-    setLanguage(found.language);  // the language they read, which the studio speaks
-    return found;
-  }).catch((e) => {
+  shell ??= get<Shell>("/shell/api").catch((e) => {
     shell = null;  // asked again next time
     throw e;
   });

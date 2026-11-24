@@ -20,7 +20,7 @@ from playwright.sync_api import expect
 
 from a5s import db
 from a5s.contract import parse_settings
-from a5s.core import approvals, erasure, export, handover, languages, retention
+from a5s.core import approvals, erasure, export, handover, retention
 from conftest import FAKE_MODELS, PROVIDER_KEY, FakeModel, Stack, accessible, build_root, running
 
 ASKS = "Can I talk to a person about the refund on Q-1002?"
@@ -371,37 +371,6 @@ def test_whom_it_hands_to_is_as_its_signed_settings_say(stack):
     assert stack.say("Hello", person="ben") != "Hello, Ben."
     [refused] = [e for e in stack.ledger() if e["kind"] == "run" and e["decision"] == "deny"]
     assert any("doesn't match its signed settings" in r for r in refused["reasons"])
-
-
-def test_each_reads_a_handover_in_the_language_they_read(stack, approving, provider):
-    """Round 14 (E-L4): Ben, who reads Thai, is told in Thai that his conversation is handed
-    over, who of the team answers him, and that it's handed back; Chen, who reads Thai too,
-    reads each record he may not see, and a brief withheld from him, as such, in Thai."""
-    assert not stack.settle(hands_to=["operations"]).refused
-    with db.transaction(stack.admin) as conn:
-        for who in ("ben", "chen"):
-            languages.choose(conn, stack.gateway.scenario.person(who), "th", stack.gateway.clock())
-    row = handed(stack)
-    assert swept(stack)["told"] == 1
-    assert any(t.startswith("assistant ส่งต่อการสนทนานี้ให้ทีม operations ตามที่คุณขอ")
-               for t in told(stack))
-    [line] = as_person(approving, provider, "chen", "GET", "/studio/api/handovers").json()["handovers"]
-    assert "Q-1002" not in line["brief"] and "[ระเบียนที่คุณไม่มีสิทธิ์เห็น]" in line["brief"]
-    with db.transaction(stack.admin) as conn:  # the run read Q-1002, which operations may not see
-        conn.execute("insert into run_records (run_id, record) values (%s, 'Q-1002')",
-                     (row["run_id"],))
-    path = f"/studio/api/handovers/{row['id']}"
-    assert as_person(approving, provider, "chen", "GET", path).json()["brief"].startswith(
-        "[สรุปของเอเจนต์")
-    assert as_person(approving, provider, "chen", "POST", f"{path}/take").json() == {"done": True}
-    assert as_person(approving, provider, "chen", "POST", f"{path}/answer",
-                     {"text": "ดูให้วันนี้ค่ะ"}).json() == {"done": True}
-    assert swept(stack)["answered"] == 1
-    assert "Chen Wei จากทีม operations: ดูให้วันนี้ค่ะ" in told(stack)
-    assert as_person(approving, provider, "chen", "POST", f"{path}/back").json() == {"done": True}
-    assert swept(stack)["back"] == 1
-    assert any(t.startswith("ทีม operations ส่งการสนทนานี้คืนให้ assistant แล้ว")
-               for t in told(stack))
 
 
 def test_a_teams_words_steer_no_change_at_level_2_nor_one_taken_as_the_persons(stack, approving,

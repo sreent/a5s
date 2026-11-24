@@ -41,7 +41,7 @@ MOST_SHOWN = 100  # of an agent's, those waiting for a grade first, then the new
 
 def noted(conn: db.Connection, person: Person | None) -> str:
     """What someone's told once a5s has kept what they said, in the language they read."""
-    return words.say(languages.of(conn, person), NOTED) if person is not None else NOTED
+    return words.say(languages.of(person), NOTED) if person is not None else NOTED
 
 
 class Refused(Exception):

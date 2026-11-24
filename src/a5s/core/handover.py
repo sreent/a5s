@@ -153,7 +153,7 @@ def _since(conn: db.Connection, row: dict) -> list[dict]:
 def _line(conn: db.Connection, scenario: Scenario, viewer: Person, row: dict,
           briefed: set[str]) -> dict:
     waiting_ = [m for m in _since(conn, row) if m["answered_at"] is None]
-    language = languages.of(conn, viewer)  # the words a5s puts in, in theirs
+    language = languages.of(viewer)  # the words a5s puts in, in theirs
     return {"id": row["id"], "person": _name(scenario, row["person"]) or row["person"],
             "agent": row["agent"], "team": row["team"],
             "brief": masked(scenario, viewer.id, row["brief"], language)
@@ -172,7 +172,7 @@ def one(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int) 
         return None
     replies = conn.execute("select by_person, text, at, sent_at from handover_replies where "
                            "handover_id = %s order by id", (handover,)).fetchall()
-    language = languages.of(conn, viewer)
+    language = languages.of(viewer)
     return {**_line(conn, scenario, viewer, row, _briefed(conn, scenario, viewer, [row])),
             "said": [{"at": s["at"], "text": masked(scenario, viewer.id, s["text"], language)}
                      for s in row["said"]],

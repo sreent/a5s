@@ -643,7 +643,7 @@ def create_app(gw: Any) -> FastAPI:
         with db.transaction(gw.url) as conn:
             who = gw.scenario.person(person)
             if sent and (why := holding(conn, person, sum(len(f.data or b"") for f in sent),
-                                        languages.of(conn, who) if who else languages.ENGLISH)):
+                                        languages.of(who) if who else languages.ENGLISH)):
                 raise HTTPException(429, why)
             inbound = record(conn, channel="local", source_id=str(uuid.uuid4()), person=person,
                              agent=body.agent, text=text, reply_to={}, identity=identity,

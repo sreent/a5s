@@ -63,7 +63,7 @@ def router(gw: Any) -> APIRouter:
                 {"who": who, "scenario": gw.scenario.name, "parts": mine,
                  "approver": INSTANCE_APPROVER in roles,
                  "week": gw.clock() - timedelta(days=7)}).fetchall()
-            spoken = languages.of(conn, person) if person else languages.ENGLISH  # (B6)
+            spoken = languages.of(person) if person else languages.ENGLISH  # (B6)
         shown = []
         for row in rows:
             waits = row["status"] == "waiting"

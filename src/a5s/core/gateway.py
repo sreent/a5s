@@ -677,7 +677,7 @@ class Gateway:
         """The language someone reads, as a5s writes to them: English for anyone it doesn't
         know."""
         found = self.scenario.person(person)
-        return languages.of(conn, found) if found else languages.ENGLISH
+        return languages.of(found) if found else languages.ENGLISH
 
     def approvers_in_force(self, conn: db.Connection) -> list[str]:
         """Who approved the settings in force, by key or on a card the core sealed: who signed
@@ -2190,7 +2190,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                           "widens": any(c["widens"] for c in found)}})
             for approver in registry.approvers(settings, gw.scenario.holders, before,
                                                memberships.rooted(gw.scenario).holders):
-                spoken = languages.of(conn, approver)  # each in the language they read
+                spoken = languages.of(approver)  # each in the language they read
                 theirs = found if spoken == languages.ENGLISH else approvals.changes(
                     before, settings, gw.definitions, gw.scenario.person, spoken)
                 text = approvals.text(settings.serial, theirs, link, spoken)
@@ -3728,8 +3728,8 @@ def create_app(gw: Gateway) -> FastAPI:
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
             reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # a5s's notes
-            spoken = languages.of(conn, reader) if reader else languages.shared(  # are in the
-                conn, [gw.scenario.person(p) for p in row["acts_for"]])  # language they read
+            spoken = languages.of(reader) if reader else languages.shared(  # are in the
+                [gw.scenario.person(p) for p in row["acts_for"]])  # language they read
             if own := [t["value"] for t in traced if t["from"] is None]:  # one they read, apart
                 note = provenance.note(row["definition"], own, spoken)
                 text += "\n\n" + note
@@ -4258,7 +4258,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      language, STILL, key=proposals.key(p),
                                      names=approvals.names_of([d.name for d in current], language),
                                      days=proposals.ESCALATE,
-                                     day=obligations.day(who, p["lapses_at"], language)), now)
+                                     day=obligations.day(who, p["lapses_at"])), now)
             if working:
                 ledger.append(conn, {"kind": "proposal", "action": "escalate",
                                      "run": str(p["run_id"]), "instance": p["instance_id"],
@@ -4820,7 +4820,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 "update inbound set notices = notices + 1 where id = %s and notices < 3 "
                 "returning person, agent, channel, reply_to, members", (inbound,)).fetchone()
             if row is not None:
-                spoken = languages.shared(conn, [gw.scenario.person(m) for m in row["members"]]) \
+                spoken = languages.shared([gw.scenario.person(m) for m in row["members"]]) \
                     if row["members"] else gw.spoken(conn, row["person"])
                 if body.notice in notices.SAID:
                     try:

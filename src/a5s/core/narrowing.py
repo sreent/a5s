@@ -30,7 +30,7 @@ def told(conn: db.Connection, scenario: Any, definitions: dict[str, Definition],
     whom = []
     for person in registry.told(settings, scenario.holders, before,
                                 memberships.rooted(scenario).holders):
-        spoken = languages.of(conn, person)
+        spoken = languages.of(person)
         changed = [c["text"] for c in approvals.changes(before, settings, definitions,
                                                          scenario.person, spoken)]
         text = words.say(spoken, NARROWED, names=approvals.names_of(named, spoken),

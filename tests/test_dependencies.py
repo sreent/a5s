@@ -12,7 +12,6 @@ from a5s.connectors.mcp import Served
 from a5s.core import dependencies, samples
 from a5s.definitions import Evaluation
 from conftest import accessible, raise_cap
-from test_languages import reads
 from test_r9_studio_need_to_know import with_ops
 
 
@@ -195,15 +194,6 @@ def test_a_judge_a_model_it_lacks_level_two_and_a_shadow_are_on_the_map(stack):
         "{from} answers beside {to}, and sends nothing")
     assert {n["key"]: n["about"] for n in found["nodes"]}["instance:assistant-next"] == (
         "a shadow: it answers beside another, and sends nothing")
-
-
-def test_the_map_reads_in_the_language_someone_reads(stack, approving, provider):
-    reads(stack, "ana", "th")
-    found = mapped(approving, provider, "ana")
-    said = edges(found)
-    assert said[("agent:assistant", "tool:change_due_date")] == "{from} เรียกใช้ {to} ได้"
-    assert {n["key"]: n["about"] for n in found["nodes"]}["instance:assistant-finance"] == (
-        "กำลังทำงาน")
 
 
 def test_whom_an_instance_may_hand_conversations_to_is_on_the_map(stack):

@@ -205,7 +205,7 @@ def shown(gw: Any, before: Settings | None, after: Settings,
                                                memberships.rooted(gw.scenario).holders)]
     try:
         with db.transaction(gw.url) as conn:
-            language = languages.of(conn, viewer)
+            language = languages.of(viewer)
             head = (conn.execute("select encode(hash, 'hex') as head from ledger order by seq "
                                  "desc limit 1").fetchone() or {"head": ""})["head"]
         key = (_digest(after), _digest(before), viewer.id, language, head)

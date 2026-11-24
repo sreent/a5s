@@ -13,6 +13,8 @@ Every change to the design gets an adversarial review before it settles. Reviewe
 
 The rounds name what an agent may do by number, as a5s did when they were written. a5s now names it everywhere people read: level 0 is *reads only*, level 1 *asks first*, and level 2 *acts on its own* ([autonomy](agent-model.md#autonomy)). The ledger and the API still keep the numbers, and settings still take them.
 
+Some rounds read a5s's own words in Thai as well as English. Since 24 November 2026 its own words, on its pages and in chat, are in English alone, and those findings are history. Agents still answer people in Thai, and a5s still checks and masks Thai in what they write ([studio](studio.md)).
+
 ## How we critique
 
 | Angle | Asks |

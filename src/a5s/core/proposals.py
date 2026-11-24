@@ -593,7 +593,7 @@ def asking(proposal: dict, link: str, again: bool = False,
     deciders seal, which a reader of another language is told (round 15, B6)."""
     flags = "".join(f"\n- {f}" for f in words.flags(proposal, language))
     opening = (say(language, "Still waiting for your decision: {key}, since {day}.",
-                   key=key(proposal), day=languages.day(proposal["proposed_at"], language))
+                   key=key(proposal), day=languages.day(proposal["proposed_at"]))
                if again else say(language, "{key} waits for your decision.", key=key(proposal)))
     sealed = f"\n{say(language, SEALED)}" if language != languages.ENGLISH else ""
     return (f"{opening}\n{proposal['said']}{sealed}"

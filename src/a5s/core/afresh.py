@@ -13,7 +13,7 @@ from __future__ import annotations
 from a5s import db
 from a5s.core import ledger
 
-ASKED = ("start afresh", "/afresh", "เริ่มใหม่")  # a message of its own, and nothing else
+ASKED = ("start afresh", "/afresh")  # a message of its own, and nothing else
 SAID = ("Started afresh: the {agent} won't read what came before in this chat, though a5s "
         "keeps it on record as before.")
 

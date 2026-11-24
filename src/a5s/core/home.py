@@ -189,7 +189,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
             found.append({"kind": "undo", "what": words.say(
                               language, "The {agent} made a change for you, which you can undo "
                               "until {until}: {said}", agent=made["definition"],
-                              until=languages.when(made["until"], language, person.timezone),
+                              until=languages.when(made["until"], person.timezone),
                               said=made["said"]),
                           "why": [], "go": f"/studio/undo?change={made['id']}"})
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
@@ -210,7 +210,7 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
     Counts alone, and the oldest's time: what each is, they see where they may act on it."""
     found: list[dict] = []
     scenario = gw.scenario
-    language = languages.of(conn, person)  # in the language they read (round 14)
+    language = languages.of(person)  # in the language they read (round 14)
 
     def said(one: str, many: str, n: int) -> str:
         return words.say(language, one if n == 1 else many, n=n)

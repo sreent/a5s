@@ -62,11 +62,9 @@ def a_working_day_after(person: Person, at: datetime) -> datetime:
 WITHHELD = "[title withheld]"  # a title of a class the model isn't approved for
 
 
-def day(person: Person, at: datetime, language: str = languages.ENGLISH) -> str:
-    """Such as Mon 2 Nov, in the person's time zone, as they read a day: จ. 2 พ.ย. in Thai."""
+def day(person: Person, at: datetime) -> str:
+    """Such as Mon 2 Nov, in the person's time zone."""
     here = local(person, at)
-    if language == languages.THAI:
-        return f"{languages.THAI_DAYS[here.weekday()]} {here.day} {languages.THAI_MONTHS[here.month - 1]}"
     return f"{here:%a} {here.day} {here:%b}"
 
 
@@ -233,7 +231,7 @@ def instead(row: dict, person: Person, why: str, language: str = languages.ENGLI
     return words.say(language, "{record}, {title}, is due by {time} on {day} and is still open. "
                      "The {agent} couldn't write to you about it, as {why}, so a5s is telling you "
                      "itself.", record=row["record"], title=row["title"], time=f"{due:%H:%M}",
-                     day=day(person, row["due_at"], language),
+                     day=day(person, row["due_at"]),
                      agent=row.get("agent") or words.say(language, "agent"),
                      why=words.say(language, why)) + link
 

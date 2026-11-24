@@ -79,7 +79,7 @@ def router(gw: Any) -> APIRouter:
         """The whole version in force, in words and as written, the versions waiting for
         approval, and what the person asked for lately."""
         with db.transaction(gw.url) as conn:
-            spoken = languages.of(conn, person)  # in their language, where a5s has the words
+            spoken = languages.of(person)  # in their language, where a5s has the words
             words = (gw.definitions, gw.scenario.person, spoken)
             last = approvals.latest(conn, gw.scenario.name)
             in_force = parse_settings(bytes(last["raw"])) if last else None
@@ -133,7 +133,7 @@ def router(gw: Any) -> APIRouter:
         have to approve it, before they ask for it."""
         with db.transaction(gw.url) as conn:
             last = approvals.latest(conn, gw.scenario.name)
-            spoken = languages.of(conn, person)
+            spoken = languages.of(person)
         settings, _, problems = settings_app.drafted(gw, body.text, last)
         if settings is None:
             return {"problems": problems}

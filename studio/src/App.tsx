@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { onRunOut, runOut, runsOutAt, signedIn } from "./api";
 import { signIn, signInAgain } from "./auth";
 import { Toasts } from "./design/feedback";
-import { language, onLanguage, t } from "./i18n";
+import { t } from "./i18n";
 import { Find } from "./Find";
 import { AdminPage } from "./pages/Admin";
 import { AgentPage } from "./pages/Agent";
@@ -84,8 +84,6 @@ function SignInFailed({ problem }: { problem: string }) {
 export function App() {
   const [state, setState] = useState<State>("signing-in");
   const route = useRoute();
-  const [spoken, setSpoken] = useState(language());  // its pages are drawn again in a new one
-  useEffect(() => onLanguage(() => setSpoken(language())), []);
   useEffect(() => {
     signIn()
       .then((token) => {
@@ -134,7 +132,7 @@ export function App() {
   if (workbench) {
     return (
       <Toasts>
-        <Find key={spoken} ready={ready}>
+        <Find ready={ready}>
           <div className="wb window">
             <Sidebar signedIn rail />
             <main className="wb-main">{content}</main>
@@ -146,7 +144,7 @@ export function App() {
   }
   return (
     <Toasts>
-      <Find key={spoken} ready={ready}>
+      <Find ready={ready}>
         <Sidebar signedIn={ready} />
         <div className="page studio">
           <main>{content}</main>

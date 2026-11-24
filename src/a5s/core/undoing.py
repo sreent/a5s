@@ -176,7 +176,7 @@ def offered(until: datetime, public_url: str, change: int, language: str = langu
     """What whoever a change was for is told they can do, and until when, in the language they
     read and by their clock, which it names."""
     return words.say(language, "It can be undone until {until}, on its page: {link}",
-                     until=languages.when(until, language, timezone),
+                     until=languages.when(until, timezone),
                      link=link(public_url, change))
 
 
@@ -203,7 +203,7 @@ def offers(conn: db.Connection, run: str, person: str, agent: str, public_url: s
         "update changes_made set offered_at = now() where run_id = %s and %s = any(acts_for) "
         "and offered_at is null and state is null returning id, until", (run, person)).fetchall()
     return "\n".join(words.say(language, OFFER, agent=agent, link=link(public_url, r["id"]),
-                               until=languages.when(r["until"], language, timezone))
+                               until=languages.when(r["until"], timezone))
                      for r in sorted(rows, key=lambda r: r["id"]))
 
 
@@ -259,7 +259,7 @@ def shown(conn: db.Connection, scenario: Scenario, person: Person, change: int) 
         return None
     named = [p.name if (p := scenario.person(w)) else w for w in row["acts_for"]]
     by = scenario.person(row["undone_by"] or row["asked_by"] or "")
-    spoken = languages.of(conn, person)
+    spoken = languages.of(person)
     return {"id": row["id"], "agent": row["definition"], "instance": row["instance_id"],
             "record": row["record"], "said": row["said"], "made_at": row["made_at"].isoformat(),
             "until": row["until"].isoformat(), "whom": named, "may": why is None,

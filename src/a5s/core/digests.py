@@ -82,10 +82,10 @@ def compose(person: Person, items: list[dict], due: datetime, agent: str | None 
     own = say(language, "From a5s:")
     if agent is not None:
         parts = [say(language, "Your day from the {agent}, {day}.", agent=agent,
-                     day=day(person, due, language))]
+                     day=day(person, due))]
         parts += [item["text"] if item["agent"] else f"{own}\n{item['text']}" for item in items]
         return "\n\n".join(parts)
-    parts = [say(language, "Your day from a5s, {day}.", day=day(person, due, language))]
+    parts = [say(language, "Your day from a5s, {day}.", day=day(person, due))]
     for item in items:
         parts.append(f"{say(language, 'From the {agent}:', agent=item['agent'])}\n{item['text']}"
                      if item["agent"] else f"{own}\n{item['text']}")

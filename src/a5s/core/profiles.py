@@ -48,7 +48,7 @@ def section(conn: db.Connection, person: Person) -> dict:
     """The person's profile, as a run that acts for them is given it."""
     told = [(f"{person.name} works {person.hours[0]} to {person.hours[1]}, {workdays(person)}, "
              f"in {person.timezone} time. Their digest comes at {digests.chosen(conn, person)}.")]
-    if language := languages.told(languages.of(conn, person)):
+    if language := languages.told(languages.of(person)):
         told.append(language)
     if kept := note(conn, person.id):
         told.append(f"How they like to work, in their own words: {kept}")

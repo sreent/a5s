@@ -37,7 +37,6 @@ from conftest import (
     running,
     serve,
 )
-from test_languages import reads
 
 ADDRESS = "requests@contoso.example"
 SECRET = "mail-app-secret"
@@ -440,10 +439,9 @@ def test_what_a5s_found_in_a_mailbox_shows_to_its_readers_alone(stack, exchange)
 
 
 def test_a5s_notes_on_a_draft_go_to_its_readers_never_to_the_customer(stack, exchange):
-    """A date the agent gave itself is told to the mailbox's readers, in their digests, in the
-    language each reads; the draft holds the agent's words alone, whole (round 15, A5)."""
+    """A date the agent gave itself is told to the mailbox's readers, in their digests; the draft
+    holds the agent's words alone, whole (round 15, A5)."""
     found, _ = exchange
-    reads(stack, "ben", "th")
     assert swept(stack) == 0
     message = found.arrives("pat@customer.example", "When?", "When will it be settled?")
     key = mailboxes.key_of("requests", message)
@@ -459,8 +457,7 @@ def test_a5s_notes_on_a_draft_go_to_its_readers_never_to_the_customer(stack, exc
     assert set(told) == {"ana", "ben"}
     assert told["ana"].startswith("Before anyone sends what the assistant left in the drafts of "
                                   "Finance requests: (a5s: 2026-11-27 came from the assistant")
-    assert told["ben"].startswith("ก่อนที่ใครจะส่งสิ่งที่ assistant ร่างไว้ใน the drafts of Finance "
-                                  "requests: (a5s: 2026-11-27 มาจาก assistant เอง")
+    assert told["ben"] == told["ana"]
 
 
 def test_a_draft_to_someone_outside_carries_no_value_a_handle_stands_for(stack, exchange):

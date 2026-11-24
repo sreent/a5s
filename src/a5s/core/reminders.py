@@ -245,5 +245,5 @@ def notice(row: dict, person: Person, status: str, language: str = languages.ENG
     the agent's `status` in it already."""
     return words.say(language, "On {day}, you asked the {agent} to remind you now: {about}. The "
                      "{agent} is {status}, so a5s is reminding you itself.",
-                     day=day(person, row["confirmed_at"], language), agent=row["agent"],
+                     day=day(person, row["confirmed_at"]), agent=row["agent"],
                      about=row["about"], status=status)

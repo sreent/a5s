@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { type DecideNow, type Decided, type HeldChange, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { language, locale, t } from "../i18n";
+import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
@@ -39,9 +39,6 @@ function Card({ change, decide, ticked, tick, together }: {
         </div>
         <h2 className="approval-title" id={`title-${change.key}`}>{what}</h2>
         {rest.length > 0 && <p className="said">{rest.join("\n")}</p>}
-        {language() !== "en" && (  // the words its deciders seal stay its system's (round 15, B6)
-          <p className="note">{t("The change and its records are in their system's words, which a5s seals with your decision.")}</p>
-        )}
         {know && (
           <div className="approval-know">
             <p className="label">{t("What to know")}</p>

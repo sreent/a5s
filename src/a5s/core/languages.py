@@ -1,10 +1,7 @@
-"""The language each person reads: the one they chose on their own page in the studio, or else the
-one the directory gives them (`language`, such as th), or else English.
-
-The studio's pages and the web chat speak it where a5s has their words in it, English and Thai
-for now (SPOKEN), and each agent that acts for someone is told to answer them in it, whatever the
-language, unless they write in another. Their choice is one of their preferences, so it's in
-their export, and goes when they leave or ask a5s to erase what it keeps of them.
+"""The language each person reads, as the directory gives it (`language`, such as ja), or else
+English. a5s's own words, on its pages and in chat, are in English, and each agent that acts for
+someone is told to answer them in the language they read, whatever it is, unless they write to
+it in another (`told`).
 """
 
 from __future__ import annotations
@@ -12,14 +9,9 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from a5s import db
 from a5s.contract import Person
 
-PREFERENCE = "language"  # its name among someone's preferences
 ENGLISH = "en"
-THAI = "th"
-# The languages a5s's own pages have words in, each named in its own words, as people choose it
-SPOKEN = {"en": "English", "th": "ไทย"}
 # Languages as an agent is told them, by their BCP 47 code, in English, which every model reads
 NAMES = {"en": "English", "th": "Thai", "zh": "Chinese", "ja": "Japanese", "ko": "Korean",
          "vi": "Vietnamese", "id": "Indonesian", "ms": "Malay", "my": "Burmese", "km": "Khmer",
@@ -27,33 +19,15 @@ NAMES = {"en": "English", "th": "Thai", "zh": "Chinese", "ja": "Japanese", "ko":
          "es": "Spanish", "pt": "Portuguese", "it": "Italian", "nl": "Dutch"}
 
 
-class Refused(ValueError):
-    """Why a language can't be chosen, in words."""
-
-
 def primary(code: str | None) -> str:
-    """A language's own code, such as th for th-TH, in lower case: English for none."""
+    """A language's own code, such as ja for ja-JP, in lower case: English for none."""
     found = (code or "").strip().split("-")[0].split("_")[0].lower()
     return found if found.isalpha() and 2 <= len(found) <= 3 else ENGLISH
 
 
-def of(conn: db.Connection, person: Person) -> str:
-    """The language someone reads: the one they chose, or the directory's, or English."""
-    row = conn.execute("select value from preferences where person = %s and name = %s",
-                       (person.id, PREFERENCE)).fetchone()
-    return primary(row["value"] if row else person.language)
-
-
-def choose(conn: db.Connection, person: Person, language: str, now: datetime) -> str:
-    """Someone's choice of the language a5s's pages speak to them in, and its agents answer in,
-    of those a5s has its own words in, as they make it, signed in as themselves."""
-    if language not in SPOKEN:
-        raise Refused(f"a5s's pages speak {' and '.join(SPOKEN.values())}, not {language[:20]!r}")
-    conn.execute(
-        "insert into preferences (person, name, value, set_at) values (%s, %s, %s, %s) "
-        "on conflict (person, name) do update set value = excluded.value, "
-        "set_at = excluded.set_at, set_run = null", (person.id, PREFERENCE, language, now))
-    return language
+def of(person: Person) -> str:
+    """The language someone reads: the directory's, or English."""
+    return primary(person.language)
 
 
 def told(language: str) -> str | None:
@@ -67,24 +41,14 @@ def told(language: str) -> str | None:
             "give them.")
 
 
-# Each weekday, Monday first, and each month, as Thai readers cut them short, as a5s writes a
-# date for them
-THAI_DAYS = ("จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา.")
-THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.",
-               "พ.ย.", "ธ.ค.")
+def day(at: datetime) -> str:
+    """A day by its date in UTC, as 03 Nov."""
+    return f"{at.astimezone(ZoneInfo('UTC')):%d %b}"
 
 
-def day(at: datetime, language: str) -> str:
-    """A day as someone reads it, by its date in UTC: in Thai by its month's Thai name, and
-    otherwise as 03 Nov."""
-    found = at.astimezone(ZoneInfo("UTC"))
-    return f"{found.day} {THAI_MONTHS[found.month - 1]}" if language == "th" else f"{found:%d %b}"
-
-
-def when(at: datetime, language: str, timezone: str = "UTC") -> str:
-    """A moment as someone reads it, in their own time zone, which it names: in Thai by its
-    month's Thai name and the Buddhist era's year, as Thai readers write a date, and otherwise
-    as 18 Nov 2026, 14:08 (round 14)."""
+def when(at: datetime, timezone: str = "UTC") -> str:
+    """A moment in someone's own time zone, which it names, as 18 Nov 2026, 14:08 UTC
+    (round 14)."""
     try:
         local = at.astimezone(ZoneInfo(timezone))
     except (ZoneInfoNotFoundError, ValueError):
@@ -92,14 +56,11 @@ def when(at: datetime, language: str, timezone: str = "UTC") -> str:
     zone = local.tzname() or "UTC"
     if not zone[0].isalpha():  # such as +07, as the time zone database names Bangkok's
         zone = f"UTC{zone}"
-    if language == "th":
-        return (f"{local.day} {THAI_MONTHS[local.month - 1]} {local.year + 543} "
-                f"เวลา {local:%H:%M} น. ({zone})")
     return f"{local:%d %b %Y, %H:%M} {zone}"
 
 
-def shared(conn: db.Connection, people: list[Person | None]) -> str:
-    """The language everyone in a group reads, if they all read one, such as Thai: else
-    English, as a5s writes to a group chat."""
-    found = {of(conn, p) for p in people if p is not None}
+def shared(people: list[Person | None]) -> str:
+    """The language everyone in a group reads, if they all read one: else English, as a5s
+    writes to a group chat."""
+    found = {of(p) for p in people if p is not None}
     return found.pop() if len(found) == 1 and None not in people else ENGLISH
