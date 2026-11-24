@@ -63,11 +63,14 @@ def is_address(person: str) -> bool:
     return ADDRESS.fullmatch(person.strip()) is not None
 
 
+DIGESTED = "address:"  # how the ledger names someone by their address, then its digest
+
+
 def subject(person: str) -> str:
     """Whom a request is about, as the ledger keeps it: an address by its digest alone."""
     if not is_address(person):
         return person
-    return "address:" + hashlib.sha256(person.strip().lower().encode()).hexdigest()
+    return DIGESTED + hashlib.sha256(person.strip().lower().encode()).hexdigest()
 
 
 def gather(conn: db.Connection, address: str) -> dict[str, Any]:

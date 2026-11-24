@@ -54,6 +54,7 @@ from a5s.contract import (
 )
 from a5s.core import (
     afresh,
+    anchor,
     approvals,
     asking,
     asks,
@@ -1558,6 +1559,8 @@ def create_app(gw: Gateway) -> FastAPI:
         now = gw.clock()
         chosen = None  # the model the run calls, as its release names it, breakers allowing
         with db.transaction(gw.url) as conn:
+            if waits := anchor.awaiting_restore(conn):  # what's due waits, rather than be done
+                raise HTTPException(503, f"a5s opens no run until `a5s restore` has run: {waits}")
             inst = conn.execute("select * from instances where id = %s", (body.instance,)).fetchone()
             if inst is None:
                 raise HTTPException(404, f"no instance {body.instance}")
@@ -4600,11 +4603,12 @@ def create_app(gw: Gateway) -> FastAPI:
         """Undo one change, while its record is as the change left it, and count it, as a wrong
         grade of it, against its agent's accuracy; tell whoever it was for, and the instance's
         owner and deputy, and the ledger. Whether it was undone, refused or failed."""
-        if not undoing.intact(gw.cfg.seal_keys, row):  # not as the core kept it (round 15)
-            with db.transaction(gw.url) as conn:
-                refused_undo(conn, row, "how to undo it has changed in a5s's records since a5s "
-                             "kept it, so a5s undoes nothing: putting it right is for whoever "
-                             "decides it, in the records system")
+        if row.get("void") or not undoing.intact(gw.cfg.seal_keys, row):  # not as the core
+            with db.transaction(gw.url) as conn:  # kept it (round 15), or a5s let it go
+                refused_undo(conn, row, row.get("void") or (  # (round 16, D7)
+                    "how to undo it has changed in a5s's records since a5s kept it, so a5s "
+                    "undoes nothing: putting it right is for whoever decides it, in the records "
+                    "system"))
             return "refused"
         by = gw.scenario.tools()[row["undo"]["tool"]]
         try:  # the record as it stands, outside any transaction, in each field the change left

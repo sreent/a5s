@@ -14,8 +14,15 @@ nothing, now as before.
 A key that leaked is another matter: whoever holds it could have sealed what nobody approved,
 and sealing that again would make it count. `a5s seal-again --leaked` retires every key after
 the first without sealing anything again, and says what stops counting with them: the settings
-must be approved again, caps earn level 2 again from graded samples, and people connect their
-accounts again. A key retired as leaked never comes back: the core won't start with it.
+must be approved again, caps earn level 2 again from graded samples, changes kept to undo can't
+be undone, and people connect their accounts again, whose tokens a5s lets go of at once. A key
+retired as leaked never comes back: the core won't start with it, and a plain `a5s seal-again`
+won't seal again what it sealed (round 16, D2). A key that's lost, which the core can't start
+without, is retired as leaked by its fingerprint (`--fingerprint`), with no need for the core to
+have started.
+
+Each retirement is in the ledger, so `a5s restore` retires the key again after a restore from a
+backup taken before it (round 16, D3).
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ from dataclasses import dataclass
 from typing import Any, LiteralString
 
 from a5s import db
-from a5s.core import approvals, delegation, proposals, samples, undoing
+from a5s.core import approvals, delegation, ledger, proposals, samples, undoing
 
 RUNBOOK = "docs/runbooks.md#rotating-the-seal-key"
 
@@ -142,9 +149,19 @@ KINDS = (
 )
 
 
+def leaked(conn: db.Connection, keys: tuple[str, ...]) -> list[str]:
+    """The fingerprints of these keys retired as leaked: never to be sealed again with."""
+    return sorted(r["fingerprint"] for r in conn.execute(
+        "select fingerprint from seal_keys where leaked and fingerprint = any(%s)",
+        ([fingerprint(k) for k in keys],)))
+
+
 def waiting(conn: db.Connection, keys: tuple[str, ...]) -> dict[str, int]:
-    """Of each kind the core seals, how many check out only under a key after the first: what
-    `a5s seal-again` would seal again. Nothing, while the core holds one key."""
+    """Of each kind the core seals, how many check out only under a key after the first, and
+    not one retired as leaked: what `a5s seal-again` would seal again. Nothing, while the core
+    holds one key."""
+    gone = set(leaked(conn, keys[1:]))
+    keys = (*keys[:1], *(k for k in keys[1:] if fingerprint(k) not in gone))
     if len(keys) < 2:
         return {}
     found: dict[str, int] = {}
@@ -177,18 +194,29 @@ def started(conn: db.Connection, keys: tuple[str, ...]) -> None:
             f"A5S_SEAL_KEYS no longer holds a key the core sealed with ({', '.join(missing)}), "
             "so what it sealed would stop counting, the approvals of the settings in force "
             "among it: put it back after the first, start the core, run `a5s seal-again`, and "
-            f"drop it once that retires it ({RUNBOOK})")
+            "drop it once that retires it; or, if it's lost, retire it as leaked with `a5s "
+            f"seal-again --leaked --fingerprint {missing[0]}` ({RUNBOOK})")
     conn.execute("update seal_keys set sealing_since = case when fingerprint = %s then "
                  "coalesce(sealing_since, now()) end", (prints[0],))
 
 
-def again(conn: db.Connection, keys: tuple[str, ...], *, leaked: bool = False) -> dict[str, Any]:
+def again(conn: db.Connection, keys: tuple[str, ...], *, leaked: bool = False,
+          lost: tuple[str, ...] = ()) -> dict[str, Any]:
     """Seal again with the first key what checks out only under the others, and retire them;
-    or, for a key that leaked, retire them at once, sealing nothing again. What was sealed
-    again, what stopped counting, and the keys retired, by fingerprint."""
+    or, for a key that leaked, retire them at once, sealing nothing again, and let go of the
+    accounts and undos only they sealed. `lost` are the fingerprints of keys a5s no longer
+    holds, retired as leaked without the core having started. What was sealed again, what
+    stopped counting, and the keys retired, by fingerprint, each in the ledger."""
+    if lost and not leaked:
+        raise Refused("a key that's lost is retired as leaked, as whoever has it could seal with "
+                      f"it: run this with --leaked ({RUNBOOK})")
+    if not leaked and (gone := leaked_held(conn, keys)):
+        raise Refused(f"A5S_SEAL_KEYS holds a key retired as leaked ({', '.join(gone)}): "
+                      "sealing again what it sealed would make it count. Take it out of "
+                      f"A5S_SEAL_KEYS and restart the core ({RUNBOOK})")
     first = conn.execute("select sealing_since from seal_keys where fingerprint = %s",
                          (fingerprint(keys[0]),)).fetchone()
-    if first is None or first["sealing_since"] is None:
+    if not lost and (first is None or first["sealing_since"] is None):
         raise Refused("the core at work doesn't seal with the first of these keys: start it with "
                       f"this A5S_SEAL_KEYS first, then run this again ({RUNBOOK})")
     later = [fingerprint(k) for k in keys[1:]]
@@ -199,9 +227,40 @@ def again(conn: db.Connection, keys: tuple[str, ...], *, leaked: bool = False) -
             if kind.older(keys, row):
                 kind.again(conn, keys, row)
                 sealed[kind.name] = sealed.get(kind.name, 0) + 1
+    let_go = 0
+    if leaked and len(keys) > 1:  # what only a leaked key sealed, which whoever has it could use
+        for row in conn.execute("select person, system, sealed from delegations for update"
+                                ).fetchall():
+            if _older(_tokens)(keys, row) and delegation.forget(
+                    conn, row["person"], row["system"], "the seal key that sealed it leaked"):
+                let_go += 1
+        for row in conn.execute("select * from changes_made where seal is not null and void "
+                                "is null for update").fetchall():
+            if _older(undoing.intact)(keys, row):
+                conn.execute("update changes_made set void = %s where id = %s", (VOID, row["id"]))
+    retired = [*later, *(f for f in lost if f not in later)]
+    for found in lost:
+        conn.execute("insert into seal_keys (fingerprint) values (%s) on conflict do nothing",
+                     (found,))
     conn.execute("update seal_keys set retired_at = now(), sealing_since = null, leaked = "
-                 "leaked or %s where fingerprint = any(%s)", (leaked, later))
-    return {"leaked": leaked, "sealed": sealed, "stopped": stopped, "retired": later}
+                 "leaked or %s where fingerprint = any(%s)", (leaked, retired))
+    for found in retired:  # for `a5s restore`, after a restore from a backup before it
+        ledger.append(conn, {"kind": "admin", "action": "retire-seal-key", "run": None,
+                             "instance": None, "acts_for": [], "decision": "record",
+                             "args": {"fingerprint": found, "leaked": leaked}})
+    return {"leaked": leaked, "sealed": sealed, "stopped": stopped, "retired": retired,
+            "let_go": let_go}
+
+
+def leaked_held(conn: db.Connection, keys: tuple[str, ...]) -> list[str]:
+    """The keys after the first that were retired as leaked, by fingerprint: to take out of
+    A5S_SEAL_KEYS, and restart the core, never to seal again with."""
+    return leaked(conn, keys[1:])
+
+
+# Why a change kept to undo can't be undone after a leak: the core's words to whoever asks
+VOID = ("the seal key that sealed how to undo it leaked, so a5s can't trust how to undo it any "
+        "more: putting it right is for whoever decides it, in the records system")
 
 
 def told(done: dict[str, Any]) -> str:
@@ -214,7 +273,11 @@ def told(done: dict[str, Any]) -> str:
 
     retired = ", ".join(done["retired"])
     said = (f"Retired as leaked, sealing nothing again: {retired}. These stop counting: "
-            f"{counted(done['stopped'])}." if done["leaked"] else
+            f"{counted(done['stopped'])}. Let go of {done.get('let_go', 0)} connected accounts, "
+            "which people connect again: whoever has the key and a backup of the database could "
+            "still act as them, so revoke a5s's access at each system they connected."
+            if done["leaked"] else
             f"Sealed again with the first key: {counted(done['sealed'])}. Retired: {retired}.")
     return (f"{said}\nDrop what's retired from A5S_SEAL_KEYS, keeping the first, and restart "
-            f"the core ({RUNBOOK}).")
+            f"the core ({RUNBOOK}). Keep a key that didn't leak somewhere safe for as long as "
+            "you keep backups of the database it sealed: a restore from one needs it.")

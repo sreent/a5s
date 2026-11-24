@@ -98,3 +98,53 @@ def test_a_leaked_key_is_retired_sealing_nothing_again_and_never_comes_back(stac
     assert keyed(stack, NEW)[2] == 1  # what it sealed counts no more: level 2 is earned again
     with pytest.raises(rotation.Refused, match="retired as leaked"):
         keyed(stack, NEW, SEAL_KEY)
+
+
+def test_after_a_leak_a_plain_seal_again_refuses_and_the_status_says_take_it_out(stack):
+    """Round 16, D2: the status told operators to run `a5s seal-again` while the leaked key was
+    still held, and that sealed again with the new key what the leaked one sealed, forged or
+    not, so it counted for good."""
+    graded(stack, 224)
+    weigh(stack)
+    keyed(stack, NEW, SEAL_KEY)
+    with db.transaction(stack.cfg.database_url) as conn:
+        rotation.again(conn, (NEW, SEAL_KEY), leaked=True)
+    with db.transaction(stack.cfg.database_url) as conn:  # the core still holds both
+        assert rotation.waiting(conn, (NEW, SEAL_KEY)) == {}
+        with pytest.raises(rotation.Refused, match="retired as leaked"):
+            rotation.again(conn, (NEW, SEAL_KEY))
+        report = status.report(conn, [], (NEW, SEAL_KEY))
+    assert report["seal_keys_leaked"] == [rotation.fingerprint(SEAL_KEY)]
+    assert "Take it out and restart the core" in status.told(report)
+    retired = [e["args"] for e in stack.ledger() if e["action"] == "retire-seal-key"]
+    assert retired == [{"fingerprint": rotation.fingerprint(SEAL_KEY), "leaked": True}]
+
+
+def test_a_leak_lets_go_of_accounts_and_undos_only_the_leaked_key_sealed(stack):
+    """Round 16, D7: tokens sealed with the leaked key stayed, usable by whoever has the key
+    and the database, and undos it sealed failed as if tampered with."""
+    with db.transaction(stack.admin) as conn:
+        conn.execute("insert into delegations (person, system, sealed) values ('ben', 'records', "
+                     "%s)", (delegation.seal((SEAL_KEY,), "ben", "records", TOKENS),))
+    keyed(stack, NEW, SEAL_KEY)
+    with db.transaction(stack.cfg.database_url) as conn:
+        done = rotation.again(conn, (NEW, SEAL_KEY), leaked=True)
+        assert conn.execute("select count(*) as n from delegations").fetchone()["n"] == 0
+    assert done["let_go"] == 1 and "revoke a5s's access" in rotation.told(done)
+    assert [e["args"]["why"] for e in stack.ledger() if e["action"] == "disconnect"] == [
+        "the seal key that sealed it leaked"]
+
+
+def test_a_lost_key_is_retired_by_its_fingerprint_without_the_core_having_started(stack):
+    """Round 16, D3: a key the core sealed with that's lost kept the core from starting, and
+    `a5s seal-again --leaked` needed the core started first, so only SQL got out of it."""
+    keyed(stack, SEAL_KEY)
+    lost = rotation.fingerprint(SEAL_KEY)
+    with pytest.raises(rotation.Refused, match=f"--fingerprint {lost}"):
+        keyed(stack, NEW)
+    with db.transaction(stack.cfg.database_url) as conn:
+        with pytest.raises(rotation.Refused, match="with --leaked"):
+            rotation.again(conn, (NEW,), lost=(lost,))
+        done = rotation.again(conn, (NEW,), leaked=True, lost=(lost,))
+    assert done["retired"] == [lost]
+    keyed(stack, NEW)  # the core starts
