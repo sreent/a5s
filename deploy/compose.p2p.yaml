@@ -1,10 +1,14 @@
 # The procure-to-pay scenario's made-up ERP, behind its MCP server (systems/erp.py), on the
-# scenario's synthetic data. It shares the gateway's network namespace, as the scenario's mcp.yaml
-# points a5s at it on the gateway's own loopback, the one place a5s calls a server over plain HTTP:
-# so it reaches what the gateway reaches, which only made-up data makes acceptable, and a real ERP
-# runs on its own host, over HTTPS. What's done through it, such as an invoice its deciders
-# approved, and what the warehouse books in, it keeps in a volume a5s's parts read, as the
-# scenario's own code reads the ERP as it stands, and it carries on from there when it starts again:
+# scenario's synthetic data, and the made-up Exchange Online its invoices mailbox is in
+# (systems/mailbox.py). Each shares the gateway's network namespace, as the scenario's mcp.yaml
+# points a5s at the ERP, and A5S_MAIL_GRAPH at Graph, on the gateway's own loopback, the one place
+# a5s calls a server over plain HTTP: so each reaches what the gateway reaches, which only made-up
+# data makes acceptable, and a real ERP runs on its own host, over HTTPS, as Microsoft 365 does.
+# What's done through the ERP, such as an invoice its deciders approved, and what the warehouse
+# books in, it keeps in a volume a5s's parts read, as the scenario's own code reads the ERP as it
+# stands, and it carries on from there when it starts again. The core signs in to the made-up
+# Exchange as the deployment's app, with the secret A5S_MAIL_CLIENT_SECRET gives both, which the
+# smoke test makes up afresh each time:
 #   sh deploy/smoke-scenario.sh procure-to-pay
 # With the studio's sandbox (compose.sandbox.yaml), its profile runs the sandbox's own copy in the
 # sandbox's network, with its own state, so nothing tried there changes this ERP:
@@ -13,6 +17,9 @@
 x-reads-erp: &reads-erp
   environment: {A5S_SYSTEMS_STATE: /state}
   volumes: ["systems-state:/state:ro"]
+x-mail-app: &mail-app  # the made-up tenant, and the deployment's app in it
+  A5S_MAIL_TENANT: harbour
+  A5S_MAIL_CLIENT_ID: a5s-mail
 
 services:
   systems-state:  # the made-up system's folder in the volume, its own to write in
@@ -30,6 +37,17 @@ services:
     depends_on:
       gateway: {condition: service_started, restart: true}
       systems-state: {condition: service_completed_successfully}
+  p2p-mailbox:  # Microsoft 365, made up: the deployment's app, and the mailbox it reads
+    image: ${A5S_IMAGE:-a5s:dev}
+    restart: unless-stopped
+    entrypoint: ["python", "/systems/mailbox.py", "/app/scenarios/procure-to-pay"]
+    environment:
+      <<: *mail-app
+      A5S_MAIL_CLIENT_SECRET: ${A5S_MAIL_CLIENT_SECRET:?set A5S_MAIL_CLIENT_SECRET}
+    volumes: ["./systems:/systems:ro"]
+    network_mode: "service:gateway"
+    depends_on:
+      gateway: {condition: service_started, restart: true}
   p2p-erp-sandbox:  # the sandbox's own, on the address its mcp.yaml gives the sandbox
     image: ${A5S_IMAGE:-a5s:dev}
     profiles: [sandbox]
@@ -41,7 +59,14 @@ services:
     depends_on:
       sandbox: {condition: service_started, restart: true}
       sandbox-systems-state: {condition: service_completed_successfully}
-  gateway: *reads-erp
+  gateway:  # and the core alone reads the mailbox, as the deployment's app
+    environment:
+      <<: *mail-app
+      A5S_SYSTEMS_STATE: /state
+      A5S_MAIL_CLIENT_SECRET: ${A5S_MAIL_CLIENT_SECRET:?set A5S_MAIL_CLIENT_SECRET}
+      A5S_MAIL_GRAPH: http://127.0.0.1:9207/v1.0
+      A5S_MAIL_LOGIN: http://127.0.0.1:9207
+    volumes: ["systems-state:/state:ro"]
   channels: *reads-erp
   scheduler: *reads-erp
 
