@@ -70,7 +70,7 @@ jobs:
         run: |
           docker build -t "$IMAGE:$VERSION" .
           A5S_IMAGE="$IMAGE:$VERSION" sh deploy/smoke.sh
-          for scenario in master-data software-delivery service-desk; do
+          for scenario in master-data software-delivery service-desk procure-to-pay; do
             A5S_IMAGE="$IMAGE:$VERSION" sh deploy/smoke-scenario.sh "$scenario"
           done
       - name: Push it
