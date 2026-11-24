@@ -186,6 +186,10 @@ class Tool:
     # its parts, and only on those everyone the run acts for may see.
     record_arg: str | None = None
     record_field: str | None = None
+    # The part it works in when a call names no record, such as a team's shared mailbox: a call
+    # to it works at the instance's level in that part, and only where the instance works in it.
+    # None: at the instance's own level, which with parts is the lowest of theirs.
+    part: str | None = None
     # The type of action it takes, if it changes a part's data, such as change-due-date. It
     # names the record it changes, by record_arg. At level 1, a5s holds such a call for the
     # owner of the record's part to decide, and makes it once they approve it.

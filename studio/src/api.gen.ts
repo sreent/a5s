@@ -347,11 +347,14 @@ export type DecideNow = {
   proposals: HeldChange[];
 };
 
-// A decision recorded, for the core to check again, seal and act on.
+// A decision recorded, for the core to check again, seal and act on: and the changes an
+// approval leaves waiting for another of their deciders, such as one that needs two of a
+// part's, or a part's of its own.
 export type Decided = {
   decided: string[];
   decision: string;
   by: string;
+  waits?: string[];
 };
 
 // What the decision page sends with a sign-in made to decide: the changes it decides, by

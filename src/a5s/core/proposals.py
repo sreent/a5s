@@ -58,6 +58,7 @@ from a5s.core.handles import TOKEN
 from a5s.core.identity import Verifier
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
+from a5s.core.values import found as typed_values
 from a5s.core.words import kept, say
 
 REMIND, ESCALATE, LAPSE = 2, 5, 10  # working days: remind its deciders, tell their managers, lapse [starting value]
@@ -704,13 +705,50 @@ def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
                "Ask again if it's still needed.", **given)
 
 
+def chosen(schema: dict, value: Any, scenario: Scenario) -> bool:
+    """Whether a value of a call holds something the agent chose, beyond naming records, at any
+    depth: any string but one whole key of a record of the scenario's parts, or one of the
+    choices its schema lists; any number, such as an amount. A date or an amount it chose after
+    reading content from outside is that content's, as much as its words are. Yes or no, and
+    nothing, carry nothing."""
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        listed = schema.get("enum") or ([schema["const"]] if "const" in schema else [])
+        if value in listed:
+            return False
+        typed = typed_values(value, getattr(scenario, "record_pattern", None))
+        return not (len(typed) == 1 and typed[0].kind == "key" and typed[0].text == value.strip()
+                    and scenario.part_of(typed[0].norm) is not None)
+    if isinstance(value, dict):
+        props = schema.get("properties") or {}
+        return any(chosen(props.get(k) or {}, v, scenario) for k, v in value.items())
+    if isinstance(value, list):
+        return any(chosen(schema.get("items") or {}, v, scenario) for v in value)
+    return True
+
+
+def carries(proposal: dict, scenario: Scenario) -> bool:
+    """Whether a held change's words carry what a run that read content from outside chose: its
+    run read some, and its call holds a value the agent chose beyond naming records, which its
+    words repeat to whoever is told of it, or given it (round 15, F1). One naming records
+    alone, and choices its tool lists, such as an invoice to approve, carries none, so telling
+    its decider what became of it marks nothing of theirs (round 16). One whose tool a5s no
+    longer has carries what it chose, as far as a5s can tell."""
+    if not proposal.get("read_outside"):
+        return False
+    tool = scenario.tools().get(proposal.get("tool") or "")
+    return tool is None or chosen(tool.schema, proposal.get("args") or {}, scenario)
+
+
 def brief(conn: db.Connection, instance: str, acts_for: list[str],
-          records: list[str], conversation: str | None = None) -> tuple[list[str], bool]:
+          records: list[str], conversation: str | None = None,
+          scenario: Scenario | None = None) -> tuple[list[str], bool]:
     """The changes waiting for a decision on these records, asked for the same people, for a
     run's brief: so the agent says it waits, rather than asking again. In a group chat, those
-    asked for there while everyone now in it was there. And whether one was asked for by a run
-    that read content from outside, whose words the run that's given them takes on, as what a
-    marked run passed on stays marked (round 15, F1)."""
+    asked for there while everyone now in it was there. And whether one carries what a run that
+    read content from outside wrote, whose words the run that's given them takes on, as what a
+    marked run passed on stays marked (round 15, F1; `carries`)."""
     if not records:
         return [], False
     if conversation is not None:
@@ -725,4 +763,5 @@ def brief(conn: db.Connection, instance: str, acts_for: list[str],
             "and status = 'waiting' and records ?| %s order by id",
             (instance, acts_for, records)).fetchall()
     return ([f"{key(r)} waits for a decision, asked for on {r['proposed_at']:%d %b}: {first(r)}"
-             for r in rows], any(bool(r["read_outside"]) for r in rows))
+             for r in rows], any(carries(r, scenario) if scenario else bool(r["read_outside"])
+                                 for r in rows))

@@ -125,7 +125,8 @@ def test_above_the_amount_an_invoice_waits_for_two_of_them(p2p, approving, provi
     [p] = held(p2p)
     assert p["flags"] == [("it needs two of the deciders of payables, as INV-9002 holds more "
                            "than 10,000.00: one approval alone doesn't make it")]
-    assert decide(approving, provider, [p["digest"]], person="jules").status_code == 200
+    first = decide(approving, provider, [p["digest"]], person="jules")
+    assert first.status_code == 200 and first.json()["waits"] == ["P-1"]  # as the page says
     sweep(p2p)
     assert erp().record("INV-9002")["status"] == "received"  # one approval doesn't make it
     [still] = held(p2p)
@@ -137,11 +138,37 @@ def test_above_the_amount_an_invoice_waits_for_two_of_them(p2p, approving, provi
                        conn, p2p.gateway, p2p.gateway.scenario.person(who))]
                    for who in ("jules", "ravi")}
     assert "decide" not in waiting["jules"] and "decide" in waiting["ravi"]
-    assert decide(approving, provider, [p["digest"]], person="ravi").status_code == 200
+    second = decide(approving, provider, [p["digest"]], person="ravi")
+    assert second.status_code == 200 and second.json()["waits"] == []
     sweep(p2p)
     assert erp().record("INV-9002")["status"] == "approved for payment"
     [made] = held(p2p)
     assert made["status"] == "made" and set(made["decided_by"].split(", ")) == {"jules", "ravi"}
+
+
+def test_one_of_the_two_asking_leaves_one_to_decide_so_its_refused_at_once(p2p, approving):
+    """Jules asks for a payment above the amount: nobody decides what they asked for, so only
+    Ravi could, and two must, so a5s refuses it then, rather than hold it for one who can't."""
+    asked(p2p, ("approve_invoice", {"key": "INV-9002"}), person="jules",
+          said="Please get INV-9002 paid.")
+    [(decision, _)] = decisions(p2p, "approve_invoice")
+    assert decision == "deny" and held(p2p) == []
+    told = json.dumps(p2p.model.requests[-1]["body"]["messages"][-1])
+    assert "needs two of the deciders of payables" in told and "only Ravi Patel" in told
+
+
+def test_a_part_with_one_decider_cant_take_a_change_that_needs_two(p2p, approving):
+    path = p2p.cfg.scenario_dir / "data.yaml"  # the directory names no delegate of payables now
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    [ravi] = [p for p in data["people"] if p["id"] == "ravi"]
+    ravi["roles"] = []
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    asked(p2p, ("approve_invoice", {"key": "INV-9002"}), said="Please get INV-9002 paid.")
+    assert [d for d, _ in decisions(p2p, "approve_invoice")] == ["deny"] and held(p2p) == []
+    told = json.dumps(p2p.model.requests[-1]["body"]["messages"][-1])
+    assert "only Jules Martin may decide changes there" in told
+    asked(p2p, ("approve_invoice", {"key": "INV-9001"}))  # below the amount, one is enough
+    assert [d for d, _ in decisions(p2p, "approve_invoice")] == ["deny", "hold"]
 
 
 def test_a_rejection_by_either_of_the_two_ends_it(p2p, approving, provider):
@@ -243,3 +270,21 @@ def test_an_amount_reads_as_a_person_writes_it():
     assert proposals.amount_of(16000) == 16000.0
     assert proposals.amount_of("GBP 3,000.50") == 3000.5
     assert proposals.amount_of("about sixteen thousand") is None
+
+
+def test_a_change_naming_records_alone_carries_nothing_of_what_its_run_read(p2p):
+    """What a5s says of a change a marked run asked for is marked where the agent chose a value
+    in it, such as a date, an amount or words (round 15, F1): never where it only names records,
+    as an invoice to approve does, so telling its decider what became of it marks nothing of
+    theirs (round 16)."""
+    found = p2p.gateway.scenario  # with the ERP's tools, as its MCP server declares them
+    marked = {"read_outside": True}
+    assert not proposals.carries({**marked, "tool": "approve_invoice",
+                                  "args": {"key": "INV-9002"}}, found)
+    assert not proposals.carries({**marked, "tool": "correct_invoice_order",
+                                  "args": {"key": "INV-9004", "order": "PO-4504"}}, found)
+    assert proposals.carries({**marked, "tool": "change_delivery_date",
+                              "args": {"key": "PO-4505", "delivery": "2026-12-20"}}, found)
+    assert proposals.carries({**marked, "tool": "no_longer_there", "args": {}}, found)
+    assert not proposals.carries({"read_outside": False, "tool": "change_delivery_date",
+                                  "args": {"key": "PO-4505", "delivery": "2026-12-20"}}, found)

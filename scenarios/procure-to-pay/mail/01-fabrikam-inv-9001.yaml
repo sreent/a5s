@@ -1,0 +1,7 @@
+# Made-up mail, for the studio's sandbox: nothing here is a real company or person
+from: accounts@fabrikam.example
+received: "2026-11-11T08:40:00Z"
+subject: Invoice INV-9001 for PO-4501
+text: >-
+  Hello, please find attached our invoice INV-9001 for 3,000.00 GBP, for the 120 rolls of pallet
+  wrap on your order PO-4501. Payment is due on 10 December. Kind regards, Fabrikam accounts.

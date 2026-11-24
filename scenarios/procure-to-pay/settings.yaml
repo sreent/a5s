@@ -20,6 +20,7 @@ instances:
   ap-desk:
     definition: ap-assistant
     serves: [team:payables, ravi]
+    level: asks first  # outside its parts too, such as a reply it leaves among the mailbox's drafts
     parts:
       payables: {level: asks first, actions: {correct-reference: acts on its own}}
       purchasing: reads only
@@ -31,6 +32,7 @@ instances:
   buyer-desk:
     definition: buyer-assistant
     serves: [team:purchasing]
+    level: asks first  # outside its parts too, such as a draft it writes
     parts:
       purchasing: asks first
       receiving: reads only

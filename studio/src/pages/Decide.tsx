@@ -95,9 +95,11 @@ export function DecidePage() {
       .then((made) => {
         const which = made.decided.join(", ");
         const done = made.decision === "approve" ? t("You approved {which}.", { which }) : t("You rejected {which}.", { which });
-        setStatus(`${done} ${made.decision === "approve"
-          ? t("a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.")
-          : t("a5s tells whoever asked for it.")}`);
+        const waits = made.waits ?? [];  /* one approval alone doesn't make it, such as above an amount */
+        setStatus(`${done} ${made.decision !== "approve" ? t("a5s tells whoever asked for it.")
+          : waits.length ? t("{which} waits for another of its deciders: a5s makes it once they've approved it too.",
+                             { which: waits.join(", ") })
+          : t("a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.")}`);
         toast(done);
       })
       .catch((e: Error) => setStatus(e.message))

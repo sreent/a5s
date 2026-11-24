@@ -124,6 +124,8 @@ def router(gw: Any) -> APIRouter:
                                 "order by id", (gw.scenario.name, digests)).fetchall()
             if len(rows) != len(digests):
                 raise HTTPException(404, "a5s has no such change to decide")
+            in_force = gw.settings_in_force(conn)[0]
+            two = in_force.two_deciders if in_force else None  # four eyes above an amount
             for row in rows:
                 if row["status"] != "waiting":
                     raise HTTPException(409, f"{proposals.key(row)} isn't waiting for a decision: "
@@ -136,9 +138,7 @@ def router(gw: Any) -> APIRouter:
                         (row["digest"], person.id)).fetchone():  # four eyes are two people
                     raise HTTPException(409, f"{person.name} approved {proposals.key(row)} "
                                              "already: it waits for another of its deciders")
-                in_force = gw.settings_in_force(conn)[0]
-                if first := proposals.settled(conn, gw.scenario, row,
-                                              in_force.two_deciders if in_force else None):
+                if first := proposals.settled(conn, gw.scenario, row, two):
                     raise HTTPException(409, f"{approvals.names_of(first)} decided "
                                              f"{proposals.key(row)} already, and the first "
                                              "decision is the one that counts: yours isn't "
@@ -166,7 +166,10 @@ def router(gw: Any) -> APIRouter:
                          "identity": "verified: a sign-in to make this decision on these alone",
                          "issuer": claims["iss"],
                          "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
+            # what this approval leaves waiting for another of its deciders, as the page says
+            waits = [proposals.key(r) for r in rows if body.decision == "approve"
+                     and not proposals.settled(conn, gw.scenario, r, two)]
         return {"decided": [proposals.key(r) for r in rows], "decision": body.decision,
-                "by": person.name}
+                "by": person.name, "waits": waits}
 
     return pages

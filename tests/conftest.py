@@ -524,7 +524,7 @@ SANDBOX_STATE = Path(tempfile.mkdtemp(prefix="a5s-sandbox-systems-"))  # the san
 SPARE = 100  # how far the sandbox's copy of each system is from it, as each mcp.yaml says
 
 
-def scenario_systems(folder: str) -> dict[str, Any]:
+def scenario_systems(folder: str, fresh: bool = True) -> dict[str, Any]:
     """The made-up systems a scenario's mcp.yaml declares tools of, started once for the rest
     of the tests, at the addresses it declares: for each stack, with nothing written to them
     yet, so a stack starts from the scenario's data as data.yaml has it. What's been written
@@ -553,8 +553,8 @@ def scenario_systems(folder: str) -> dict[str, Any]:
             RUNNING.append(beside)
             found[f"sandbox-{name}"] = getattr(spare.state, state)
         SYSTEMS[folder] = found
-    for state in SYSTEMS[folder].values():
-        state.reset()
+    for state in SYSTEMS[folder].values() if fresh else ():  # a5s started again leaves them
+        state.reset()  # as they are, as its restart leaves an organisation's systems
     return SYSTEMS[folder]
 
 

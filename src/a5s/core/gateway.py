@@ -2782,7 +2782,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
                                 gw.scenario.record_pattern)
                 waiting, outside = proposals.brief(conn, row["id"], list(row["acts_for"]),
-                                                   [topic], group)
+                                                   [topic], group, gw.scenario)
                 if outside:  # a change a marked run asked for: its words mark this one too
                     conn.execute("update runs set read_outside = true where id = %s",
                                  (row["run"],))
@@ -2981,9 +2981,11 @@ def create_app(gw: Gateway) -> FastAPI:
                         row["trigger"].get("conversation"))) else []
                 weighed = {**row, "steered": bool(steered)}  # a team's words: level 1 at most
                 on = gw.answered(conn, row["run"], row["model"])  # each model earns its own
+                within = getattr(tool, "part", None)  # where a call naming no record works
                 about = parts.about(gw.scenario, weighed, keys, action, gw.approvers_in_force(conn),
-                                    gw.caps(conn, row["release"], on), standing) if action else parts.about(
-                    gw.scenario, weighed, keys)
+                                    gw.caps(conn, row["release"], on), standing,
+                                    part=within) if action else parts.about(
+                    gw.scenario, weighed, keys, part=within)
                 decision = gw.decide(row, "call_tool", entity, [], **about,
                                      over_limit=over is not None)
                 if found[0] is None:  # fail closed
@@ -3008,7 +3010,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         "a5s's own runs, such as keeping a summary, call no tools",))
                 if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
                     decision = Decision(False, (Own.STOPPED,), explanations=(why,))
-                deciding = holding(decision, records, requested, steered)
+                deciding = holding(decision, records, requested, steered, found[0], standing)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
                     decision = Decision(False, (Own.DECIDER,), explanations=(deciding,))
                 texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
@@ -3272,10 +3274,14 @@ def create_app(gw: Gateway) -> FastAPI:
             return None, None
         return undo, undoing.left(tool, after, standing.get(keys[0]))
 
-    def holding(decision: Decision, records: list[str], row: dict,
-                steered: list[str]) -> list[Person] | str:
+    def holding(decision: Decision, records: list[str], row: dict, steered: list[str],
+                settings: Settings | None = None, standing: dict | None = None
+                ) -> list[Person] | str:
         """Who may decide a call policy holds, if it holds it: or why nobody may, in words.
-        Never anyone whose words it may have asked for: whom it's for, and `steered`."""
+        Never anyone whose words it may have asked for: whom it's for, and `steered`. One that
+        needs two of a part's deciders, as its settings say above an amount, and that fewer
+        than two may decide, is refused at once, rather than left to wait for a second who
+        can't come."""
         if not decision.held:
             return []
         # In the sandbox, whose people are made up and sign nobody in, a change waits for its
@@ -3285,9 +3291,22 @@ def create_app(gw: Gateway) -> FastAPI:
         asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it,
         asked = [*asked, *steered]  # and whoever of a team answered them in what it was given
         by_part = proposals.deciders(gw.scenario, records, asked)
-        if not (nobody := proposals.undecidable(by_part)):
-            return proposals.everyone(by_part)
         anyone = proposals.deciders(gw.scenario, records, [])
+        if not (nobody := proposals.undecidable(by_part)):
+            two = proposals.twice(settings.two_deciders if settings else {}, gw.scenario,
+                                  {"records": records, "standing": standing or {}})
+            for part in two:
+                if len(by_part.get(part, [])) >= 2:
+                    continue
+                only = approvals.names_of([p.name for p in by_part.get(part, [])])
+                if len(anyone.get(part, [])) < 2:
+                    return (f"this change needs two of the deciders of {part}, and only {only} "
+                            "may decide changes there: ask the part's owner to name another, or "
+                            "make it in the records system")
+                return (f"this change needs two of the deciders of {part}, and nobody decides "
+                        f"a change they asked for themselves, so only {only} may decide it: ask "
+                        "for it where someone else asks, or make it in the records system")
+            return proposals.everyone(by_part)
         if all(anyone[part] for part in by_part if not by_part[part]):
             if groups.of(row["trigger"].get("conversation")):
                 only = approvals.names_of([p.name for part in by_part if not by_part[part]
@@ -3395,6 +3414,9 @@ def create_app(gw: Gateway) -> FastAPI:
         room = (release.budget.per_run - spent) * CHARS_PER_TOKEN if release else 0
         read = 0
 
+        # how it may know more of a document, if its release lets it ask a5s's reader
+        more = {"ask": extractor.ASK_MORE} if extractor.ASK in (row.get("grants") or []) else {}
+
         def form(item: dict) -> dict:
             nonlocal read, room
             found = [item[f] for f in tool.outside if f in item and item[f] not in (None, "")]
@@ -3409,7 +3431,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 again = conn.execute("select number, form from run_documents where run_id = %s "
                                      "and digest = %s", (row["run"], digest)).fetchone()
             if again is not None:  # read already in this run: no second call to the model
-                return {**kept, "document": f"D-{again['number']}", extractor.OUTSIDE: again["form"]}
+                return {**kept, "document": f"D-{again['number']}", extractor.OUTSIDE: again["form"],
+                        **more}
             filled, dropped, why = None, [], "a5s couldn't read it now"
             if any(f in unseen for f in tool.outside if f in item):
                 why = "it's of a class the model here isn't approved for, so a5s didn't read it"
@@ -3444,7 +3467,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     provenance.read(conn, row["run"], f"{provenance.OUTSIDE} D-{number}", filled,
                                     gw.scenario.record_pattern)
             read += 1
-            return {**kept, "document": f"D-{number}", extractor.OUTSIDE: shown}
+            return {**kept, "document": f"D-{number}", extractor.OUTSIDE: shown, **more}
 
         def walk(value: Any) -> Any:
             if isinstance(value, list):
@@ -4209,7 +4232,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              "decision": "record", "of": p["seq"],
                              "args": {"proposal": proposals.key(p), "by": deciders_}})
         asked, group, told_to = whom_to_tell(conn, p)
-        marked = bool(p.get("read_outside"))  # its words, as a marked run wrote them
+        marked = proposals.carries(p, gw.scenario)  # words a marked run wrote
         sends = []
         for person in told_to:
             route = gw.reach(conn, person, p["definition"])  # what they're waiting for: at once

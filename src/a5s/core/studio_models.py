@@ -1561,11 +1561,14 @@ class DecideNow(Shape):
 
 
 class Decided(Shape):
-    """A decision recorded, for the core to check again, seal and act on."""
+    """A decision recorded, for the core to check again, seal and act on: and the changes an
+    approval leaves waiting for another of their deciders, such as one that needs two of a
+    part's, or a part's of its own."""
 
     decided: list[str]
     decision: str
     by: str
+    waits: list[str] = []
 
 
 # Grading samples of agents' changes, folded into the studio (core/grade_api.py)

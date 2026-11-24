@@ -95,7 +95,8 @@ def decided_in_trail(page: Any, by: str) -> None:
     ledger has it, and that a5s then made it, the auditor asking only for what `by` decided."""
     page.fill("#by", by)
     page.click("#search")
-    page.wait_for_selector("#entries li:has-text('proposal decide')", timeout=30000)
+    page.wait_for_selector(f"#entries li:has-text('proposal decide'):has-text('By {by}')",
+                           timeout=30000)  # this search's, not one before it still shown
     shown = page.locator("#entries li").all_inner_texts()
     assert any("proposal decide, allow" in e and f"By {by}" in e for e in shown), shown
     assert any("proposal made, record" in e and f"By {by}" in e for e in shown), shown

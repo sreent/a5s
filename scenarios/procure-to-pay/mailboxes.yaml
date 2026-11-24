@@ -1,0 +1,22 @@
+# Accounts payable's shared mailbox, where suppliers send their invoices and ask about payment.
+# a5s reads it through Microsoft Graph with the deployment's app, for payables' people and
+# finance's controller alone; what a message says reaches the accounts payable assistant only as
+# the form a5s's reader fills, never its words, which could hold a bank account or an
+# instruction. Replies wait among the mailbox's drafts for one of payables to send.
+mailboxes:
+  invoices:
+    address: invoices@harbour.test
+    title: Supplier invoices
+    about: suppliers' invoices, and their questions on payment
+    readers: [team:payables, ravi]
+    part: payables  # its mail is payables' work: the assistant drafts here as it asks first there
+    drafts: true
+    extract:
+      record: key  # the invoice the message is about, such as INV-9002
+      order: key  # the purchase order it names, such as PO-4502
+      amount: amount
+      asks: choice:payment|copy|dispute|other
+      new_bank_account: flag  # it gives a bank account to pay into: a warning sign
+      says_approved: flag  # it says someone approved it already: a warning sign
+      urgent: flag
+    sandbox: mail  # made-up messages, for the studio's sandbox

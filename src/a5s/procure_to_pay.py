@@ -154,7 +154,7 @@ class ProcureToPayScenario:
                  "orders": lambda r: f"{r['item']}, {r['quantity']} from {self._name(r['supplier'])}",
                  "receipts": lambda r: f"{r['received']} received on {r['order']}",
                  "invoices": lambda r: f"{self._name(r['supplier'])}'s invoice for {r['amount']} GBP"}
-        return Record(kind, key, found.get(OWNER[kind]), title[kind](found),
+        return Record(kind, key, str(found.get(OWNER[kind]) or ""), title[kind](found),
                       {f: str(found[f]) for f in FIELDS[kind] if found.get(f) is not None},
                       ERP + key)
 
@@ -173,8 +173,10 @@ class ProcureToPayScenario:
                 r.get("delivery") if key.startswith("PO-") and r.get("status") == "open" else None)
             if due is None or (key.startswith("INV-") and r.get("status") in CLOSED):
                 continue
-            ends = datetime.fromisoformat(f"{due}T17:00:00+00:00")
             owner = r.get("clerk") if key.startswith("INV-") else r.get("buyer")
+            if not owner:  # nobody owes it
+                continue
+            ends = datetime.fromisoformat(f"{due}T17:00:00+00:00")
             record = self.record(key)
             found.append(Obligation("records", key, owner, record.title if record else key,
                                     ends - timedelta(days=30), ends, ERP + key))
