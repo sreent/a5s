@@ -66,3 +66,12 @@ def test_a_case_kept_from_a_run_masks_them(stack):
     said, masked = masked_by(text)
     assert said == "[someone]'s [a date of birth] and she lives at [an address]"
     assert masked == {"names": 1, "births": 1, "addresses": 1}
+
+
+def test_more_ways_of_writing_a_date_of_birth_are_masked():
+    """Round 16, C10: these each came back unmasked."""
+    assert strictly("I was born on the 12th of March 1985.") == "I was [a date of birth]."
+    assert strictly("born 12th of March, 1985") == "[a date of birth]"
+    assert strictly("born on 12-Mar-1985") == "[a date of birth]"
+    assert strictly("เกิดวันที่ 12 เดือนมีนาคม พ.ศ. 2528") == "[a date of birth]"
+    assert strictly("due on the 12th of March 2026") == "due on the 12th of March 2026"  # stays

@@ -26,7 +26,7 @@ from typing import Any, LiteralString
 from a5s import db
 from a5s.core import proposals
 
-ADDRESS = re.compile(r"[^@\s<>\"']+@[^@\s<>\"']+\.[^@\s<>\"'.]+")
+ADDRESS = re.compile(r"[^@\s<>\"]+@[^@\s<>\"']+\.[^@\s<>\"'.]+")  # o'brien@ too (C4)
 STAND_IN = "[an address a5s erased]"  # in each text that held it
 # Where a5s keeps words that may hold someone's address, each in the words of what it is, by
 # its table, the column of its words, and when it was written
@@ -39,11 +39,33 @@ TEXTS: dict[str, tuple[LiteralString, LiteralString, LiteralString]] = {
     "summaries of conversations": ("summaries", "body::text", "updated_at"),
     "what people said of agents' answers that were wrong": ("answer_feedback", "said", "at"),
     "tasks people asked for": ("tasks", "task", "created_at"),
+    "what tasks planned": ("tasks", "plan::text", "created_at"),  # (round 16, C5)
+    "what tasks found so far": ("tasks", "partial::text", "created_at"),
+    "what tasks found": ("tasks", "result::text", "created_at"),
+    "tasks people asked to be done again and again": ("task_repeats", "task", "created_at"),
+    "what people asked to be reminded of": ("reminders", "about", "asked_at"),
+    "notes agents keep of people": ("profile_notes", "text", "asked_at"),
+    "what people said they were waiting on": ("obligations", "waiting_on", "updated_at"),
+    "what agents asked each other": ("questions", "text", "asked_at"),
+    "what agents answered each other": ("questions", "answer", "answered_at"),
+    "questions agents asked each other, as kept": ("questions", "task::text", "asked_at"),
+    "conversations handed over to people": ("handovers", "brief", "started_at"),
+    "what people said in conversations handed over": ("handovers", "said::text", "started_at"),
+    "what people wrote while a conversation was handed over": ("handover_replies", "text", "at"),
+    "what shadows were asked": ("shadow_answers", "asked", "at"),
+    "what was answered beside a shadow": ("shadow_answers", "sent", "at"),
+    "what shadows answered": ("shadow_answers", "answer", "at"),
 }
-# How each takes a stand-in for the address: in its words, or, for a summary, in its form
-_PUT: dict[str, LiteralString] = {
-    "summaries": "body = regexp_replace(body::text, %(pattern)s, %(stand_in)s, 'gi')::jsonb",
-}
+
+
+def _put(column: str) -> LiteralString:
+    """How a text takes a stand-in for the address: in its words, or, for one kept in a form,
+    such as a summary's, in the form's words."""
+    if column.endswith("::text"):
+        base = column.removesuffix("::text")
+        return (f"{base} = regexp_replace({base}::text, %(pattern)s, %(stand_in)s, "  # type: ignore[return-value]
+                "'gi')::jsonb")
+    return f"{column} = regexp_replace({column}, %(pattern)s, %(stand_in)s, 'gi')"  # type: ignore[return-value]
 
 
 class Busy(Exception):
@@ -149,10 +171,8 @@ def erase(conn: db.Connection, address: str) -> dict[str, Any]:
                              given).rowcount:
         gone["handles runs held it as"] = count
     for kind, (table, column, _) in TEXTS.items():
-        put = _PUT.get(table) or f"{column} = regexp_replace({column}, %(pattern)s, " \
-                                  "%(stand_in)s, 'gi')"
-        if count := conn.execute(f"update {table} set {put} where strpos(lower({column}), "
-                                 "%(address)s) > 0", given).rowcount:
+        if count := conn.execute(f"update {table} set {_put(column)} where strpos(lower("
+                                 f"{column}), %(address)s) > 0", given).rowcount:
             gone[kind] = count
     kept = [proposals.key(p) for p in conn.execute(
         "select id from proposals where strpos(lower(said), %(address)s) > 0 order by id",

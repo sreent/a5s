@@ -72,8 +72,9 @@ def restore(conn: db.Connection, store: Store, backup: str | None = None) -> dic
     done = {"backup": backup, "put_back": len(rows), "through": rows[-1]["seq"] if rows else None,
             **_done(conn, entries), **_erased(conn, entries), **_since(conn, entries)}
     done["held"] = conn.execute(
-        "update outbox set channel = 'local', inbound_id = null, retry_at = null, problem = %s "
-        "where delivered_at is null and channel <> 'local'", (HELD,)).rowcount
+        "update outbox set channel = 'local', inbound_id = null, retry_at = null, problem = %s, "
+        "fell_back_at = null where delivered_at is null and (channel <> 'local' or "
+        "fell_back_at is not null)", (HELD,)).rowcount  # in the inbox, and not again (C7)
     done["mailboxes"] = conn.execute("delete from mail_state").rowcount
     ledger.append(conn, {"kind": "restore", "action": "restore", "run": None, "instance": None,
                          "acts_for": [], "decision": "record", "args": done})

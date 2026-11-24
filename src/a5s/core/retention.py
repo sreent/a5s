@@ -64,7 +64,7 @@ SAID: Final[tuple[tuple[LiteralString, LiteralString], ...]] = (
 WHOSE: Final[dict[str, LiteralString]] = {
     "inbound": "coalesce(conversation, person)",
     "outbox": "coalesce((select conversation from inbound i where i.id = outbox.inbound_id), "
-              "person)"}
+              "outbox.route->>'conversation', person)"}  # a group's, once it fell back (C8)
 
 
 def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT,

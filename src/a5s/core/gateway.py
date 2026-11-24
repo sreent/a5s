@@ -2568,6 +2568,15 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(404, f"there's no run {run_id}")
         return found
 
+    def customer(person: str) -> bool:
+        """Whether a request names a customer by their address: one the directory doesn't
+        know, nor ever knew as someone who left, whose id an address may be (round 16, C4)."""
+        if not customers.is_address(person) or gw.scenario.person(person) is not None:
+            return False
+        with db.transaction(gw.url) as conn:
+            return conn.execute("select 1 from departures where person = %s limit 1",
+                                (person,)).fetchone() is None
+
     @services.post("/people/{person}/export")
     def export_person(person: str, body: StatusChange) -> dict:
         """All a5s keeps about someone, for their request to see it, for the data protection
@@ -2576,7 +2585,7 @@ def create_app(gw: Gateway) -> FastAPI:
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
         by, identity = officer_asked("export", person, body)
-        if customers.is_address(person) and gw.scenario.person(person) is None:
+        if customer(person):
             return export_customer(person, by, identity)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # as of one moment, so that a sweep that
             conn.execute("set transaction isolation level repeatable read read only")  # archives
@@ -2603,7 +2612,7 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
                                      "nobody")
         here = gw.scenario.person(person) is not None
-        if customers.is_address(person) and not here:
+        if customer(person):
             return erase_customer(person, body)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # the request is used only if the erasure is made
             by, identity = officer_asked("erase", person, body, conn)
@@ -3807,7 +3816,7 @@ def create_app(gw: Gateway) -> FastAPI:
             # as the asker's, such as for their inbox, if the chat won't take it
             group = groups.of(body.to) and body.to == row["trigger"].get("conversation")
             owner = row["trigger"].get("sender") if group else body.to
-            route = None
+            route: dict[str, Any] | None = None
             if row["trigger"].get("kind") == shadows.KIND:
                 decision = Decision(False, (Own.SHADOW_SENDS,), explanations=(
                     "a shadow sends nothing: what it answers is kept for graders",))
@@ -3837,13 +3846,14 @@ def create_app(gw: Gateway) -> FastAPI:
                 if inbound and asked is None:  # gone meanwhile, such as erased
                     raise HTTPException(409, "the message this answers is gone: a5s answers "
                                              "nothing in its place")
-                route = (dict(asked) if inbound  # an answer, where asked
+                route = ({**asked} if inbound and asked  # an answer, where asked
                          else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
                          else gw.at_once(conn, body.to, row["definition"],  # not what they
                                          count=decision.allowed  # asked to be reminded of then
                                          and row["trigger"].get("kind") != "reminder"))
             if group and route:  # so it goes only if nobody has joined since the run began
                 route["members"] = list(row["acts_for"])
+                route["conversation"] = body.to  # whose it is, once it falls back (round 16)
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
             reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # a5s's notes
@@ -3972,6 +3982,11 @@ def create_app(gw: Gateway) -> FastAPI:
         back: list[int | None] = []  # what fell back to the inbox, from a chat that's back
         for row in sorted(rows, key=lambda r: r["id"]):  # in the order a5s wrote them
             run = str(row["run_id"]) if row["run_id"] else None
+            if not row["route"]:  # in the inbox, with no chat to go to: it stays there
+                with db.transaction(gw.url) as conn:
+                    conn.execute("update outbox set fell_back_at = null, retry_at = null where "
+                                 "id = %s", (row["id"],))
+                continue
             expected = (row["route"] or {}).get("members")  # a group's answer: for whom it was
             now_in = present(row["route"]) if expected is not None else None  # worked out
             if now_in is not None and not set(now_in) <= set(expected):
@@ -3982,17 +3997,21 @@ def create_app(gw: Gateway) -> FastAPI:
                                 deliver(row["route"], row["text"], run, row["instance_id"],
                                         card=row["card"], answer=feedback.answer(row)))
             with db.transaction(gw.url) as conn:
-                if problem is None:  # in its chat, once more, if it had fallen back
-                    conn.execute("update outbox set delivered_at = now(), retry_at = null, "
-                                 "problem = null, sent_as = %s, channel = %s, fell_back_at = null "
-                                 "where id = %s", (sent_as, row["route"]["channel"], row["id"]))
+                if problem is None:  # in its chat, once more, if it had fallen back, and
+                    conn.execute(  # what it answered again, where the message is still there
+                        "update outbox set delivered_at = now(), retry_at = null, problem = "
+                        "null, sent_as = %s, channel = %s, fell_back_at = null, inbound_id = "
+                        "coalesce(inbound_id, (select i.id from inbound i where i.id::text = "
+                        "outbox.route->>'id')) where id = %s",  # (round 16, C8)
+                        (sent_as, row["route"]["channel"], row["id"]))
+                    now = gw.clock()  # afresh: another core may have taken one since (C9)
                     back += [r["id"] for r in conn.execute(  # the chat's back for them: what
                         "update outbox set retry_at = %s where person = %s and channel = "  # fell
                         "'local' and fell_back_at > %s and delivered_at is null and route ->> "
                         "'channel' = %s and not (retry_at > %s and retry_at <= %s) returning id",
                         (now, row["person"], now - FELL_BACK, row["route"]["channel"], now,
                          now + timedelta(minutes=5)))]  # back goes now, but none another core
-                    # has taken for its five minutes
+                    # has taken for its five minutes, by the clock as it is now
                 elif row["fell_back_at"] is not None:  # not yet: again in an hour, for a day
                     conn.execute("update outbox set retry_at = %s, problem = %s where id = %s",
                                  (now + timedelta(hours=1), problem, row["id"]))
@@ -4044,9 +4063,10 @@ def create_app(gw: Gateway) -> FastAPI:
             to = gw.reach(conn, row["person"], row["agent"])  # theirs alone, never the group
             pushed = to["channel"] in PUSHED
             conn.execute("update outbox set channel = %s, route = %s, inbound_id = null, "
-                         "retry_at = null, attempts = 0, problem = 'someone joined the chat "
-                         "while it was answering' where id = %s",
-                         (to["channel"], Jsonb(to) if pushed else None, row["id"]))
+                         "retry_at = null, attempts = 0, fell_back_at = null, problem = "
+                         "'someone joined the chat while it was answering' where id = %s",
+                         (to["channel"], Jsonb(to) if pushed else None, row["id"]))  # tried
+            # as any message, and left in the inbox after its tries (round 16, C7)
             asked = conn.execute("select trigger from runs where id = %s",
                                  (run,)).fetchone() if run else None
             group = (asked["trigger"] or {}).get("conversation") if asked else None

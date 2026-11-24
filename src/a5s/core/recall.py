@@ -18,6 +18,7 @@ from a5s.core import groups, studio, values
 from a5s.core.coretools import Call, CoreTool, Refused
 from a5s.core.obligations import day
 from a5s.core.reminders import say
+from a5s.services import context
 
 FOUND = 8  # turns, newest first
 LONGEST = 1500  # characters of each
@@ -33,16 +34,26 @@ def search(call: Call) -> dict:
     if not query:
         raise Refused("say what to look for, such as a record's key or a few words")
     like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-    heard = " and heard_by @> %(members)s::text[]" if group else ""
-    rows = call.conn.execute(  # a5s's tasks for the agent aren't what anyone said
-        "select role, content, at, speaker, run_id from turns where person = %(whose)s "
-        f"and agent = %(agent)s and role <> 'task'{heard} and (to_tsvector('simple', content) "
-        "@@ websearch_to_tsquery('simple', %(query)s) or content ilike %(like)s) "
-        "order by id desc limit %(found)s",
-        {"whose": group or person.id, "agent": call.run["definition"], "query": query,
-         "like": like, "members": list(call.run["acts_for"]), "found": FOUND}).fetchall()
+    heard = " and t.heard_by @> %(members)s::text[]" if group else ""
+    whose = group or person.id
+    rows = call.conn.execute(  # a5s's tasks for the agent aren't what anyone said, and as
+        # the conversation is given to its runs: never from before it started afresh, nor
+        # another task's or event's own topic, kept apart from their owner's chats
+        "select t.role, t.content, t.at, t.speaker, t.run_id, " + context.CARRIES + " as carries "
+        "from turns t left join runs r on r.id = t.run_id where t.person = %(whose)s "
+        f"and t.agent = %(agent)s and t.role <> 'task'{heard} and t.id > %(after)s and ("
+        "t.topic = %(topic)s or (t.topic not like 'task %%' and t.topic not like 'event %%')) "
+        "and (to_tsvector('simple', t.content) @@ websearch_to_tsquery('simple', %(query)s) or "
+        "t.content ilike %(like)s) order by t.id desc limit %(found)s",
+        {"whose": whose, "agent": call.run["definition"], "query": query, "like": like,
+         "members": list(call.run["acts_for"]), "found": FOUND,
+         "after": context.fresh(call.conn, whose, call.run["definition"]),
+         "topic": (call.run.get("trigger") or {}).get("topic", context.GENERAL)}).fetchall()
     studio.given_from(call.conn, call.run["run"], [r["run_id"] for r in rows])  # and what
     # the runs behind what it found handled and read, so the studio shows it as it shows them
+    if any(r["carries"] for r in rows):  # what a run that read content from outside wrote
+        call.conn.execute("update runs set read_outside = true where id = %s",  # is that
+                          (call.run["run"],))  # content's, as it is in the history (round 16)
     return {"found": [{"when": say(person, r["at"]), "who": _who(call, r),
                        "said": r["content"][:LONGEST]} for r in rows]}
 

@@ -62,6 +62,7 @@ from a5s import db
 from a5s.contract import AGENT_AUTHOR, AGENT_OWNER, Person, Scenario, Tool
 from a5s.core import ledger, sealing
 from a5s.core.ledger import canonical
+from a5s.core.values import found as found_values
 
 GRADER = "grader"  # the directory's role for people who grade agents' work
 GRADES = ("right", "wrong", "critical")
@@ -426,6 +427,11 @@ def asked_in(conn: db.Connection, run: str) -> str | None:
     said = [r["content"] for r in conn.execute(
         "select content from turns where run_id = %s::uuid and role = 'person' order by id",
         (str(run),))]
+    if not said:  # a task's slice: what its owner asked of the task it's part of (round 16)
+        said = [r["task"] for r in conn.execute(
+            "select root.task from runs r join tasks t on t.id::text = r.trigger->>'task' "
+            "join tasks root on root.id = coalesce(t.root, t.id) where r.id = %s::uuid and "
+            "r.trigger->>'kind' = 'task'", (str(run),))]
     return "\n\n".join(said)[:ASKED] or None
 
 
@@ -522,6 +528,11 @@ def may_grade(scenario: Scenario, sample: dict, person: Person,
             return "nobody grades a change made for their own team, or for someone they report to"
     if not all(scenario.sees(person.id, r) for r in sample["records"]):
         return "it names a record they may not see"
+    asked = asked_of(sample) or ""  # what was asked, which they read, may name others too
+    if not all(scenario.part_of(v.norm) is None or scenario.sees(person.id, v.norm)
+               for v in found_values(asked, getattr(scenario, "record_pattern", None))
+               if v.kind == "key"):  # a key that's no record's names nothing they'd learn
+        return "what was asked names a record they may not see"  # (round 16, C6)
     return None
 
 
