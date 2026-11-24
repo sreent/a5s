@@ -1,4 +1,4 @@
-"""Test cases the judge scores (BUILD-4, docs/studio.md#test-cases): a step that says what a right
+"""Test cases the judge scores (BUILD-4, docs/studio.md#the-sandbox): a step that says what a right
 answer is, in its author's words, where it can be right in more than one way, is graded right,
 wrong or critical by the agent's judge beside its exact checks, and passes only if the judge says
 right. In the sandbox, a draft tried on the stand-in is judged by it too, which thinks nothing:

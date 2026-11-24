@@ -112,6 +112,14 @@ def test_the_health_page_shows_each_models_day(stack, approving, provider, brows
         raise AssertionError(f"the health page didn't render: {page.inner_text('body')[:600]}"
                              ) from exc
     assert "Model health" in page.inner_text("body")
+    # its note leads to where each instance's model is set: the settings
+    assert page.locator("p.note a").get_attribute("href") == "/studio/settings"
+    accessible(page)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(f"{approving}/studio/")  # and the sidebar leads to it, not back to her home
+    page.locator("#pages a", has_text="Model health").click()
+    page.wait_for_selector("table.health", timeout=30000)
+    assert page.url == f"{approving}/studio/health"
 
 
 def test_the_health_page_is_for_the_release_approver_and_engineers_alone(approving, provider):

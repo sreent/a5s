@@ -98,8 +98,9 @@ export function href(route: Route): string {
     case "handovers": return "/studio/handovers";
     case "handover": return `/studio/handovers/${encodeURIComponent(route.id)}`;
     case "shadows": return "/studio/shadows";
-    default: return "/studio/";
-  }
+    case "health": return "/studio/health";
+    case "home": return "/studio/";
+  }  // a case for every page, so a page without one fails the build rather than leading home
 }
 
 const listeners = new Set<() => void>();
