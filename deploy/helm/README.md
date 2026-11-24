@@ -8,7 +8,7 @@ One Helm chart runs a5s on any Kubernetes cluster: each cloud's managed Kubernet
 
 | Part | As | Reaches |
 | --- | --- | --- |
-| The gateway, in the trusted core | A Deployment and a Service, inside the cluster only | Postgres, and outside: the models, the identity provider, the chats |
+| The gateway, in the trusted core | A Deployment and a Service, inside the cluster only | Postgres, and outside: the models, the identity provider, the chats, and the systems the scenario's tools reach |
 | The channels, where people and their chats reach a5s | A Deployment and a Service, and the Ingress, if it's on | Postgres, and outside: the identity provider and the chats |
 | The scheduler | A Deployment | Postgres, the gateway and each pool of workers |
 | The ledger's copier | A Deployment | Postgres, and the locked storage outside |
@@ -26,7 +26,7 @@ Each part runs as its own service account, which can't reach Kubernetes' own API
   - `database-admin-url`, for the jobs;
   - `database-<part>-url` and `database-<part>-password`, for `gateway`, `channels`, `scheduler` and `anchor`;
   - `service-token` and `seal-keys`;
-  - and as the deployment needs them: `deepseek-api-key`, `qwen-api-key`, `teams-secret-<agent>`, `matrix-as-token`, `matrix-hs-token`, and, for a store with S3's object lock that takes keys, `anchor-s3-access-key-id` and `anchor-s3-secret-access-key`.
+  - and as the deployment needs them: `operator-token`, `deepseek-api-key`, `qwen-api-key`, `teams-secret-<agent>`, `slack-secret-<agent>` and `slack-token-<agent>`, `event-secret-<source>`, `delegation-secret-<name>`, `matrix-as-token`, `matrix-hs-token`, `registry-secret`, `mail-secret`, `sandbox-token`, which it shares with its sandbox, and, for a store with S3's object lock that takes keys, `anchor-s3-access-key-id` and `anchor-s3-secret-access-key`. The chart has no key yet for the tokens of a scenario's MCP servers or repositories, `A5S_MCP_<SERVER>_TOKEN` and `A5S_REPOSITORY_<NAME>_TOKEN`.
 - **Locked storage** for the ledger's copies, given as `anchor.store`, and the copier's right to write there: in a cloud, through its workload identity, as an annotation on its service account (`serviceAccounts.annotations.anchor`), and on AKS a label on its pods too (`podLabels.anchor`); on premises, a store with S3's object lock, such as MinIO, at `anchor.s3Endpoint`, with its keys in the Secret. [The first day](../../docs/first-day.md#4-the-cluster-postgres-and-locked-storage) gives each cloud's side by side. After the database is restored from a backup, `restore.id`, the backup's name, runs `a5s restore` first, before setup, as `<release>-restore`, an account with the copier's annotations and labels, which needs the copier's right to read the store too ([runbook](../../docs/runbooks.md#restoring-from-a-backup)).
 - **How people sign in**, if through an identity provider: `people.oidcIssuer`, and `people.oidcMfa`, how that provider shows a second factor, such as `amr:mfa` or `acr:<level>`, or `none`. The chart assumes no provider, so it won't install with an issuer and no `oidcMfa`. [The first day](../../docs/first-day.md#2-peoples-sign-in) gives each provider's.
 - **Where Postgres is**, for the network policies: `networkPolicies.database`, by its pods' labels or its addresses.
@@ -51,7 +51,7 @@ A pool's pods stay up whether there's work or not: nothing scales them to zero. 
 
 ## The sandbox
 
-The sandbox ([the studio's plan](../../docs/studio.md#the-sandbox)) is where the studio tries the agents people are making: every part of a5s in one process, on the scenario's made-up records, with a stand-in model, run as a second release of this chart, `mode: sandbox`, from the same image, in a namespace of its own, with a database server of its own. It runs no jobs: it sets up its database when it starts, and signs its settings with keys it makes for the scenario's made-up people and keeps in memory alone. It holds none of a5s's keys, and only a5s's channels reach it, by a token they share. It runs one pod, the old one stopped first, since two would each sign its settings with keys of their own.
+The sandbox ([the studio](../../docs/studio.md#the-sandbox)) is where the studio tries the agents people are making: every part of a5s in one process, on the scenario's made-up records, with a stand-in model, run as a second release of this chart, `mode: sandbox`, from the same image, in a namespace of its own, with a database server of its own. It runs no jobs: it sets up its database when it starts, and signs its settings with keys it makes for the scenario's made-up people and keeps in memory alone. It holds none of a5s's keys, and only a5s's channels reach it, by a token they share. It runs one pod, the old one stopped first, since two would each sign its settings with keys of their own.
 
 ```sh
 kubectl create namespace a5s-sandbox
@@ -84,4 +84,4 @@ helm install a5s deploy/helm/a5s -n a5s -f my-values.yaml
 
 ## Test
 
-[`test.sh`](test.sh) installs the chart on k3s in Docker, which enforces network policies, with Postgres beside it, and checks that the setup job runs first, that the core waits for the release's approval and runs once a job records it, that the scheduler reaches the gateway and each pool of workers, and that each pool reaches the gateway alone, never the database, the channels, another pool or the internet. It then installs the sandbox as a second release, in a namespace of its own with a Postgres of its own, and checks that a5s's channels try a draft there, that nothing else of a5s's reaches it, and that it reaches its own database alone, not a5s's, a5s's parts or the internet. CI runs it on every push, after `helm lint`. Every image it starts is pinned by its digest.
+[`test.sh`](test.sh) installs the chart on k3s in Docker, which enforces network policies, with Postgres beside it, and checks that the setup job runs first, that the core waits for the release's approval and runs once a job records it, that the core is never away while it's replaced, that the scheduler reaches the gateway and each pool of workers, and that each pool reaches the gateway alone, never the database, the channels, another pool or the internet. It then installs the sandbox as a second release, in a namespace of its own with a Postgres of its own, and checks that a5s's channels try a draft there, that nothing else of a5s's reaches it, and that it reaches its own database alone, not a5s's, a5s's parts or the internet. CI runs it on every push, after `helm lint`. Every image it starts is pinned by its digest.

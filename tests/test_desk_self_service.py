@@ -2,7 +2,7 @@
 password reset is the identity provider's own flow, through its MCP server, which the account's
 holder finishes there, verifying themselves, so the agent never sees a secret. It runs alone, at
 level 2, only where the service owner's settings give it and graded samples raise a5s's cap, and
-only for the person asking, on their own account: anyone else's goes to the ITSM's approvals. An
+only for the person asking, on their own account: anyone else's waits for the decider of access. An
 authenticator change never runs alone, at any level: it goes to a person. And below level 2, or
 once a run has read what a requester wrote, a reset waits for the decider of access, as every
 change does."""

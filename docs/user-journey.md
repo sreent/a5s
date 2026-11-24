@@ -28,15 +28,15 @@ a5s then works on the task in bounded runs of its own. A fresh worker resumes fr
 
 ### 4. See progress, results and controls
 
-At `/tasks/`, the person sees their own tasks: each task's agent, status, plan, partial findings, result, deadline and tokens spent. Active tasks can be cancelled. Tasks that repeat appear separately, and stopping one does not cancel its already-running task.
+At `/studio/tasks`, the person sees their own tasks: each task's agent, status, plan, partial findings, result, deadline and tokens spent. Active tasks can be cancelled. Tasks that repeat appear separately, and stopping one does not cancel its already-running task.
 
 ![Ana's completed task with its plan, result and token use](images/a5s-task-complete.png)
 
-To answer a task that needs its owner, the person returns to their chat with the agent. Today the page is a separate route, without a prominent link from the chat, and later progress needs a refresh rather than appearing automatically.
+To answer a task that needs its owner, the person returns to their chat with the agent. The page is in the studio, and every page's sidebar links to it, the chat's too, but later progress needs a refresh rather than appearing automatically.
 
 ## For the person who runs an agent
 
-The studio's home, at `/studio/`, says what waits on whoever signed in, and where they do it, and `/studio/you` what each of their roles lets them do and what gave it them. Its pages for watching are read-only: the agents, at `/studio/agents`, each agent's page with a map of how it's wired, a dashboard for each instance, and a page for each run with its path. Every page of a5s shares its sidebar, which lists only the pages the signed-in person may use, and the studio shows only what they may see. These pictures come from a5s running, with synthetic records: `A5S_DOC_IMAGES=docs/images uv run pytest tests/test_doc_images.py` makes them again.
+The studio's home, at `/studio/`, says what waits on whoever signed in, and where they do it, and `/studio/you` what each of their roles lets them do and what gave it them. Its pages for watching are read-only, but for suspending or resuming an instance from its dashboard: the agents, at `/studio/agents`, each agent's page with a map of how it's wired, a dashboard for each instance, and a page for each run with its path. Every page of a5s shares its sidebar, which lists only the pages the signed-in person may use, and the studio shows only what they may see. These pictures come from a5s running, with synthetic records: `A5S_DOC_IMAGES=docs/images uv run pytest tests/test_doc_images.py` makes them again.
 
 ### The agents
 
@@ -66,9 +66,9 @@ The command line, Python client and core API expose the same operational model t
 
 ## For the person building and deploying an agent
 
-Today that path is deliberately code-led:
+The path runs through code, whether it starts in an editor, as here, or [in the studio](#building-an-agent-in-the-studio):
 
-1. Create the agent's folder: `agent.yaml`, `AGENTS.md`, skills and test cases. `a5s agent templates` lists the agents a new one may start from, the reference agents and each scenario's, and `a5s agent new finance-helper --from assistant` makes its folder from one, with its own id, a first release and its tools pinned.
+1. Create the agent's folder: `agent.yaml`, `AGENTS.md`, skills and test cases. `a5s agent templates` lists the agents a new one may start from, a blank one, the reference agents and each scenario's, and `a5s agent new finance-helper --from assistant` makes its folder from one, with its own id, a first release and its tools pinned.
 2. Choose existing reviewed tools, connectors and MCP tools; pin their schemas in `tools.lock`. `a5s agent check` then says what would stop its release here: a definition that doesn't load, budgets that don't fit, a tool the scenario hasn't got or that's no longer pinned as it is, or a model the deployment doesn't approve.
 3. Run the agent's tests with synthetic equivalents and, where the release requires it, real models.
 4. Open a pull request and let CI run.
@@ -79,7 +79,7 @@ Today that path is deliberately code-led:
 
 The studio's settings, and its pages for approving, deciding, grading, the notebook and the officer's requests, support that path. The studio does not hold signing keys or publish around them.
 
-## What is not here yet
+## Building an agent in the studio
 
 The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release, who would sign it, and its map shown as they go. They try it in [the sandbox](studio.md#the-sandbox), a deployment of its own, as one of the scenario's made-up people, and see what it answered, each call it made with the policy's decision, and what its model was sent. What they said there, they can keep as one of its test cases, and they run its cases there, as its suite would, to see which pass. They [publish it](studio.md#publishing) as a pull request to the agents' repository, which says who must sign its release: they open it themselves, on whichever git host, with its folder and the words the page gives, or, where a GitHub App is set up for it, a5s opens it on GitHub as them.
 
@@ -91,6 +91,6 @@ The present journey is therefore:
 
 - **A user:** sign in → converse → confirm longer work → inspect or cancel it.
 - **An operator:** catalogue → instance dashboard → run detail.
-- **A developer:** code and tests → PR and CI → signed release → approved settings → deployment → studio monitoring.
+- **A developer:** code and tests, or a draft tried in the studio's sandbox → PR and CI → signed release → approved settings → deployment → studio monitoring.
 
 [Testing a5s](testing.md) has the commands for each test layer, what each proves, and how to read failures and scorecards.

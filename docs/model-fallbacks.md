@@ -18,19 +18,22 @@ whichever model serves it, goes through the same policy, budgets and ledger.
 A stalled model call is a bug in a5s, not an outage to tolerate: a run that answers someone
 must survive one call's failure. So resilience is two layers.
 
-**In the run:** when a model call fails, the gateway re-issues the same call on the next model
-its release names that speaks its API style and may see its data (`core/gateway.py`'s
-`calling`), all within the same run: the agent keeps its thread, its tool results and its
-place, and the worker never sees the failure. Each attempt is in the ledger, by the call's
-sequence and alias, and the call is bounded by the chain.
+**In the run:** when a model call fails, the gateway asks its own model once more, then
+re-issues the same call on the next model its release names that speaks its API style and may
+see its data (`core/gateway.py`'s `calling`), all within the same run: the agent keeps its
+thread, its tool results and its place, and the worker sees only the last attempt's answer.
+Each attempt is in the ledger, by the call's sequence and alias, and the call is bounded by
+the chain. The assistant's own fallback is the same model through its other API, so its calls
+aren't made again there within a run: the scheduler tries it next, after the run.
 
-**After the run:** if every model failed a run's calls — a provider-wide outage — the
+**After the run:** if every model failed a run's calls, as in a provider-wide outage, the
 scheduler tries the message again on the next model, each tried once, and only once every one
 has failed does the person hear a5s's own words for a model that isn't answering
-(`services/scheduler.py`, `model_for` at run-open). The failed model's breaker still opens
-after three failures in a row, so a provider that's down isn't asked for a few minutes.
+(`services/scheduler.py`, and `core/gateway.py`'s `model_for` at run-open). The failed model's
+breaker still opens after three failures in a row, so a provider that's down isn't asked for
+a few minutes.
 
-Each attempt is in the ledger as before: the run's `model` records which model served it, and
+Each attempt is in the ledger as before: the run's `model` records the model it opened on, and
 each call's entry names its alias, so the evidence shows which model answered what.
 
 ## Judged wording checks in the live tests
@@ -43,8 +46,9 @@ whether the message says what it must: a model that says the same in other words
 and one that says the opposite fails, however well it's worded. What code enforces stays an
 exact check: drafts, task state, denials, routing, and the ledger.
 
-`tests/test_fallbacks.py` proves the fallback chain: a message runs on its fallback once its
-model isn't answering, each model is tried once, the person hears a5s's words only when every
-one has failed, an unapproved fallback is never called, and a model whose breaker is open is
-passed over for the next.
+`tests/test_fallbacks.py` proves the fallback chain: a run survives its model stalling on one
+call, a message runs on its fallback once its model isn't answering, each model is tried once,
+the person hears a5s's words only when every one has failed, an unapproved fallback is never
+called, and a model whose breaker is open, or whose health gate has stopped it, is passed over
+for the next.
 

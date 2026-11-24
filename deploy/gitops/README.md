@@ -25,8 +25,8 @@ The folder's other files say how the environment runs, and change by their own p
 
 ```yaml
 signers:
-  rosa: {key: "<her public key, as a5s keygen prints it>", team: risk, roles: [release-approver], above: []}
-  kofi: {key: "<his public key>", team: audit, roles: [assurance], above: []}
+  rosa: {key: "<their public key, as a5s keygen prints it>", team: risk, roles: [release-approver], above: []}
+  kofi: {key: "<their public key>", team: audit, roles: [assurance], above: []}
 ```
 
 ## Set up an environment, once

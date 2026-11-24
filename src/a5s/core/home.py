@@ -69,8 +69,8 @@ MAY = {
                      "your role",
 }
 TEAM = "the team that runs a5s"
-TEAM_MAY = ("run it, and make it safer alone: suspend an instance, lower a cap or withdraw a "
-            "release, never loosen it; sign its releases as an engineer")
+TEAM_MAY = ("run it, and make it safer alone: suspend an instance, never loosen it; sign its "
+            "releases as an engineer")
 
 
 def may(role: str, language: str = languages.ENGLISH) -> str:

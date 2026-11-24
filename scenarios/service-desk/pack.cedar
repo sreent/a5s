@@ -3,10 +3,10 @@
 // the rest of the scenario's folder.
 
 // Self-service runs on its own only for the person asking, on their own account: the identity
-// provider verifies them in its own flow. Anyone else's goes to the ITSM's approvals. A level of
+// provider verifies them in its own flow. Anyone else's waits for the decider of access. A level of
 // 2 is acting on its own, and 1 asking first (a5s/levels.py).
 @id("desk-self-service-only-for-the-person-asking")
-@reason("self-service runs alone only for the person asking, on their own account: a request for anyone else goes to the ITSM's approvals")
+@reason("self-service runs alone only for the person asking, on their own account: a request for anyone else waits for the decider of access")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { resource.action == "reset-password" && context.level >= 2 && !context.for_self };
 

@@ -1,6 +1,6 @@
 # Phase 2
 
-**Status:** Built, 31 October 2026, apart from outside senders ([progress](#progress)) · Round 6 of the critique has read it, and what it found is fixed · **Under:** [Architecture](architecture.md)
+**Status:** Built, 31 October 2026, apart from a limit for each outside sender ([progress](#progress)) · Round 6 of the critique has read it, and what it found is fixed · **Under:** [Architecture](architecture.md)
 
 Phase 2 lets agents act. In [phase 1](phase-1.md) they read, report, draft and remind, and change no data. In phase 2 an agent can propose a change, which the owner of what it touches decides on the core's own page. Once samples, graded by people outside the team that built it, show it's accurate enough, it can make changes of a type the part owner approves, within the scenario's limits, telling someone each time. Content from outside, such as a customer's email, reaches agents only through the extractor, and a run that has read some never acts on its own.
 
@@ -45,12 +45,12 @@ Each step ends with something running and its tests passing.
    - An agent can also ask a question about a document. The answer comes back in free text, marked as outside content, and never as an instruction.
    - The run is marked from then: it can't act on its own or write anyone's profile, and what it drafts or proposes says it drew on outside content.
 
-Outside senders who can start work, with a limit of 20 requests a day each, wait for a scenario where outside senders start work at all.
+Outside senders who can start work were to have a limit of 20 requests a day each. Mail to a scenario's shared mailboxes now starts work, and that limit isn't built yet ([progress](#progress)).
 
 ## Done means
 
 - Each finding the [critique](critique.md) marks for phase 2 has a test in a5s's own suite that shows the code stops it: A2, A8, I1, I6, I7, I11, F5, C10, D5, O4, O8 and O10.
-- In the sample, the assistant holds a change of due date, its decider approves it on the core's page, and the change is made only if the record hasn't changed. Once graded samples raise its cap and the part's owner sets it to act on its own, it makes such changes and reports them. A run that has read a customer's email can't make one.
+- In the sample, the assistant holds a change of due date, its decider approves it on the core's page, and the change is made only if the record hasn't changed. Once graded samples raise its cap and the part's owner sets it to act on its own, it makes such changes and reports them, as the tests show with its release's maximum raised. A run that has read a customer's email can't make one.
 - Round 6 of the critique has read the code, and what it found is fixed ([round 6](critique.md#round-6-phase-2)).
 
 ## Progress
@@ -70,14 +70,14 @@ Steps 2 and 3, counts and acting on its own, are built:
 | Built | Where |
 | --- | --- |
 | Counts. The settings give each type of action the scenario's limits: how many one run may take, and how many for each person acted for in 30 days, across every agent. The gateway counts each change made or held in the transaction that decides it, under a lock for its type, so calls made at once can't each squeeze under a limit. Past a limit, a change waits for its decider, whatever the agent may do. The same change made again in a run counts once, keeps its verdict, and answers with the same proposal. The sample limits each of its two types to 5 a run and 20 a person. | [`core/counts.py`](../src/a5s/core/counts.py), [`core/policies/base.cedar`](../src/a5s/core/policies/base.cedar) |
-| Acting on its own. The settings set what an instance may do for each type of action in each part, the only way to act on its own, and approvers read it in words. A change is made on its own only while someone who approved the settings in force owns the part, and only as far as a5s's cap for the release, part and type allows: it holds the agent to asking first until graded samples raise it in step 4. A change about no record, or from a run that read outside content, goes no further than asking first. A change made on its own is reported in the digest of the instance's owner with a link to the record. The assistant's release now lets it come to act on its own. | [`core/parts.py`](../src/a5s/core/parts.py), [`contract.py`](../src/a5s/contract.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| Acting on its own. The settings set what an instance may do for each type of action in each part, the only way to act on its own, and approvers read it in words. A change is made on its own only while someone who approved the settings in force owns the part, and only as far as a5s's cap for the release, part and type allows: it holds the agent to asking first until graded samples raise it in step 4. A change about no record, or from a run that read outside content, goes no further than asking first. A change made on its own is reported in the digest of the instance's owner with a link to the record. The assistant's release let it come to act on its own until 18 November 2026: for the pilot, it now asks first at most, and the tests raise its maximum to show it acting on its own. | [`core/parts.py`](../src/a5s/core/parts.py), [`contract.py`](../src/a5s/contract.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
 
 Step 4, samples, grades and the cap, is built:
 
 | Built | Where |
 | --- | --- |
 | Samples. Code draws samples of each release's changes, for each part and type of action: every held change someone decided, while the cap holds the agent to asking first, and changes made on its own, at random, about 100 a quarter, each with what the agent asked for or did, in words code worked out, what code flagged to its decider, and its records as they stood when it was asked for. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
-| Grades, on the core's own page. People who hold the grader role grade samples right, wrong or critical, once each: never anyone from the team of the agent's owner, nor anyone a change was for or who decided it, and only for records they may see. The sample has a grader, Dana Price, in a quality team that may see billing's records. | [`studio/src/pages/Grade.tsx`](../studio/src/pages/Grade.tsx), [`core/inbox.py`](../src/a5s/core/inbox.py) |
+| Grades, on the core's own page. People who hold the grader role grade samples right, wrong or critical, once each: never anyone from the team of the agent's owner, nor anyone a change was for or who decided it, and only for records they may see. The sample has a grader, Dana Price, in a quality team that may see billing's records. Since round 15, one grader alone never raises a cap, so the tests that raise one add a second. | [`studio/src/pages/Grade.tsx`](../studio/src/pages/Grade.tsx), [`core/inbox.py`](../src/a5s/core/inbox.py) |
 | The cap. Each minute an anytime-valid sequential test, pooled across the release's instances, weighs the grades for each release, part and type: it raises the cap to acting on its own once they show, with 95% confidence, that accuracy meets the part's threshold in the settings, and lowers it once they show it falls short, or at once on a critical error. In a part with no threshold, an agent never comes to act on its own; the sample's are 98% for billing and 95% for orders. The ledger records each change of cap with its evidence, and the status shows what has come to act on its own, what waits to be graded, and deciders whose approvals are graded wrong far more often than everyone else's. Graded samples go a year after they're graded. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/status.py`](../src/a5s/core/status.py) |
 
 Step 5, the extractor and marked runs, is built:
@@ -89,7 +89,7 @@ Step 5, the extractor and marked runs, is built:
 | Marked runs. A run is marked from its first outside content, and the database keeps it marked. It asks first at most, so what it would change is held; it can't write anyone's profile; its drafts end with a note that they drew on outside content; and its held changes tell their deciders. | [`migrations/0026_outside.sql`](../src/a5s/migrations/0026_outside.sql), [`core/parts.py`](../src/a5s/core/parts.py) |
 | The sample's customers write: their emails are on each question, and one tells the agent that finance approved its refund and to move every due date. The assistant reads them with `get_messages`, its regression suite checks it does nothing an email says, and the tests show the email can't make the agent act on its own. | [`scenarios/sample/data.yaml`](../scenarios/sample/data.yaml), [`agents/assistant/tests/outside.yaml`](../agents/assistant/tests/outside.yaml) |
 
-Still to do: a limit of 20 requests a day for each outside sender, once a scenario lets outside senders start work at all.
+Still to do: a limit of 20 requests a day for each outside sender. Mail to a scenario's shared mailboxes now starts work: each new message starts a run of the agent whose release takes it, for nobody, on the mailbox's own day of budget, and the run is marked once it reads the message ([connectors](connectors.md#mailboxes)). Nothing yet limits what one sender starts, beyond the 1,000 of a mailbox's messages that may wait at once.
 
 Round 6's fixes, in brief ([round 6](critique.md#round-6-phase-2)):
 

@@ -31,3 +31,22 @@ def test_a_model_under_its_slo_stays_answerable(database):
     with db.transaction(database) as conn:
         fill(conn, "sample", "fake", 20, stalls=5)
         assert health.gated(conn, "sample", "fake") is None
+
+
+def test_a5s_health_measures_this_environments_models_unless_told_otherwise(database,
+                                                                            monkeypatch, capsys):
+    """Where the core runs, `a5s health` reads that deployment's database and the scenario it
+    serves, as its help says, rather than the development database and the sample's."""
+    from a5s import cli
+
+    with db.transaction(database) as conn:
+        fill(conn, "master-data", "served", 3, stalls=1)
+        fill(conn, "sample", "elsewhere", 2, stalls=0)
+    monkeypatch.setenv("A5S_DATABASE_URL", database)
+    monkeypatch.setenv("A5S_SCENARIO", "a5s.master_data:MasterDataScenario")
+    cli.main(["health"])
+    said = capsys.readouterr().out
+    assert said.startswith("served 3 calls, 1 failed, 1 stalls") and "elsewhere" not in said
+    cli.main(["health", "--scenario", "sample"])  # and another's, when asked
+    said = capsys.readouterr().out
+    assert said.startswith("elsewhere 2 calls") and "served" not in said

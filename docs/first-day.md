@@ -12,7 +12,7 @@ a5s assumes no cloud and no identity provider. Each step says what it needs, and
 | --- | --- | --- |
 | A Kubernetes cluster to install into, with a budget and an alert at 80% where it costs money: a cloud's managed Kubernetes, or the organisation's own | The platform owner | a5s runs from one Helm chart on any cluster ([the chart](../deploy/helm/README.md)) [TBC: the budget] |
 | A test account in the identity provider for each sample person who'll sign in: at least Ana, an instance approver, and Ben | The identity provider's administrator | The directory finds each person by the id the provider sends |
-| A chat for the test: a Matrix homeserver of the organisation's own, or Teams in a test tenant with leave to upload custom apps | The chat's administrator | People reach the agents where they already talk; the web chat needs nothing more |
+| A chat for the test: a Matrix homeserver of the organisation's own, Teams in a test tenant with leave to upload custom apps, or a Slack workspace where the organisation may install apps | The chat's administrator | People reach the agents where they already talk; the web chat needs nothing more |
 | A host name, such as `a5s-test.example.org`, and a TLS certificate for it | The platform owner | People reach the pages, and a chat the bots, only over HTTPS |
 | `DEEPSEEK_API_KEY` and `QWEN_API_KEY` in the repository's secrets (Settings, Secrets and variables, Actions) | The repository's administrator | The release runs each agent's regression suite against them, on the sample's made-up data only |
 
@@ -94,7 +94,7 @@ The sample's settings stay signed by its made-up people, whose private keys are 
 
 ## 6. Install
 
-The Secret, each part's key apart, as [`deploy/helm/test.sh`](../deploy/helm/test.sh) makes it. The setup job gives each part's role its password:
+The Secret, each part's key apart, as [`deploy/helm/test.sh`](../deploy/helm/test.sh) makes it, with an operators' token apart from the service token ([runbooks](runbooks.md#the-operators-token)). The setup job gives each part's role its password:
 
 ```sh
 random() { head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32; }
@@ -108,6 +108,7 @@ done
 kubectl create namespace a5s
 kubectl -n a5s create secret generic a5s "$@" \
   --from-literal=service-token="$(random)" --from-literal=seal-keys="$(random)" \
+  --from-literal=operator-token="$(random)" \
   --from-literal=deepseek-api-key="<for the sample's made-up data only>"
   # and the chat's keys, from step 3, and the store's, from step 4, if it takes keys
 helm install a5s deploy/helm/a5s -n a5s -f test-values.yaml  # the values from steps 2 to 5

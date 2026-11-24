@@ -62,7 +62,8 @@ def test_an_answer_is_compared_case_insensitively():
     assert canaries.ask(found, canary, httpx.Client(transport=httpx.MockTransport(handler)))[0]
 
 
-def test_a_model_whose_key_isnt_set_is_skipped_not_failed(database):
+def test_a_model_whose_key_isnt_set_is_skipped_not_failed(database, monkeypatch):
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)  # wherever the tests run, it isn't set
     found = ModelConfig(alias="qwen", provider="test", api="openai",
                         base_url="https://fake.test/v1", model="qwen-1",
                         reported_model="qwen-1", key_env="QWEN_API_KEY", region="test",
