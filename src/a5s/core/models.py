@@ -19,6 +19,10 @@ class ModelUnavailable(Exception):
     pass
 
 
+class ModelTimedOut(ModelUnavailable):
+    """A provider that didn't answer in time: asked again, it would take as long again."""
+
+
 # What a5s forwards to a provider. Anything else, such as a provider's own web search,
 # is never sent, so no provider reads outside content on a run's behalf.
 _FIELDS = {
@@ -72,7 +76,10 @@ def _for_minutes(block: Any) -> Any:
     return out
 
 
-def forward(model: ModelConfig, body: dict[str, Any], http: httpx.Client) -> tuple[int, dict]:
+def forward(model: ModelConfig, body: dict[str, Any], http: httpx.Client,
+            timeout: float | None = None) -> tuple[int, dict]:
+    """Send a call to its model's provider, waiting at most `timeout` seconds, or the
+    provider timeout, for its answer."""
     key = model.api_key
     if model.key_env and not key:
         raise ModelUnavailable(f"{model.key_env} isn't set")
@@ -85,7 +92,9 @@ def forward(model: ModelConfig, body: dict[str, Any], http: httpx.Client) -> tup
         headers = {"anthropic-version": "2023-06-01", **({"x-api-key": key} if key else {})}
     try:
         response = http.post(url, json=payload, headers=headers,
-                             timeout=config.PROVIDER_TIMEOUT.read())
+                             timeout=timeout or config.PROVIDER_TIMEOUT.read())
+    except httpx.TimeoutException as exc:
+        raise ModelTimedOut(f"{model.provider} didn't answer in time: {exc}") from exc
     except httpx.HTTPError as exc:
         raise ModelUnavailable(f"{model.provider} couldn't be reached: {exc}") from exc
     try:

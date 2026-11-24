@@ -21,6 +21,7 @@ from typing import Any
 import anthropic
 import httpx
 import httpx2  # what the model providers' SDKs take in httpx's place
+import openai
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
 from deepagents.backends import StateBackend
 from deepagents.backends.utils import create_file_data
@@ -173,9 +174,12 @@ class WrongPool(Exception):
 
 
 def stopped(exc: Exception) -> Exception | None:
-    """What the model gateway's refusal means for the run, if it's one a5s says in its words."""
+    """What the model gateway's refusal means for the run, if it's one a5s says in its words.
+    A call the gateway didn't answer in the worker's wait counts as its model not answering,
+    so the run can go to the next one (round 16, A7)."""
     status = getattr(exc, "status_code", None)
-    if status in (502, 503):
+    if status in (502, 503) or isinstance(exc, (openai.APITimeoutError,
+                                                anthropic.APITimeoutError)):
         return ModelDown(str(exc))
     if status == 429 and "budget" in str(exc):
         return BudgetSpent(str(exc))

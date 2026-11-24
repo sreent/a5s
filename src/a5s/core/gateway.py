@@ -185,6 +185,10 @@ STILL = ("{key}, which you asked for, waits still for {names} to decide it, afte
 # a5s's notes on what an agent left for people to check before it goes outside (round 15)
 CHECKED = "Before anyone sends what the {agent} left in {where}: {note}"
 
+# Seconds of the worker's wait for a model call that a5s keeps for itself: the chain of
+# models it tries stops this long before, so its answer, or why none came, arrives in time
+CHAIN_MARGIN = 10.0
+
 WHY = {  # why an agent's run didn't get its message through, in words people read
     "model unavailable": "its model isn't answering", "budget spent": "it has used its budget "
     "for today", "reply denied": "a5s didn't let its message through", "abandoned": "it stopped "
@@ -849,8 +853,8 @@ class Gateway:
         opening = Opening(
             trigger={"kind": "message", "inbound": inbound,
                      "channel": message["channel"] if message else None, "sender": sender,
-                     "topic": topic, **({"conversation": group, "asked_by": asked_by}
-                                        if group else {})},
+                     "topic": topic, "tried_models": tried,  # before it, for its close
+                     **({"conversation": group, "asked_by": asked_by} if group else {})},
             acts_for=acts_for, reasons=[problem] if problem else [],
             args={"channel": message["channel"] if message else None, "inbound": inbound},
             used=problem is not None and "already" in problem)
@@ -873,11 +877,12 @@ class Gateway:
                       shadowed: dict | None) -> str | None:
         """Why a shadow's model may not read the conversation of the instance it shadows: it
         must be approved for the settings' class of data, and for each class of field the
-        live instance's model may read, which that conversation may hold."""
+        live instance's model may read, which that conversation may hold: the models the
+        settings put each on, or else their releases' (round 16)."""
         mine = self.definitions.get(inst["definition"])
         theirs = self.definitions.get(shadowed["definition"]) if shadowed else None
-        model = self.models.get(mine.model) if mine else None
-        live = self.models.get(theirs.model) if theirs else None
+        model = self.models.get(inst.get("model") or (mine.model if mine else ""))
+        live = self.models.get((shadowed or {}).get("model") or (theirs.model if theirs else ""))
         if settings is None or model is None or live is None:
             return f"{inst['id']}'s model, or that of {inst['shadows']}, isn't one a5s knows"
         needed = {settings.data_class} | (set(settings.classified.values())
@@ -903,7 +908,7 @@ class Gateway:
         acts_for = given.pop("acts_for")
         opening = Opening(trigger=given, acts_for=acts_for, reasons=[],
                           args={"shadows": inst["shadows"], "live": live})
-        shadowed = conn.execute("select definition from instances where id = %s",
+        shadowed = conn.execute("select definition, model from instances where id = %s",
                                 (inst["shadows"],)).fetchone()
         if why := self._unfit_shadow(settings, inst, shadowed):  # what its run is given
             opening.reasons.append(why)  # of the live run's conversation is for its model too
@@ -1321,6 +1326,7 @@ class Gateway:
         approves; the rest are never called. With every candidate refused, the run keeps its
         own model, whose breaker says so again at each call."""
         refused = set(self.breakers.open())  # choosing never spends a breaker's trial:
+        own = self.models.get(row["model"])
         for alias in dict.fromkeys([row["model"], *definition.fallbacks]):  # each call still does
             if alias in (tried or []) or alias in refused:
                 continue
@@ -1329,8 +1335,11 @@ class Gateway:
             model = self.models.get(alias)
             if model is None:
                 continue
+            if own is not None and alias != row["model"] and not set(
+                    own.data_classes) <= set(model.data_classes):  # never sees more than its
+                continue  # own model may, as each call's fallback doesn't (round 16, A1)
             return model
-        return self.models.get(row["model"])
+        return own
 
     def hidden_from(self, conn: db.Connection, row: dict) -> set[str]:
         """The fields of a class a run's model isn't approved for, which it never sees: for a
@@ -1698,8 +1707,11 @@ def create_app(gw: Gateway) -> FastAPI:
         alone to write, so no other part puts words in anyone's mouth (round 15, F10)."""
         said = conn.execute("select person, text, conversation, members from inbound where "
                             "id = %s", (opening.trigger["inbound"],)).fetchone()
-        if said is None:
-            return
+        if said is None or conn.execute(
+                "select 1 from turns t join runs r on r.id = t.run_id where t.role = 'person' "
+                "and r.trigger->>'inbound' = %s and r.id <> %s::uuid limit 1",
+                (opening.trigger["inbound"], run)).fetchone():
+            return  # an earlier run of the message wrote them: its next model's reads them
         group = said["conversation"] if groups.of(said["conversation"]) else None
         members = list(said["members"] or []) if group else None
         topic = opening.trigger.get("topic", topics.GENERAL)
@@ -1786,8 +1798,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 definition = gw.definitions.get(inst["definition"]) if inst else None
                 tried_models = list(row["trigger"].get("tried_models") or [])
                 keep_open = len(tried_models) < len((definition.fallbacks if definition else [])
-                                                    or [])  # its release names models not tried:
-                # the scheduler tries the message again on the next, which then takes it
+                                                    or []) and not did_any(conn, run_id)
+                # its release names models not tried, and the run wrote, changed and sent
+                # nothing yet: the scheduler tries the message again on the next, which then
+                # takes it. One that did something isn't run again, as it may do it twice
+                # (docs/runbooks.md; round 16, A2)
             if not keep_open and row["trigger"].get("inbound"):
                 conn.execute("update inbound set answered_at = now() where id = %s "
                              "and answered_at is null", (row["trigger"]["inbound"],))
@@ -1797,15 +1812,20 @@ def create_app(gw: Gateway) -> FastAPI:
             if ended == "model unavailable" and (row["trigger"] or {}).get("kind") == events.KIND:
                 tried(conn, run_id, row["trigger"])  # the nested function, not the list above
         push(sends)
-        return {"closed": run_id}
+        return {"closed": run_id, "kept": keep_open}
+
+    def did_any(conn: db.Connection, run_id: str) -> bool:
+        """Whether a run wrote, changed or sent anything, or asked to: a tool it was let call,
+        or that a5s held for a decider, that does more than read."""
+        return any(not shadow_may(r["action"]) for r in conn.execute(
+            "select action from ledger where run_id = %s and kind = 'tool' and decision in "
+            "('allow', 'hold')", (run_id,)))
 
     def tried(conn: db.Connection, run_id: str, trigger: dict) -> None:
         """An event whose run its model didn't answer, and which wrote, changed and sent
         nothing, waits to be tried again, as one that can't be worked on now does, rather
         than being lost, such as a customer's mail with no reply (round 15)."""
-        if not any(not shadow_may(r["action"]) for r in conn.execute(
-                "select action from ledger where run_id = %s and kind = 'tool' and decision in "
-                "('allow', 'hold')", (run_id,))):
+        if not did_any(conn, run_id):
             events.again(conn, str(trigger.get("event")), run_id)
 
     def slice_closed(conn: db.Connection, run_id: str, row: dict,
@@ -2867,12 +2887,14 @@ def create_app(gw: Gateway) -> FastAPI:
         }
 
     def record(entry: dict) -> bool:
-        """Record what happened after a call was made. If that fails, the call still happened."""
+        """Record what happened after a call was made. If that fails, the call still happened.
+        A model's day counts only calls a5s sent it: one it skipped, as its breaker was open or
+        the gate stopped it, is in the ledger, not in how the model did (round 16, A6)."""
         try:
             with db.transaction(gw.url) as conn:
                 ledger.append(conn, entry)
-                if entry.get("kind") == "model" and "of" in entry:
-                    outcome = entry.get("outcome") or {}
+                outcome = entry.get("outcome") or {}
+                if entry.get("kind") == "model" and "of" in entry and not outcome.get("skipped"):
                     health.record(conn, gw.scenario.name, entry["action"],
                                   outcome.get("status", 500), outcome.get("seconds", 0))
             return True
@@ -4994,32 +5016,43 @@ def create_app(gw: Gateway) -> FastAPI:
         # re-issued in the same run, so nothing of the run is lost, and each attempt is in
         # the ledger, by the call's sequence. The worker sees only the last attempt's answer.
         tried_here: list[str] = []  # this call's attempts, in order
+        timed_out: set[str] = set()  # asked again, a model that timed out takes as long again
         recorded, status, data = None, 503, models.error_body(
             api, "no model in its chain can answer this call", "model_unavailable")
+        # The whole chain answers within the worker's wait for this call, so the worker hears
+        # why it stopped, and its run can go to the next model, rather than giving up on it
+        # with a timeout of its own (round 16, A7)
+        deadline = time.monotonic() + max(1.0, config.WORKER_TIMEOUT.read() - CHAIN_MARGIN)
         # Its own model twice: a provider's moment of slowness is asked again before the next
         # model is tried, so a stall that passes costs nothing but a moment.
         for candidate in [alias, alias, *(release.fallbacks if release else [])]:
-            if tried_here.count(candidate) >= (2 if candidate == alias else 1):
+            if candidate in timed_out or tried_here.count(candidate) >= (
+                    2 if candidate == alias else 1):
                 continue
+            if (left := deadline - time.monotonic()) < 1:
+                break  # no time left in the worker's wait: it hears the last answer
             fallback = gw.models.get(candidate)
             if fallback is None or fallback.api != api:  # the worker speaks one API style
                 continue
             if model and candidate != alias and not set(model.data_classes) <= set(
                     fallback.data_classes):  # never sees more than its own model may
                 continue
-            with db.connect(gw.url) as health_conn:
+            if candidate != alias and models.screen(api, body, fallback.images)[2]:
+                continue  # an image goes only to a model approved for images (round 16, A3)
+            with db.transaction(gw.url) as health_conn:  # pooled, as every call is
                 if gate := health.gated(health_conn, gw.scenario.name, candidate):
                     log.warning("%s", gate)
                     record({"kind": "model", "action": candidate, "run": row["run"],
                             "instance": row["id"], "decision": "record", "of": seq,
-                            "outcome": {"status": 503, "reported_model": None,
-                                        "seconds": 0, "usage": None}})
+                            "outcome": {"status": 503, "reported_model": None, "seconds": 0,
+                                        "usage": None, "skipped": "stopped"}})
                     tried_here.append(candidate)
                     continue
             if not gw.breakers.allow(candidate):  # failed in a row lately: not called for a while
                 record({"kind": "model", "action": candidate, "run": row["run"],
                         "instance": row["id"], "decision": "record", "of": seq,
-                        "outcome": {"status": 503, "reported_model": None, "usage": None}})
+                        "outcome": {"status": 503, "reported_model": None, "usage": None,
+                                    "skipped": "breaker open"}})
                 tried_here.append(candidate)
                 continue
             with traces.span(f"chat {candidate}", **{
@@ -5028,7 +5061,11 @@ def create_app(gw: Gateway) -> FastAPI:
                     "a5s.instance": row["id"]}) as current:
                 started = time.perf_counter()
                 try:
-                    status, data = models.forward(fallback, forwarded, gw.http)
+                    status, data = models.forward(fallback, forwarded, gw.http, timeout=min(
+                        config.PROVIDER_TIMEOUT.read(), left))
+                except models.ModelTimedOut as exc:
+                    timed_out.add(candidate)
+                    status, data = 503, models.error_body(api, str(exc), "model_unavailable")
                 except models.ModelUnavailable as exc:
                     status, data = 503, models.error_body(api, str(exc), "model_unavailable")
                 seconds = time.perf_counter() - started
@@ -5063,6 +5100,12 @@ def create_app(gw: Gateway) -> FastAPI:
             tried_here.append(candidate)
             if status < 400:
                 break
+        if status < 400 and tried_here and tried_here[-1] != alias and not recorded:
+            # which models answered decides what the run's changes may do on their own
+            # (answered), so another model's answer goes only once that's recorded (round 16)
+            status, data = 503, models.error_body(
+                api, f"a5s couldn't record that {tried_here[-1]} answered, so it doesn't pass "
+                "its answer on", "model_unavailable")
         tokens = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
         if tokens and release is not None:
             try:
