@@ -4,8 +4,10 @@ name: nightly
 # release, put them to work and use them in the chat, as in CI, but with the agents, the sandbox
 # and the judges on DeepSeek rather than the stand-in's script, on the scenarios' synthetic data
 # alone. A step then waits for whatever the agent answers, and the walk-through checks what came
-# of it, a change held or made, rather than its words (tests/walkthrough.py). Each night, and
-# when asked.
+# of it, a change held or made, rather than its words (tests/walkthrough.py). Then the drift
+# canaries, on each approved model whose key is here (config/canaries.yaml), and the assistant
+# answering in Thai someone who writes in Thai (agents/assistant/tests/language.yaml), whatever
+# the walk-throughs found. Each night, and when asked.
 
 on:
   schedule:
@@ -46,3 +48,8 @@ jobs:
           tests/test_walkthrough_resolver.py tests/test_walkthrough_joiner.py
           tests/test_walkthrough_delivery.py tests/test_walkthrough_master_data.py
           tests/test_walkthrough_quality.py
+      - name: The drift canaries, and the assistant answering Thai in Thai, on DeepSeek
+        if: ${{ !cancelled() }}  # what drifts behind a model's name shows, whatever came before
+        run: >-
+          uv run pytest -m live tests/test_canaries.py tests/test_agents.py
+          -k "canary or Thai"

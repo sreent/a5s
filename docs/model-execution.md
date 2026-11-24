@@ -2,7 +2,8 @@
 
 **Status:** design for review. Some of it is built: call-level replay (`core/gateway.py`'s
 `calling`); drift canaries (`config/canaries.yaml`, `core/canaries.py`), which `a5s canaries`
-runs when asked, though no workflow runs them yet; a reliability ledger of each model's day,
+runs when asked, and the nightly workflow runs on each approved model whose key it has; a
+reliability ledger of each model's day,
 whose SLO gate stops a model until the release approver puts it back with `a5s health
 --restore`, signed in, through the core, which records it in the ledger (`core/health.py`),
 and a health page that shows both (`/studio/health`); and a

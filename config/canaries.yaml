@@ -1,6 +1,7 @@
 # A fixed, versioned set of cases every approved model must answer exactly: what drifts
 # behind a model's name shows here first, since the providers offer no dated versions to pin.
-# Run with `a5s canaries` whenever the approved models change; no workflow runs it yet. A canary
+# The nightly workflow runs them on each approved model whose key it has (tests/test_canaries.py),
+# and `a5s canaries` runs them when asked, as whenever the approved models change. A canary
 # is one conversation with one exact expected answer, compared case-insensitively, word for word.
 canaries:
   - name: exact-echo
