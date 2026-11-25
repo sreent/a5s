@@ -279,7 +279,7 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     page = browser.new_page()
     page.goto(asked["link"])  # signed in to the studio, to read it first
     page.wait_for_selector("#changes >> text=Chen Wei", timeout=30000)
-    assert page.inner_text("#me").endswith("Ana Ortiz")
+    assert page.inner_text("#me .me-name") == "Ana Ortiz"  # and the roles they hold under it
     # On a card: when it was proposed, nobody having asked for it in the settings app, where it
     # stands, what it changes, the one marked as widening what agents do, and what's missing
     assert page.inner_text("#asker").startswith("Proposed ")

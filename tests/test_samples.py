@@ -255,7 +255,7 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     page = browser.new_page()
     page.goto(f"{approving}/studio/grade")
     page.wait_for_selector("[data-sample] >> text=Q-1002", timeout=30000)
-    assert page.inner_text("#me").endswith("Dana Price")
+    assert page.inner_text("#me .me-name") == "Dana Price"  # and the roles they hold under it
     # On the card decisions are made on: who did it, what it did in code's words, and how it went
     sample = page.locator("[data-sample]")
     assert sample.locator(".who-name").inner_text() == "The assistant asked"

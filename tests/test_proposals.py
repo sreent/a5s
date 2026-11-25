@@ -326,7 +326,7 @@ def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provide
     page = browser.new_page()
     page.goto(f"{approving}/studio/decide?proposal={p['digest']}")  # signed in, to see what waits
     page.wait_for_selector(".approval >> text=Q-1002", timeout=30000)
-    assert page.inner_text("#me").endswith("Ana Ortiz")
+    assert page.inner_text("#me .me-name") == "Ana Ortiz"  # and the roles they hold under it
     assert "max_age" not in provider.asked[-1]  # seeing what waits needs no fresh sign-in
     # On its card: who asks and for whom, what it does in code's words, and what to know
     assert page.inner_text(".approval .who-name") == "The assistant asks"
