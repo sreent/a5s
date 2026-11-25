@@ -304,41 +304,48 @@ def _models(cfg: Config, scenario: Any) -> list[Found]:
 
 
 def _copies(cfg: Config, development: bool) -> list[Found]:
-    """Whether the ledger's locked copies can be read from here, and how the copier is doing."""
+    """How the copier is doing, as it records it in the database, and, where the store is
+    named here, whether the ledger's locked copies can be read from here. The chart names the
+    store for the copier and `a5s restore` alone, so the core's settings may not."""
     store = build.store(cfg)
-    if store is None:
-        return [Found("The ledger's copies", "look" if development else "fix",
-                      "The ledger isn't copied to locked storage, as A5S_ANCHOR_STORE isn't "
-                      "set: a deployment sets it, such as s3://bucket/a5s, and runs the copier, "
-                      "`a5s anchor --every` (docs/runbooks.md#the-ledgers-copies-stop).")]
+    copying = "(docs/runbooks.md#the-ledgers-copies-stop)"
     try:
         with db.transaction(cfg.database_url) as conn:
-            lacking = anchor.behind(conn, store)
+            lacking = anchor.behind(conn, store) if store is not None else None
             state = anchor.state(conn)
     except Exception as exc:  # noqa: BLE001 - the store's own error, whatever its kind of storage
         return [Found("The ledger's copies", "fix",
                       f"a5s can't read the ledger's copies at {cfg.anchor_store} "
                       f"({type(exc).__name__}): check that the core reaches the store, and its "
-                      "credentials where the core runs (docs/runbooks.md#the-ledgers-copies-stop).")]
+                      f"credentials where the core runs {copying}.")]
     if lacking:
         return [Found("The ledger's copies", "fix", _sentence(anchor.RESTORED.format(
             first=lacking[0], last=lacking[1])))]
     if state is None:
-        return [Found("The ledger's copies", "fix", "No copier has run here: run `a5s anchor "
-                                                    "--every`, as the chart's anchor part does.")]
+        if store is None and development:  # which copies nothing to locked storage
+            return [Found("The ledger's copies", "look",
+                          "The ledger isn't copied to locked storage, as no copier has run "
+                          "here: a deployment sets A5S_ANCHOR_STORE, such as s3://bucket/a5s, "
+                          f"and runs the copier, `a5s anchor --every` {copying}.")]
+        return [Found("The ledger's copies", "fix",
+                      "No copier has run here, so the ledger has no locked copies: run "
+                      "`a5s anchor --every` with A5S_ANCHOR_STORE, as the chart's anchor part "
+                      f"does {copying}.")]
     if state["stopped"]:
         return [Found("The ledger's copies", "fix",
                       _sentence(f"The copier has stopped, until someone acts: {state['problem']} "
-                                "(docs/runbooks.md#the-ledgers-copies-stop)"))]
+                                f"{copying}"))]
     age = state["copied_seconds_ago"]
     if state["problem"] or (age is not None and age > COPIES_LATE and state["behind"]):
         why = state["problem"] or f"the newest copy is {age / 60:.0f} minutes old"
         return [Found("The ledger's copies", "look",
-                      _sentence(f"The copier is behind: {why} (docs/runbooks.md#the-ledgers-"
-                                "copies-stop)"))]
+                      _sentence(f"The copier is behind: {why} {copying}"))]
+    copied = "nothing to copy yet" if age is None else f"copied {age / 60:.0f} minutes ago"
+    where = (f"its copies at {cfg.anchor_store} can be read from here" if store is not None
+             else "it records that here, and copies to the store the copier's settings name")
     return [Found("The ledger's copies", "ok",
-                  f"The ledger's copies at {cfg.anchor_store} can be read from here, and the "
-                  f"copier is {state['behind']} entries behind.")]
+                  f"The copier is at work, {copied}, {state['behind']} entries behind: "
+                  f"{where}.")]
 
 
 def _agents(names: set[str]) -> str:

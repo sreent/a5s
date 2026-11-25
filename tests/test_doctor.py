@@ -98,8 +98,8 @@ def test_outside_development_a_release_nobody_approved_is_to_fix(long_token, sta
     assert release.state == "fix" and "isn't approved here" in release.said
     assert "so the core runs nothing" in release.said and "`a5s release sign`" in release.said
     [copies] = found("The ledger's copies")  # which a deployment keeps
-    assert copies.state == "fix" and "A5S_ANCHOR_STORE isn't set" in copies.said
-    assert "`a5s anchor --every`" in copies.said
+    assert copies.state == "fix" and copies.said.startswith("No copier has run here")
+    assert "`a5s anchor --every` with A5S_ANCHOR_STORE" in copies.said
     with pytest.raises(SystemExit) as stopped:
         cli.main(["doctor"])
     assert stopped.value.code == 1
@@ -163,3 +163,18 @@ def test_a_database_with_no_settings_in_force_says_how_to_apply_them(database, m
     [reached] = found("The database")
     assert reached.state == "fix" and "from a later release of a5s" in reached.said
     assert [f.state for f in found("The release")] == ["skip"]
+
+
+def test_the_copiers_record_is_read_where_the_store_isnt_named_as_the_charts_core_has_it(
+        long_token, stack, monkeypatch):
+    from a5s.core import anchor
+
+    monkeypatch.setattr(stack.gateway, "cfg", replace(stack.gateway.cfg, development=False))
+    deployed(monkeypatch, stack, A5S_DEVELOPMENT=None)  # and no A5S_ANCHOR_STORE, as the chart
+    with db.transaction(stack.admin) as conn:  # gives the core: the copier, which has it,
+        anchor.went(conn, 0)  # records that it copied
+    [copies] = found("The ledger's copies")
+    assert copies.state == "ok" and copies.said.startswith("The copier is at work, copied 0 minutes")
+    anchor.stuck(stack.admin, "the store refused to lock entry 7", stopped=True)
+    [copies] = found("The ledger's copies")
+    assert copies.state == "fix" and "the store refused to lock entry 7" in copies.said
