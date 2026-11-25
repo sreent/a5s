@@ -94,7 +94,11 @@ def checked() -> list[Found]:
 def _credentials(today: date) -> list[Found]:
     """The credentials A5S_EXPIRES notes: each expired, to fix, and each expiring within 30
     days, to look at, as the status says (docs/runbooks.md#credentials-that-expire)."""
-    noted = config.EXPIRES.read() or {}
+    try:
+        noted = config.EXPIRES.read() or {}
+    except config.ConfigError:  # the settings' check names it, and how to write it
+        return [Found("Credentials", "skip", "Not checked, as A5S_EXPIRES can't be read: see "
+                                             "above.")]
     if not noted:
         return [Found("Credentials", "ok", "None is noted to expire in A5S_EXPIRES: note each "
                                            "that does, such as a client secret, and the status "

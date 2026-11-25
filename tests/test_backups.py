@@ -150,6 +150,14 @@ def test_the_doctor_says_whats_expired_to_fix_and_whats_soon_to_look_at(monkeypa
     assert later.state == "ok" and "the first, mcp-token-tickets, on 2028-01-01" in later.said
 
 
+def test_a_day_the_doctor_cant_read_is_named_among_the_settings_not_a_crash(monkeypatch):
+    monkeypatch.setenv("A5S_EXPIRES", "registry-secret=May 2027")
+    found = doctor.checked()
+    assert any(f.check == "Settings" and f.state == "fix" and "A5S_EXPIRES" in f.said
+               for f in found)
+    assert [f.state for f in found if f.check == "Credentials"] == ["skip"]
+
+
 def test_the_chart_gives_the_core_the_days_its_credentials_expire():
     held = {doc["metadata"]["name"]: env.get("value")
             for doc in rendered("ci-values.yaml", sets=("expires.registry-secret=2027-05-01",
