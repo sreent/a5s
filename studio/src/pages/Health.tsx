@@ -13,8 +13,8 @@ export function HealthPage() {
   useEffect(() => {
     get<HealthNow>("/health/api").then(setNow).catch((e) => setError(String(e)));
   }, []);
-  if (error) return <><PageHead title={t("Model health")} /><Waiting error={error} /></>;
-  if (!now) return <><PageHead title={t("Model health")} /><Waiting /></>;
+  if (error) return <><PageHead title={t("Model health")} about={t("Each model's day, measured: what its calls did, and what its canaries scored.")} /><Waiting error={error} /></>;
+  if (!now) return <><PageHead title={t("Model health")} about={t("Each model's day, measured: what its calls did, and what its canaries scored.")} /><Waiting /></>;
   return (
     <div className="page">
       <PageHead title={t("Model health")}
