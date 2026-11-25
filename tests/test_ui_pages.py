@@ -65,7 +65,9 @@ def test_each_page_opens_signed_in_beside_a_sidebar(seen, approving, browser, na
     if name in LISTED:
         page.wait_for_selector("#pages a[aria-current=page]", timeout=30000)
         assert page.locator("#pages a[aria-current=page]").get_attribute("href") == AT.get(name, f"/{name}/")
-        assert page.locator("#me").inner_text().endswith("Ana Ortiz")
+        me = page.locator("#me").inner_text()  # who she is, and her roles, leading to what each lets her do
+        assert "Ana Ortiz" in me and "Instance approver · Owner of billing" in me, me
+        assert page.locator("#me a").get_attribute("href") == "/studio/you"
     accessible(page)
     shot(page, name)
 
@@ -82,14 +84,15 @@ def test_the_sidebar_lists_only_the_pages_each_person_may_use(stack, approving, 
 
     # Ana approves instances and owns billing; Ben deputises for the instance, which is no role
     # of a5s's own, but sees what it spends; Chen is served; Kofi is assurance, who reads the
-    # trail. The studio's home, its catalogue and the map of what depends on what are
-    # everyone's, each as far as they see
-    assert listed("ana") == ["chat", "tasks", "notebook", "studio", "map", "decide", "settings",
-                             "admin", "spending"]
-    assert listed("ben") == ["chat", "tasks", "notebook", "studio", "map", "spending"]
+    # trail. Home, the agents and the map of what depends on what are everyone's, each as far
+    # as they see; New agent is for whoever may start one, Priya, who owns two
+    assert listed("ana") == ["home", "chat", "tasks", "notebook", "agents", "map", "decide",
+                             "settings", "admin", "spending"]
+    assert listed("ben") == ["home", "chat", "tasks", "notebook", "agents", "map", "spending"]
     assert "audit" in listed("kofi")
     assert "health" in listed("rosa")  # the release approver: whose evidence a model change is
-    assert listed("chen") == ["chat", "tasks", "studio", "map"]
+    assert listed("chen") == ["home", "chat", "tasks", "agents", "map"]
+    assert listed("priya")[:7] == ["home", "chat", "tasks", "notebook", "agents", "new", "map"]
     assert httpx.get(f"{approving}/shell/api", timeout=30).status_code == 401
 
 
@@ -144,8 +147,8 @@ def test_every_sidebar_and_the_palette_show_the_pages_as_a5s_lists_them(seen, ap
     token = provider.id_token(person="ana")
     places = httpx.get(f"{approving}/shell/api", timeout=30,
                        headers={"Authorization": f"Bearer {token}"}).json()["pages"]
-    assert [p["page"] for p in places] == ["chat", "tasks", "notebook", "studio", "map", "decide",
-                                          "settings", "admin", "spending"]
+    assert [p["page"] for p in places] == ["home", "chat", "tasks", "notebook", "agents", "map",
+                                          "decide", "settings", "admin", "spending"]
     for start in ("/studio/", "/chat/"):  # the studio's sidebar, and the plain pages' (shell.js)
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.goto(f"{approving}{start}")

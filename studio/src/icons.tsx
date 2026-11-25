@@ -2,6 +2,7 @@
 // the studio's own.
 
 const LINES: Record<string, string[]> = {
+  home: ["M4 10.5 12 4l8 6.5", "M6 9v10.5h12V9", "M10 19.5v-5h4v5"],
   chat: ["M4 5.5h16v10.5H9l-5 4z"],
   tasks: ["M10 6.5h10", "M10 12h10", "M10 17.5h10", "M4 6.5l1.5 1.5 2.5-2.5", "M4 12l1.5 1.5 2.5-2.5",
           "M4 17.5l1.5 1.5 2.5-2.5"],

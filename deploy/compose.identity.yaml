@@ -3,7 +3,12 @@
 # tokens from it the way it would check theirs:
 #   docker compose -f deploy/compose.yaml -f deploy/compose.stub.yaml \
 #     -f deploy/compose.identity.yaml up
-# then sign in to the web chat at http://127.0.0.1:8703/chat/ as ana, ben or chen.
+# then sign in to the studio at http://127.0.0.1:8703/studio/, or the web chat at /chat/, as
+# one of the sample's people, each with the roles its directory gives them: priya, who owns the
+# assistant and the watcher, to build an agent; ana, an instance approver and billing's owner,
+# to approve the settings and decide changes; rosa, the release approver; omar, orders' owner;
+# dana, a grader; kofi, assurance; noor, the data protection officer; or ben or chen, who hold
+# no roles, to work with the agents that serve them.
 # It lets people sign in with a password, A5S_IDP_PASSWORD, which a real
 # provider shouldn't allow, so it's for development and tests only.
 #

@@ -1,6 +1,8 @@
 // The sidebar every page of a5s has (webchat/shell.js), as the studio draws it: the pages the
 // signed-in person may use, named, ordered and under the headings /shell/api gives them, which
-// every sidebar and the palette take from there alone (core/shell_api.py), and who they are.
+// every sidebar and the palette take from there alone (core/shell_api.py), and who they are,
+// with the roles they hold: a5s has no administrator's mode, only roles, and its foot says which
+// someone holds, leading to the page that says what each lets them do.
 
 import { type ReactNode, useEffect, useState } from "react";
 import { get, type Place, type Shell } from "./api";
@@ -53,16 +55,24 @@ const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 
 /** A page that's one of a sidebar page's own, such as one conversation handed over, which
- * marks that page, not the studio's. */
-const WITHIN: Record<string, string> = { handover: "handovers", approve: "settings" };
+ * marks that page, the first of them this person may use: an agent's, an instance's and a run's
+ * mark Agents, and a draft New agent, or Agents for an author who may change an agent but not
+ * start one. Any other page marks Home. */
+const WITHIN: Record<string, string[]> = {
+  handover: ["handovers"], approve: ["settings"], agent: ["agents"], instance: ["agents"],
+  run: ["agents"], draft: ["new", "agents"],
+};
+
+/** The roles someone holds, as the foot says them: none is said too, as it's an answer. */
+const rolesOf = (found: Shell) =>
+  found.roles.length ? found.roles.join(" · ") : t("No roles: you work with agents");
 
 export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: boolean }) {
   const [found, setFound] = useState<Shell | null>(null);
   const page = useRoute().page;
-  // the page it marks: the one whose address this is, or whose own page this is, or else the
-  // studio, for its own pages, such as an agent's or a run's
-  const here = found?.pages.find((place) => inside(place.at)?.page === (WITHIN[page] ?? page))
-    ?.page ?? "studio";
+  // the page it marks: the one whose address this is, or whose own page this is, or else Home
+  const marks = (key: string) => found?.pages.find((place) => inside(place.at)?.page === key)?.page;
+  const here = (WITHIN[page] ?? [page]).map(marks).find(Boolean) ?? "home";
   useEffect(() => {
     if (!signedIn) return;
     shellOf().then(setFound).catch(() => setFound(null));
@@ -71,7 +81,7 @@ export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: 
     const pages = found?.pages ?? [];
     return (
       <aside className="wb-rail">
-        <a className="brand" href="/chat/" aria-label="a5s"><span className="mark">a5</span></a>
+        <Link to={{ page: "home" }} className="brand" label={t("a5s, home")}><span className="mark">a5</span></Link>
         <FindButton rail />
         <nav aria-label={t("a5s's pages")}>
           {pages.map((place) => (
@@ -80,13 +90,14 @@ export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: 
             </To>
           ))}
         </nav>
-        {found && <span className="avatar" role="img" aria-label={found.you} title={found.you}>{initials(found.you)}</span>}
+        {found && <Link to={{ page: "you" }} className="avatar" label={`${found.you}: ${rolesOf(found)}`}
+                        title={`${found.you}: ${rolesOf(found)}`}>{initials(found.you)}</Link>}
       </aside>
     );
   }
   return (
     <aside className="sidebar">
-      <a className="brand" href="/chat/"><span className="mark">a5</span><span>a5s</span></a>
+      <Link to={{ page: "home" }} className="brand"><span className="mark">a5</span><span>a5s</span></Link>
       {signedIn && <div className="find-slot"><FindButton id="find-anything" /></div>}
       <nav id="pages" aria-label={t("a5s's pages")}>
         {found && headed(found.pages).map(([heading, shown]) => (
@@ -99,7 +110,13 @@ export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: 
         ))}
       </nav>
       <div className="me" id="me">
-        {found && <><span className="avatar">{initials(found.you)}</span><span>{found.you}</span></>}
+        {found && (
+          <Link to={{ page: "you" }} title={t("What you may do in a5s, and what gave you each role")}>
+            <span className="avatar" aria-hidden="true">{initials(found.you)}</span>
+            <span className="me-who"><span className="me-name">{found.you}</span>
+              <span className="me-roles">{rolesOf(found)}</span></span>
+          </Link>
+        )}
       </div>
     </aside>
   );

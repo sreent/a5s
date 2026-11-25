@@ -48,6 +48,96 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "omar",
+      "firstName": "Omar",
+      "lastName": "Haddad",
+      "email": "omar@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "dana",
+      "firstName": "Dana",
+      "lastName": "Price",
+      "email": "dana@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "priya",
+      "firstName": "Priya",
+      "lastName": "Nair",
+      "email": "priya@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "rosa",
+      "firstName": "Rosa",
+      "lastName": "Mendes",
+      "email": "rosa@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "kofi",
+      "firstName": "Kofi",
+      "lastName": "Mensah",
+      "email": "kofi@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "noor",
+      "firstName": "Noor",
+      "lastName": "Rahman",
+      "email": "noor@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
     }
   ],
   "clients": [

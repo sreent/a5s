@@ -98,6 +98,10 @@ A tested version of a5s and its agents, with their instructions, tools and model
 
 The person who approves whatever loosens a5s, such as a release that gives an agent more tools, and who puts back a model a5s stopped. Never someone from the team that runs a5s.
 
+### Role
+
+What a5s lets someone do, such as a part's owner, an instance approver, an agent's owner or author, or a grader, given by your organisation's directory or one of its groups. a5s has no administrator's mode: what anyone sees, and may do, follows from the roles they hold, which the foot of every sidebar names, and *What you may do* explains.
+
 ### Sample
 
 A change an agent asked for or made, kept for [graders](grading.md): each change people decided while the agent still asks first, and some of those it made on its own. Grades of samples are the evidence a5s raises or lowers its [cap](#cap) from.
@@ -124,7 +128,7 @@ A name such as *person-a2b07a61013d*, the same each time, that the audit trail s
 
 ### Studio
 
-a5s's pages in the browser: your home, with what waits on you, the agents, the pages for deciding, grading and approving, and those for building agents.
+a5s's pages in the browser: Home, with your roles and what waits on you, the agents, the pages for deciding, grading and approving, and New agent, for those who may start one.
 
 ### Task
 

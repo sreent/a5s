@@ -61,6 +61,7 @@ class Home(Shape):
     waiting: list[Waiting]
     drafts: list[DraftLine]
     authoring: bool  # whether they may start a new agent: an author of one may not (round 13, B4)
+    changes: list[str]  # the agents they may draft a change to, as an owner or an author
 
 
 # The sidebar every page of a5s has (core/shell_api.py)
@@ -78,9 +79,11 @@ class Place(Shape):
 
 
 class Shell(Shape):
-    """Who signed in, and the pages they may use, in the sidebar's order."""
+    """Who signed in, the roles they hold, in words, the team that runs a5s first, and the pages
+    they may use, in the sidebar's order."""
 
     you: str
+    roles: list[str]  # none for someone who holds none, who works with the agents that serve them
     pages: list[Place]
 
 

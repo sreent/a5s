@@ -100,6 +100,11 @@ body.app {
 .me:empty { display: none; }
 .me > a { display: flex; flex: 1; align-items: center; gap: 0.6rem; min-width: 0; color: inherit; text-decoration: none; }  /* to their own page */
 .me > a:hover { color: var(--text); }
+.me-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }  /* who they are, and what they may do */
+.me-name { overflow: hidden; color: var(--text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.me-roles { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 0.78rem;
+            -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }  /* the roles they hold, or that they hold none */
+.me > a:hover .me-name { text-decoration: underline; }
 .me > button { display: grid; place-items: center; margin-inline-start: auto; padding: 0.3rem; border: 0; border-radius: var(--radius-sm);
                background: none; color: var(--muted); }  /* Sign out, by its icon: its name is its aria-label */
 .me > button:hover { background: var(--sunken); color: var(--text); }
@@ -133,7 +138,10 @@ main { flex: 1; width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 
              overflow-x: auto; }
   .brand { padding: 0.2rem 0.4rem; }
   .sidebar nav { flex-direction: row; gap: 0.15rem; }
-  .sidebar .group, .me { display: none; }
+  .sidebar .group { display: none; }
+  .me { flex: none; padding: 0 0 0 0.4rem; border: 0; }  /* their initials alone, at the row's end, still the way to their own page */
+  .me > a { position: relative; }
+  .me-who { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .sidebar nav a { position: relative; }  /* holds each name below, inside the bar's own scroll */
   .sidebar nav a span {  /* a phone shows each page's icon, and screen readers still say its name */
     position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
@@ -1943,7 +1951,8 @@ kbd { padding: 0 0.35em; border: 1px solid var(--line-control); border-radius: v
    the keys */
 button.palette-open { display: flex; align-items: center; gap: var(--space-2); width: 100%; background: var(--sunken);
                       color: var(--muted); font-weight: 400; text-align: start; }
-button.palette-open > span { flex: 1; }
+button.palette-open > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }  /* one line, in a sidebar however narrow */
+button.palette-open kbd { font-size: 0.75em; }
 
 /* Skeletons: what's loading, in the shape it will have, so nothing jumps when it comes. Still, since
    Ocean moves only what opens over the page and an agent's work under way. The region it stands in

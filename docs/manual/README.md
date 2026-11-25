@@ -21,17 +21,19 @@ Most people do more than one of these: a part's owner decides changes, approves 
 
 **Signing in.** You sign in with your organisation's own sign-in, in the chat and in the studio. What counts asks you to sign in again, afresh, for that act alone, with a second factor where your organisation asks for one, such as approving a change or a version of the settings, grading, or undoing a change. That shows the act was yours, then and there ([which acts ask](oversight.md#second-factors-and-signing-in-afresh)).
 
-**The studio's home.** `/studio/` says what waits on you, each with why it's yours and a link to where you do it: changes to decide, versions of the settings to approve, samples to grade, a release that needs your signature, people asking for your agent, and your tasks that wait for you.
+**Home.** `/studio/`, first in the sidebar, says the roles you hold, and what waits on you, each with why it's yours and a link to where you do it: changes to decide, versions of the settings to approve, samples to grade, a release that needs your signature, people asking for your agent, and your tasks that wait for you. Its *Build an agent* shows the way from a new agent to one at work, with **Start a new agent**, if you may start one, or else who may, and how to become one of them.
 
 **The sidebar.** Every page has the same sidebar, with a5s's pages under four headings. It shows only the pages your roles give you:
 
 | Heading | Page | Who sees it |
 | --- | --- | --- |
-| Work | Chat, `/chat/` | Everyone |
+| Work | Home, `/studio/` | Everyone |
+| | Chat, `/chat/` | Everyone |
 | | Handed over, `/studio/handovers` | People in a team that agents may hand conversations to |
 | | Tasks, `/studio/tasks` | Everyone |
 | | Notebook, `/studio/notebook` | An agent's owners, and the people who run its instances |
-| Build | Studio, `/studio/` | Everyone |
+| Build | Agents, `/studio/agents` | Everyone: the agents you may know of |
+| | New agent, `/studio/new` | Agents' owners and engineers, who may start one |
 | | Map, `/studio/map` | Everyone: what depends on what |
 | Decide | Decisions, `/studio/decide` | Part owners, their delegates and instance approvers |
 | | Grading, `/studio/grade` | Graders |
@@ -43,7 +45,7 @@ Most people do more than one of these: a part's owner decides changes, approves 
 | | Model health, `/studio/health` | The release approver and the team that runs a5s |
 | | Data protection, `/studio/officer` | The data protection officer |
 
-**What you may do, and why.** `/studio/you`, *What you may do*, lists each role you hold, what it lets you do, and what gave it you: your organisation's directory, or one of its groups. Roles come from there, never from a5s, and a role you lose stops working the next time you sign in.
+**Who you are, and what you may do.** a5s has no administrator's mode to switch into, or user mode to leave: what you see, and what you may do, follows from the roles you hold, and nothing else. The foot of every sidebar says who you're signed in as, and your roles, or *No roles: you work with agents*, and leads to `/studio/you`, *What you may do*, which lists each role you hold, what it lets you do, and what gave it you: your organisation's directory, or one of its groups. Roles come from there, never from a5s, and a role you lose stops working the next time you sign in.
 
 **Finding anything.** The palette opens with Ctrl+K, ⌘K on a Mac, or *Find anything* at the top of the sidebar, and finds any page, agent, instance or draft you may open, as you type, and what waits on you.
 
