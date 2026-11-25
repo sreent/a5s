@@ -587,12 +587,25 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
                     print(f"Its approvers sign it as following the release approved here last: "
                           f"`a5s release sign --follows {last}`.")
     for need in verdict.needs:
-        print(f"- It needs {releases.who(need.role)}, because {need.why}.")
+        print(_needing(sc, cfg.team, need))
     if verdict.signed_by:
         print(f"Signed by {', '.join(verdict.signed_by)}.")
     if not verdict.ok:
+        if args.what == "status":
+            print("Each signs the manifest `a5s release show` writes with their own key, `a5s "
+                  "release sign --as <them> --key <their key>`, and a ConfigMap with release.yaml "
+                  "and release.sig, named in the chart's release.approval, records it at the next "
+                  "upgrade (docs/first-day.md#6-install).")
         sys.exit("Not approved here: " + "; ".join(verdict.missing))
     print("Approved here.")
+
+
+def _needing(sc: Scenario, team: str, need: releases.Need) -> str:
+    """What a release needs of a role, and why, with whom the directory names for it."""
+    named = releases.able(sc, team, need.role)
+    who = (", ".join(f"{p.name} ({p.id})" for p in named) if named
+           else "the directory names nobody with a key for it")
+    return f"- It needs {releases.who(need.role)}, because {need.why}: {who}."
 
 
 def _as_deployed(cfg: Config, folder: Path, before: Path | None = None) -> Config:
@@ -652,7 +665,7 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
     verdict = releases.verify(raw, signatures, sc, cfg.team, before, approval, roots, ran)
     print(f"Release {yaml.safe_load(raw)['version']} of a5s, {hashlib.sha256(raw).hexdigest()}.")
     for need in verdict.needs:
-        print(f"- It needs {releases.who(need.role)}, because {need.why}.")
+        print(_needing(sc, cfg.team, need))
     if verdict.signed_by:
         print(f"Signed by {', '.join(verdict.signed_by)}.")
     if migrates := releases.migrating(before, raw):  # what rolling back past it takes

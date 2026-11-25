@@ -1,0 +1,46 @@
+# a5s on Azure: AKS, Azure Database for PostgreSQL, Entra ID and Teams, as the first day's worked
+# example makes them (docs/first-day.md#a-worked-example-azure-entra-id-and-teams). Fill each
+# <...>, and install with `helm install a5s deploy/helm/a5s -n a5s -f azure.yaml`. The Secret's
+# keys are in deploy/helm/README.md; `python3 deploy/reach-check.py` checks first that the
+# cluster reaches what a5s needs.
+
+image:  # the deployment's own image, built on the release's, by its digest (step 5)
+  repository: <registry>.azurecr.io/a5s
+  digest: sha256:<the push's digest>
+
+people:  # Entra ID (step 2)
+  oidcIssuer: https://login.microsoftonline.com/<tenant>/v2.0
+  webchatClientId: <the a5s app's client id>
+  oidcPersonClaim: oid
+  oidcDirectoryPrefix: entra
+  oidcMfa: amr:mfa  # or acrs:c1, where the test sign-in's token carries no amr
+  oidcGroupsClaim: groups
+  publicUrl: https://<host>
+
+teams:  # a bot for each agent, its secret in the Secret as teams-secret-<agent> (step 3)
+  tenantId: <tenant>
+  bots:
+    - {agent: assistant, appId: <the assistant's bot's app id>}
+    - {agent: watcher, appId: <the watcher's bot's app id>}
+
+anchor:  # a container with version-level immutability (step 4)
+  store: azure://<account>/ledger/a5s
+serviceAccounts:
+  annotations:
+    anchor: {azure.workload.identity/client-id: <the copier's identity's client id>}
+podLabels:
+  anchor: {azure.workload.identity/use: "true"}  # which AKS needs on the pod as well
+
+networkPolicies:
+  database:
+    cidrs: [<the server's address>/32]
+
+ingress:
+  enabled: true
+  className: webapprouting.kubernetes.azure.com
+  host: <host>
+  tlsSecret: <the certificate's Secret>
+
+expires:  # when each credential that expires does, so the status says so before it does
+  teams-secret-assistant: "<YYYY-MM-DD>"
+  teams-secret-watcher: "<YYYY-MM-DD>"

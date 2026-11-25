@@ -82,7 +82,9 @@ An environment of a5s's deploys from git, with Flux: a signed release deploys it
 helm install a5s deploy/helm/a5s -n a5s -f my-values.yaml
 ```
 
-`image.digest` names a release's image, by its digest. The core then opens no run until this deployment's people approve the release, as `helm` says once it's installed: each person its changes need signs the release's manifest with their own key (`a5s release sign`), and a ConfigMap with `release.yaml` and `release.sig`, named in `release.approval`, records their signatures at the next `helm upgrade`.
+[`examples`](examples) has a values file to start from for each cloud, and one for the organisation's own cluster, and [`../reach-check.py`](../reach-check.py), run in a pod in the namespace first, says whether a5s will reach what they name ([the first day](../../docs/first-day.md#before-the-day)).
+
+`image.digest` names a release's image, by its digest. The core then opens no run until this deployment's people approve the release, as `helm` says once it's installed, with the commands for each step: `a5s release status` names whom the directory gives each role the release needs, each signs the release's manifest with their own key (`a5s release sign`), and a ConfigMap with `release.yaml` and `release.sig`, named in `release.approval`, records their signatures at the next `helm upgrade`.
 
 `helm test a5s -n a5s` then runs `a5s doctor` in a pod of its own, `a5s-doctor`, with the core's settings, account and models, which the core's network policy lets reach it: `kubectl -n a5s logs pod/a5s-doctor` says what it found, and the test fails while anything needs fixing ([runbooks](../../docs/runbooks.md#start-with-a5s-doctor)). It reads, and changes nothing.
 

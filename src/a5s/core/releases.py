@@ -81,6 +81,15 @@ def who(role: str) -> str:
     return f"the {owner}'s owner" if owner != role else _PEOPLE[role]
 
 
+def able(scenario: Scenario, team: str, role: str) -> list[Person]:
+    """Whom the directory names, with a key, who could sign for a role a release needs, as its
+    check would weigh them now (Signer.can): to name them where a5s says what a release needs.
+    Whose signature counts is still the check's to say, by who the release before records."""
+    people = scenario.team(team) if role == ENGINEER else scenario.holders(role)
+    signers = _directory(scenario, team, [p.id for p in people])
+    return [p for p in people if p.id in signers and signers[p.id].can(role, team)]
+
+
 # What a release holds
 
 def _files(folder: Path, under: str, leave_out: Callable[[Path], bool] = lambda _: False) -> dict:
