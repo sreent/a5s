@@ -496,8 +496,10 @@ if [ "$keep" = 1 ]; then
   rm -f "$reply"
   cat <<EOF
 
-The stack is still running, to try. Sign in as ana, ben or chen, with the password
-A5S_IDP_PASSWORD in $env_file:
+The stack is still running, to try. Sign in with the password A5S_IDP_PASSWORD in $env_file,
+as priya to build an agent, ana to approve the settings and decide changes, or ben or chen,
+who hold no roles, to work with the agents (deploy/compose.identity.yaml lists the rest):
+  the studio:   http://127.0.0.1:8703/studio/
   the web chat: http://127.0.0.1:8703/chat/
   Matrix:       http://127.0.0.1:8008, in a Matrix app such as Element, as @ana:a5s.test, say.
                 Start a chat with @a5s-assistant:a5s.test, with encryption off.

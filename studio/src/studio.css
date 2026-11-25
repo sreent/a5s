@@ -229,9 +229,11 @@ details.sent { margin-top: 0.75rem; }
 
 /* Where the sidebar keeps the way to find anything (Find.tsx): Ocean's palette button, under the
    name, as wide as the pages beside it */
-.find-slot { padding: 0 0.6rem 0.6rem; }
+.find-slot { padding: 0 0 0.6rem; }
 @media (max-width: 760px) { .find-slot { padding: 0; } }  /* in a phone's bar, beside the pages */
 
 /* Round 14: room between what's graded, and between its buttons and what's above them */
 .shadow-grades { margin-top: var(--space-4); }
 .said-wrong-list { display: grid; gap: var(--space-4); margin-block: var(--space-3); }
+
+a.avatar { text-decoration: none; }  /* the rail's way to What you may do */

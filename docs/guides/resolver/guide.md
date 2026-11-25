@@ -56,9 +56,9 @@ The desk's resolver assistant, which it planned and never built, built in the st
 
    ![Rae, a resolver in access, asks it in the chat for a brief of INC0000001, and to post her reply to Sam. It reads the ticket and what Sam wrote, through a5s's reader, and asks to post the reply, which waits for Ola.](15-rae-a-resolver-in-access-asks-it-in-the-chat-for.png)
 
-16. Ola finds the reply waiting for her decision on her studio home. Its card says what it posts, in words a5s works out from the call, never the agent's, who asked for it, and the ticket as it stood.
+16. Ola finds the reply waiting for her decision on her studio home, and opens it. Its card says what it posts, in words a5s works out from the call, never the agent's, who asked for it, and the ticket as it stood.
 
-   ![Ola finds the reply waiting for her decision on her studio home. Its card says what it posts, in words a5s works out from the call, never the agent's, who asked for it, and the ticket as it stood.](16-ola-finds-the-reply-waiting-for-her-decision-on.png)
+   ![Ola finds the reply waiting for her decision on her studio home, and opens it. Its card says what it posts, in words a5s works out from the call, never the agent's, who asked for it, and the ticket as it stood.](16-ola-finds-the-reply-waiting-for-her-decision-on.png)
 
 17. She approves it, signed in afresh for that reply alone.
 

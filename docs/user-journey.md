@@ -12,25 +12,25 @@ The web chat uses the organisation's identity provider through OpenID Connect. a
 
 ### 2. Have a conversation
 
-The person chooses an agent and writes to it: the chat lists only the agents that serve them, once they've signed in, and names none before. A message to any other gets an answer that names nobody: to ask for it on its page in the studio, if they may know of it there, and otherwise what a5s says of an agent there isn't. Here Ana asks about `Q-1001`, and the assistant answers from the synthetic record. Each person has a conversation with the agent, not one shared with every other user. Tools and records stay within the run's permissions.
+The person chooses an agent and writes to it: the chat lists only the agents that serve them, once they've signed in, and names none before. A message to any other gets an answer that names nobody: to ask for it on its page in the studio, if they may know of it there, and otherwise what a5s says of an agent there isn't. Here Sam, of the service desk scenario, asks which tickets are about the VPN, and the agent answers from the made-up tickets. Each person has a conversation with the agent, not one shared with every other user. Tools and records stay within the run's permissions.
 
-![Ana asking the assistant about a record](images/a5s-chat.png)
+![Someone asking an agent in the web chat, and its answer from the records](guides/service-desk/17-sam-in-sales-asks-desk-helper-in-the-chat-which.png)
 
 The same agents can work through Matrix, Teams or Slack where the deployment enables them. The command line and web chat use the local channel.
 
 ### 3. Ask for longer work, then confirm it
 
-For work that needs more than one run, the agent offers a durable task and asks before starting it. Ana's answer in a later message confirms it; merely receiving the offer does not start work.
+For work that needs more than one run, the agent offers a durable task and asks before starting it. The person's answer in a later message confirms it; merely receiving the offer does not start work.
 
-![The assistant offering task T-1 before starting it](images/a5s-task-confirmation.png)
+![The agent offering task T-1, and starting it once the person says yes](guides/software-delivery/20-raj-asks-it-for-a-review-of-all-his-open-fixes-w.png)
 
 a5s then works on the task in bounded runs of its own. A fresh worker resumes from the saved plan and checkpoint after a restart, rather than depending on a process staying alive.
 
 ### 4. See progress, results and controls
 
-At `/studio/tasks`, the person sees their own tasks: each task's agent, status, plan, partial findings, result, deadline and tokens spent. Active tasks can be cancelled. Tasks that repeat appear separately, and stopping one does not cancel its already-running task.
+At `/studio/tasks`, the person sees their own tasks: each task's agent, status, plan, partial findings, result, deadline and tokens spent. A task can be cancelled until it ends, offered or blocked ones too. Tasks that repeat appear separately, and stopping one does not cancel its already-running task.
 
-![Ana's completed task with its plan, result and token use](images/a5s-task-complete.png)
+![A task on its owner's page, waiting for its first part, with what it may spend and by when](guides/software-delivery/21-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
 
 To answer a task that needs its owner, the person returns to their chat with the agent. The page is in the studio, and every page's sidebar links to it, the chat's too, but later progress needs a refresh rather than appearing automatically.
 
@@ -83,7 +83,7 @@ The studio's settings, and its pages for approving, deciding, grading, the noteb
 
 The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release, who would sign it, and its map shown as they go. They try it in [the sandbox](studio.md#the-sandbox), a deployment of its own, as one of the scenario's made-up people, and see what it answered, each call it made with the policy's decision, and what its model was sent. What they said there, they can keep as one of its test cases, and they run its cases there, as its suite would, to see which pass. They [publish it](studio.md#publishing) as a pull request to the agents' repository, which says who must sign its release: they open it themselves, on whichever git host, with its folder and the words the page gives, or, where a GitHub App is set up for it, a5s opens it on GitHub as them.
 
-Once it's released and no instance runs it, its page offers its owners to put it to work: the studio's settings open with a form for its first instance, the agent chosen, for a few people, reading only or asking first, which its part's owner approves as any version of the settings.
+Once it's released and no instance runs it, its page offers its owners to put it to work: the studio's settings open with a form for its first instance, the agent chosen, for a few people, reading only or asking first, which the owner of every part an instance in that version works in approves, as any version of the settings.
 
 A draft's page leads with that way as a path, from shaping and trying it to publishing it, its release signed, putting it to work and watching it, each stage marked done, to do now, or later, with the one thing to do next. It follows the draft past publishing: once the release here holds it as it is, the path says it's released and deployed, and leads to the agent's page, to put it to work, then to watch it.
 

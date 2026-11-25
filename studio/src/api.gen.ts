@@ -718,6 +718,7 @@ export type Home = {
   waiting: Waiting[];
   drafts: DraftLine[];
   authoring: boolean;
+  changes: string[];
 };
 
 // What a version would have done differently in the last weeks, decided again from the
@@ -1337,9 +1338,11 @@ export type Shadows = {
   shadows: ShadowFigures[];
 };
 
-// Who signed in, and the pages they may use, in the sidebar's order.
+// Who signed in, the roles they hold, in words, the team that runs a5s first, and the pages
+// they may use, in the sidebar's order.
 export type Shell = {
   you: string;
+  roles: string[];
   pages: Place[];
 };
 

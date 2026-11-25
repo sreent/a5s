@@ -84,6 +84,14 @@ Master data's assistant, built again from nothing in the studio, as mdg-helper, 
 
    ![Raf gives it what his next request lacks. Now it acts on its own there, a5s makes the correction itself, through SAP, and tells him; Mo hears of it in his daily digest.](22-raf-gives-it-what-his-next-request-lacks-now-it.png)
 
-23. Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made on its own.
+23. Mo, who owns material data, watches mdg-helper-material on its own page, as the owner of one of its parts: its runs and how they ended, and what it may do.
 
-   ![Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made on its own.](23-ken-of-assurance-follows-it-in-the-audit-trail-t.png)
+   ![Mo, who owns material data, watches mdg-helper-material on its own page, as the owner of one of its parts: its runs and how they ended, and what it may do.](23-mo-who-owns-material-data-watches-mdg-helper-mat.png)
+
+24. They open that run: correct_value on CR0000111, from its message to its outcome. The studio shows what it did, never what anyone said.
+
+   ![They open that run: correct_value on CR0000111, from its message to its outcome. The studio shows what it did, never what anyone said.](24-they-open-that-run-correct-value-on-cr0000111-fr.png)
+
+25. Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made on its own.
+
+   ![Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made on its own.](25-ken-of-assurance-follows-it-in-the-audit-trail-t.png)

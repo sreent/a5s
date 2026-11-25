@@ -46,6 +46,6 @@ A month-end in a made-up distributor's accounts payable, on its ERP, its supplie
 
    ![She hands it back, and the assistant answers Ravi again, knowing what was said.](16-she-hands-it-back-and-the-assistant-answers-ravi.png)
 
-17. Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger checks out.
+17. Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger's own check passes, though with no locked copies kept here, the page says nothing shows whether anyone rewrote it.
 
-   ![Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger checks out.](17-ken-of-internal-audit-follows-it-all-in-the-audi.png)
+   ![Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger's own check passes, though with no locked copies kept here, the page says nothing shows whether anyone rewrote it.](17-ken-of-internal-audit-follows-it-all-in-the-audi.png)

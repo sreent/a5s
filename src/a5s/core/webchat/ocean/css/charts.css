@@ -2,74 +2,77 @@
    what a page does. Load it after css/tokens.css, wherever a page draws a chart.
 
    --chart-1 to --chart-8 name series in that order, never cycled; a ninth series folds into
-   --chart-other. Series 1 is Ocean's blue, and Other is its mist. --chart-seq-1 (least) to
-   --chart-seq-7 (most) is Ocean Blue. --chart-div-1 (the orange end) to --chart-div-9 (the blue
-   end) is Ocean Orange-Blue, grey in the middle. --chart-done, --chart-short, --chart-failed and
+   --chart-other. The order mixes MATLAB's plots and Maple's: MATLAB's blue and orange first, as
+   its plots begin, then sea green, Maple's rose, the sky both use, Maple's olive, violet and
+   MATLAB's gold. Series 1 is Ocean's blue, and Other is its mist. --chart-seq-1 (least) to
+   --chart-seq-7 (most) is Ocean Blue, Maplesoft's sky deepening to MathWorks' blue.
+   --chart-div-1 (the orange end) to --chart-div-9 (the blue end) is Ocean Orange-Blue, MATLAB's
+   orange and blue, grey in the middle. --chart-done, --chart-short, --chart-failed and
    --chart-open are how runs end, told apart by lightness as well as hue, and always with their
-   word. In light, sky, gold and teal (5, 7, 8) are under 3 to 1 on white: label their marks in
-   --text. charts/palettes.json has the same, as data. */
+   word. In light, sky and gold (5 and 8) are under 3 to 1 on white: label their marks in --text.
+   charts/palettes.json has the same, as data. */
 :root {
-  --chart-1: #1a4f91;  /* blue */
-  --chart-2: #d97805;  /* orange */
-  --chart-3: #08a97f;  /* sea green */
-  --chart-4: #934f71;  /* rose */
-  --chart-5: #64b9e1;  /* sky */
-  --chart-6: #866ab1;  /* violet */
-  --chart-7: #d0b302;  /* gold */
-  --chart-8: #43c8c5;  /* teal */
-  --chart-other: #5f7387;
-  --chart-seq-1: #8abaf4;
-  --chart-seq-2: #64a0e8;
-  --chart-seq-3: #4086d8;
-  --chart-seq-4: #286cbe;
-  --chart-seq-5: #19549d;
-  --chart-seq-6: #113e75;
-  --chart-seq-7: #0b2a4f;
-  --chart-div-1: #793e11;
-  --chart-div-2: #a95a11;
-  --chart-div-3: #d97805;
-  --chart-div-4: #eea86b;
-  --chart-div-5: #f0efec;
-  --chart-div-6: #8abaf4;
-  --chart-div-7: #5897e2;
-  --chart-div-8: #2d71c4;
-  --chart-div-9: #1a4f91;
-  --chart-done: #057342;
-  --chart-short: #b47308;
-  --chart-failed: #86281f;
-  --chart-open: #4f5c6c;
+  --chart-1: #0f66ac;  /* blue */
+  --chart-2: #e66700;  /* orange */
+  --chart-3: #269c79;  /* sea green */
+  --chart-4: #8e3665;  /* rose */
+  --chart-5: #49bdff;  /* sky */
+  --chart-6: #4a7800;  /* olive */
+  --chart-7: #793cbb;  /* violet */
+  --chart-8: #e2a80f;  /* gold */
+  --chart-other: #6d7177;
+  --chart-seq-1: #8fc6e8;
+  --chart-seq-2: #5eabdc;
+  --chart-seq-3: #298ecd;
+  --chart-seq-4: #0071b1;
+  --chart-seq-5: #00568e;
+  --chart-seq-6: #003d6d;
+  --chart-seq-7: #00274c;
+  --chart-div-1: #7b3606;
+  --chart-div-2: #b14c00;
+  --chart-div-3: #df6e1b;
+  --chart-div-4: #efae7c;
+  --chart-div-5: #f1f0ee;
+  --chart-div-6: #95c3eb;
+  --chart-div-7: #4b98da;
+  --chart-div-8: #1b71bc;
+  --chart-div-9: #094e8c;
+  --chart-done: #38853e;
+  --chart-short: #c57722;
+  --chart-failed: #851700;
+  --chart-open: #565b61;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --chart-1: #3b82d6;  /* blue */
-    --chart-2: #b36101;  /* orange */
-    --chart-3: #02af84;  /* sea green */
-    --chart-4: #aa487c;  /* rose */
-    --chart-5: #02a3d6;  /* sky */
-    --chart-6: #7b60a4;  /* violet */
-    --chart-7: #aa920e;  /* gold */
-    --chart-8: #0c9593;  /* teal */
-    --chart-other: #8aa0b6;
-    --chart-seq-1: #174f95;
-    --chart-seq-2: #2163b4;
-    --chart-seq-3: #3479cc;
-    --chart-seq-4: #4f90de;
-    --chart-seq-5: #6da7ec;
-    --chart-seq-6: #90bef4;
-    --chart-seq-7: #b8d4f7;
-    --chart-div-1: #f5be8e;
-    --chart-div-2: #e58c3a;
-    --chart-div-3: #bd660e;
-    --chart-div-4: #8c4912;
-    --chart-div-5: #3b3b3b;
-    --chart-div-6: #1c5cab;
-    --chart-div-7: #3b82d6;
-    --chart-div-8: #6fa8ec;
-    --chart-div-9: #accef7;
-    --chart-done: #79c497;
-    --chart-short: #ffd890;
-    --chart-failed: #d97465;
-    --chart-open: #acbdce;
+    --chart-1: #217fd0;  /* blue */
+    --chart-2: #cb5a00;  /* orange */
+    --chart-3: #39aa86;  /* sea green */
+    --chart-4: #ad4b8d;  /* rose */
+    --chart-5: #009ee3;  /* sky */
+    --chart-6: #659728;  /* olive */
+    --chart-7: #8f5fcc;  /* violet */
+    --chart-8: #bc8b09;  /* gold */
+    --chart-other: #979ca1;
+    --chart-seq-1: #123e6a;
+    --chart-seq-2: #0a5894;
+    --chart-seq-3: #1173b8;
+    --chart-seq-4: #3590d1;
+    --chart-seq-5: #5cade6;
+    --chart-seq-6: #89caf5;
+    --chart-seq-7: #bbe5ff;
+    --chart-div-1: #f5bd94;
+    --chart-div-2: #e8894a;
+    --chart-div-3: #c55f1d;
+    --chart-div-4: #8f4113;
+    --chart-div-5: #313335;
+    --chart-div-6: #175d9b;
+    --chart-div-7: #2b85cf;
+    --chart-div-8: #62ace8;
+    --chart-div-9: #a3d1f5;
+    --chart-done: #86d489;
+    --chart-short: #ffd48a;
+    --chart-failed: #d6725d;
+    --chart-open: #9fa5ac;
   }
 }

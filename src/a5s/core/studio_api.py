@@ -313,7 +313,8 @@ def router(gw: Any) -> APIRouter:
             return {"you": person.name,
                     "waiting": homes.waiting(conn, gw, person, languages.of(person)),
                     "drafts": drafts.mine(conn, person),
-                    "authoring": drafts.may_author(person, None)}  # a new agent, as the catalogue says
+                    "authoring": drafts.may_author(person, None),  # a new agent, as the catalogue says
+                    "changes": sorted(a for a in gw.definitions if drafts.may_author(person, a))}
 
     @api.get("/studio/api/you", **shapes.answers(shapes.You))
     def studio_you(person: Annotated[Person, Depends(someone)]) -> dict:

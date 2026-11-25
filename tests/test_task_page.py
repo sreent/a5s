@@ -76,7 +76,7 @@ def test_someone_sees_and_cancels_a_task_in_the_browser(stack, approving, provid
     page = browser.new_page()
     page.goto(f"{approving}/tasks/")
     page.wait_for_selector(f"#tasks >> text={ASKED}", timeout=30000)
-    assert page.inner_text("#me").endswith("Ana Ortiz")
+    assert page.inner_text("#me .me-name") == "Ana Ortiz"  # and the roles they hold under it
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     assert "with the assistant: queued, 0% done" in page.inner_text("#tasks")
     page.click("#tasks button:text-is('Cancel')")

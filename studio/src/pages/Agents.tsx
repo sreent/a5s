@@ -97,6 +97,10 @@ export function AgentsPage() {
       <PageHead title={t("Agents")}
                 about={t("The agents you may know of: those you have a role on, those that serve you, and those their owners list for everyone. Each shows as much as your roles let you see: what it does and who owns it, what it may do, and where it runs. Changes to an instance go through the settings; the changes agents ask for are decided on the decisions page.")}>
         {data?.authoring.new && <div className="actions"><Link to={{ page: "new" }} className="button primary">{t("New agent")}</Link></div>}
+        {data && !data.authoring.new && (  /* where the button would be: who may start one */
+          <p className="meta" id="who-builds"><span>{t("A new agent is started by an agent's owner or an engineer.")}</span>
+            <Link to={{ page: "home" }}>{t("How to build one")}</Link></p>
+        )}
       </PageHead>
       {!data && (
         <Waiting error={error}>

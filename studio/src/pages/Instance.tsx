@@ -59,7 +59,7 @@ function Stopping({ id, standing, settles, problem, setProblem }: {
                             id="its-settings">{t("Change its settings")}</Link>}
           {standing?.may === "suspend"
             ? <Confirm label={t("Suspend it")} danger title={t("Suspend {instance}?", { instance: id })}
-                       about={t("It stops at its next step, even in a run already going, and starts no runs, until whoever suspended it resumes it. Those it serves are told it's suspended. You'll sign in again, for this alone.")}
+                       about={t("It stops at its next step, even in a run already going, and starts no runs, until whoever suspended it, or the release approver, resumes it. Those it serves are told it's suspended. You'll sign in again, for this alone.")}
                        confirm={t("Sign in and suspend it")} onConfirm={go("suspend")} />
             : standing?.may === "resume" && <Confirm label={t("Resume it")} title={t("Resume {instance}?", { instance: id })}
                        about={t("It works again as its settings say, from its next message. You'll sign in again, for this alone, with a second factor where your organisation asks for one.")}

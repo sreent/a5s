@@ -470,7 +470,7 @@ export function SettingsPage() {
     return (
       <fieldset className="form-card adding" id="add-instance">
         <legend>{t("Put an agent to work")}</legend>
-        <p className="note">{t("A new instance of an agent, for a few people first, reading only or asking first, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.")}</p>
+        <p className="note">{t("A new instance of an agent, for a few people first, reading only or asking first, so it suggests, or asks before each change. The version is approved whole, by the owner of every part an instance in it works in; for an instance in no part, someone who approves instances approves it too.")}</p>
         <div className="choices">
           <Setting words={t("Agent")}>
             <select id="add-agent" value={a.agent} onChange={(e) => {

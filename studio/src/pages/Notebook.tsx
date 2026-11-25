@@ -1,8 +1,8 @@
 // The notebook, folded into the studio from its own page (core/notebook_api.py): what agents
 // noted from records, on their schedules, for their later runs, each note with the records it
 // comes from, for those who keep each instance's notebook, its agent's owners and those who run
-// it. They remove any that's no longer worth keeping; a note whose records stop holding it goes
-// on its own after 90 days. Notes from records someone may not see stay out of their sight, and
+// it. They remove any that's no longer worth keeping; a note goes once its records change, as
+// a5s reads them again each day. Notes from records someone may not see stay out of their sight, and
 // they're told how many, and who may see them.
 
 import { useState } from "react";
@@ -39,7 +39,7 @@ export function NotebookPage() {
   return (
     <>
       <PageHead title={t("Notebook")}
-                about={t("What your agents noted from records, on their schedules, for their later runs: each note with the records it comes from. Remove any that's no longer worth keeping. A note whose records stop holding it goes on its own after 90 days.")} />
+                about={t("What your agents noted from records, on their schedules, for their later runs: each note with the records it comes from. Remove any that's no longer worth keeping. A note goes once its records change: a5s reads them again each day.")} />
       <p id="status" role="status" className="note">
         {status ?? (data && data.entries.length === 0 ? t("Nothing noted yet by {whom}.", { whom: listed(kept, t("or")) }) : "")}
       </p>

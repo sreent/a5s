@@ -226,7 +226,8 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
                           "VPN client, then sign in again with MFA.", "it waits for Ola Nowak")
     assert SYSTEMS["service-desk"]["itsm"].replies == {}  # nothing posted yet
     page = walk.as_("ola", f"{url}/studio/")
-    with walk.step("Ola finds the reply waiting for her decision on her studio home. Its card says what "
+    with walk.step("Ola finds the reply waiting for her decision on her studio home, and opens it. Its "
+                   "card says what "
                    "it posts, in words a5s works out from the call, never the agent's, who asked for it, "
                    "and the ticket as it stood.", page):
         page.click("#waiting a:has-text('waits for your decision')")

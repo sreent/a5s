@@ -121,7 +121,7 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
     page.goto(f"{approving}/studio/agents")
     page.wait_for_selector(".agent-card >> text=assistant", timeout=30000)
-    assert page.inner_text("#me").endswith("Ben Okafor")
+    assert page.inner_text("#me .me-name") == "Ben Okafor"  # and the roles they hold under it
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     card = page.inner_text(".agent-card")
     assert "2 change" in card and "assistant-finance" in card

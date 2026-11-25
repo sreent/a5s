@@ -75,8 +75,8 @@ class Person:
     # When their authenticator was last reset, if the directory says: how a stolen identity
     # usually starts, so their decisions wait a day after it
     reset_at: datetime | None = None
-    # The language they read, as a BCP 47 code, such as th, which they can choose otherwise on
-    # their own page in the studio (core/languages.py)
+    # The language the directory gives them, as a BCP 47 code, such as th: agents write to them
+    # in it, unless they write in another (core/languages.py)
     language: str = "en"
 
     @classmethod

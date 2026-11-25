@@ -176,7 +176,7 @@ def test_an_auditor_reads_the_trail_in_the_browser(stack, approving, provider, b
     page.goto(f"{approving}/audit/")  # which goes to the studio's, now
     page.wait_for_selector("#find:not([hidden])", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/audit"
-    assert page.inner_text("#me").endswith("Kofi Mensah")
+    assert page.inner_text("#me .me-name") == "Kofi Mensah"  # and the roles they hold under it
     assert "stand-in" in page.inner_text("#naming")
     page.select_option("#kind", "run")
     page.click("#search")

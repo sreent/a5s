@@ -10,7 +10,7 @@
 - the studio, where people build, try, publish, run and watch agents ([studio](docs/studio.md#progress));
 - three scenarios built again through the studio, each walked through every night on a real model ([phase 5](docs/phase-5.md#progress)).
 
-Fifteen rounds of adversarial review have read it, and the [critique](docs/critique.md) records what each found and what became of it.
+Sixteen rounds of adversarial review have read it, and the [critique](docs/critique.md) records what each found and what became of it.
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 
@@ -207,6 +207,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 
 | Document | What it holds |
 | --- | --- |
+| [The manual](docs/manual/README.md) | How to use a5s, a page for each kind of work: asking agents for help, deciding what they ask for, grading their work, approving settings and releases, running and building agents, answering requests for someone's data, and auditing, with a glossary of a5s's words |
 | [Using a5s today](docs/user-journey.md) | The current interface in pictures: asking an agent for help, running one, and building and deploying one, in code or in the studio |
 | [Design](docs/design.md) | The look every page shares, Ocean: its tokens in two layers, the colours for what a tool does and how things stand, its bundled type, what the tests hold it to, and how to change the brand |
 | [Testing](docs/testing.md) | Unit, integration, live-model, browser, container and soak tests: how to run them, what each proves, and how to read failures and scorecards |

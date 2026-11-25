@@ -6,46 +6,48 @@ How to work with a5s's agents, decide what they ask for, and look after them. Ea
 
 | If you | Read |
 | --- | --- |
-| Ask an agent for help, in the web chat, Teams, Matrix or Slack | [Working with an agent](chatting.md) |
+| Ask an agent for help, in the web chat, Teams, Slack or Matrix | [Working with an agent](chatting.md) |
 | Decide the changes agents ask for in your part of the business | [Deciding what agents ask for](deciding.md) |
 | Grade samples of agents' work | [Grading agents' work](grading.md) |
-| Approve a part's settings, or sign a release | [Approving settings and releases](approving.md) |
-| Own an agent, and look after its instances | [Running an agent](running.md) |
+| Approve a version of the settings, or sign a release | [Approving settings and releases](approving.md) |
+| Own an agent, or run its instances | [Running an agent](running.md) |
 | Build agents in the studio | [Building an agent](building.md) |
 | Answer requests for someone's data | [The data protection officer](data-protection-officer.md) |
-| Audit what agents did, or administer a5s | [Auditing and administering](oversight.md) |
+| Audit what agents did, or look after who holds which role | [Auditing and administering](oversight.md) |
 
 Most people do more than one of these: a part's owner decides changes, approves settings, and may own agents too. The [glossary](glossary.md) says what a5s's words mean.
 
 ## Getting around
 
-**Signing in.** You sign in once, through your organisation's own sign-in, for the chat and the studio. A few acts ask you to sign in again, afresh, for that act alone, with a second factor where your organisation asks for one: approving a change or a version of the settings, grading, undoing a change, and suspending an agent among them. That shows the act was yours, then and there.
+**Signing in.** You sign in with your organisation's own sign-in, in the chat and in the studio. What counts asks you to sign in again, afresh, for that act alone, with a second factor where your organisation asks for one, such as approving a change or a version of the settings, grading, or undoing a change. That shows the act was yours, then and there ([which acts ask](oversight.md#second-factors-and-signing-in-afresh)).
 
-**The studio's home.** `/studio/` says what waits on you, each with a link to where you do it: changes to decide, versions of the settings to approve, samples to grade, a release that needs your signature, and your tasks that wait for you.
+**Home.** `/studio/`, first in the sidebar, says the roles you hold, and what waits on you, each with why it's yours and a link to where you do it: changes to decide, versions of the settings to approve, samples to grade, a release that needs your signature, people asking for your agent, and your tasks that wait for you. Its *Build an agent* shows the way from a new agent to one at work, with **Start a new agent**, if you may start one, or else who may, and how to become one of them.
 
 **The sidebar.** Every page has the same sidebar, with a5s's pages under four headings. It shows only the pages your roles give you:
 
 | Heading | Page | Who sees it |
 | --- | --- | --- |
-| Work | Chat, `/chat/` | Everyone |
-| | Handed over, `/studio/handovers` | People in a team that agents hand conversations to |
+| Work | Home, `/studio/` | Everyone |
+| | Chat, `/chat/` | Everyone |
+| | Handed over, `/studio/handovers` | People in a team that agents may hand conversations to |
 | | Tasks, `/studio/tasks` | Everyone |
-| | Notebook, `/studio/notebook` | People who look after an agent's notebook |
-| Build | Studio, `/studio/` | Everyone |
-| | Map, `/studio/map` | Everyone |
+| | Notebook, `/studio/notebook` | An agent's owners, and the people who run its instances |
+| Build | Agents, `/studio/agents` | Everyone: the agents you may know of |
+| | New agent, `/studio/new` | Agents' owners and engineers, who may start one |
+| | Map, `/studio/map` | Everyone: what depends on what |
 | Decide | Decisions, `/studio/decide` | Part owners, their delegates and instance approvers |
 | | Grading, `/studio/grade` | Graders |
-| | Shadows, `/studio/shadows` | Graders, and the people who watch a new version's answers |
-| | Settings, `/studio/settings` | People who approve settings |
+| | Shadows, `/studio/shadows` | Graders, and the people who follow a new version answering beside an instance |
+| | Settings, `/studio/settings` | Part owners, instance approvers, agents' owners, the data protection officer and assurance |
 | Oversee | Audit trail, `/studio/audit` | Auditors and assurance |
-| | Administration, `/studio/admin` | Administrators |
-| | Spending, `/studio/spending` | People who may see an agent's spending |
+| | Administration, `/studio/admin` | Those who own, approve, decide or oversee: owners, delegates, approvers, assurance, auditors, the data protection officer and the team that runs a5s |
+| | Spending, `/studio/spending` | Owners of agents, instances and parts, delegates, and instance approvers |
 | | Model health, `/studio/health` | The release approver and the team that runs a5s |
 | | Data protection, `/studio/officer` | The data protection officer |
 
-**What you may do, and why.** `/studio/you` lists each role you hold, what gave it you, your organisation's directory or one of its groups, and what it lets you do. Roles come from the directory, never from a5s: a role you lose there stops working the next time you sign in.
+**Who you are, and what you may do.** a5s has no administrator's mode to switch into, or user mode to leave: what you see, and what you may do, follows from the roles you hold, and nothing else. The foot of every sidebar says who you're signed in as, and your roles, or *No roles: you work with agents*, and leads to `/studio/you`, *What you may do*, which lists each role you hold, what it lets you do, and what gave it you: your organisation's directory, or one of its groups. Roles come from there, never from a5s, and a role you lose stops working the next time you sign in.
 
-**Finding anything.** The palette opens with Ctrl+K, or ⌘K on a Mac, and finds any page, and any agent you may see, as you type.
+**Finding anything.** The palette opens with Ctrl+K, ⌘K on a Mac, or *Find anything* at the top of the sidebar, and finds any page, agent, instance or draft you may open, as you type, and what waits on you.
 
 ## How far an agent may go
 

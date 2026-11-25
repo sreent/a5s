@@ -132,7 +132,8 @@ def at_work(walk: Walk, stack, url: str, draft: str) -> None:
         page.wait_for_selector("#status >> text=You asked for version", timeout=30000)
     stack.scheduler().apply_approved()  # a5s asks its approvers, as it does on its own
     page = walk.as_("ana", f"{url}/studio/")
-    with walk.step("Ana, who owns billing, finds it waiting for her approval on her studio home.",
+    with walk.step("Ana, who owns billing, finds it waiting for her approval on her studio home, "
+                   "and opens it.",
                    page):
         page.wait_for_selector("#waiting .wait >> text=waits for your approval", timeout=30000)
         page.click("#waiting a:has-text('waits for your approval')")

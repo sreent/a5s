@@ -128,14 +128,14 @@ export function YouPage() {
   return (
     <>
       <PageHead crumbs={[{ label: t("Home"), to: { page: "home" } }]} title={t("What you may do")}
-                about={t("Each of your roles in a5s, what gave it you, and what it lets you do. Your organisation manages its groups in its identity provider, and a5s's signed settings say what each group may do: a role you lose there stops working at your next sign-in.")} />
+                about={t("Each of your roles in a5s, what gave it you, and what it lets you do. a5s has no administrator's mode to switch into: the pages in your sidebar, and what you may do on them, follow from these roles alone. Your organisation manages its groups in its identity provider, and a5s's signed settings say what each group may do: a role you lose there stops working at your next sign-in.")} />
       {!data && <Waiting error={error} />}
       {data && (
         <>
           <section className="card" id="roles">
             <h2>{data.you}</h2>
             {data.roles.length === 0
-              ? <p className="note">{t("You hold none of a5s's roles: you use the agents that serve you, and see your own tasks and notebook. Whoever approves the agent you'd use can add you.")}</p>
+              ? <p className="note">{t("You hold none of a5s's roles: you use the agents that serve you, and see your own tasks. Whoever approves the agent you'd use can add you.")}</p>
               : (
                 <Wide label={t("What you may do")}><table className="grid-table">
                   <thead><tr><th>{t("Role")}</th><th>{t("Lets you")}</th><th>{t("Given by")}</th></tr></thead>

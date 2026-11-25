@@ -66,7 +66,7 @@ def test_an_administrator_reads_it_in_the_browser(stack, approving, provider, br
     page.goto(f"{approving}/admin/")  # which goes to the studio's, now
     page.wait_for_selector("#shown", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/admin"
-    assert page.inner_text("#me").endswith("Ana Ortiz")
+    assert page.inner_text("#me .me-name") == "Ana Ortiz"  # and the roles they hold under it
     # Each role by its name, its id beside it for giving it to a group, and who holds it; one
     # nobody holds stands out
     approver = page.inner_text("#roles tr:has-text('Instance approver')")
