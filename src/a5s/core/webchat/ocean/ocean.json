@@ -1,15 +1,17 @@
 {
   "repository": "https://github.com/sreent/ocean",
-  "commit": "ddf57f13f1ff5eb95681e5968a0c664f5cc70223",
+  "commit": "9671a27c88e02365f1b749b67da3b3977e03b31c",
   "files": {
-    "css/charts.css": "44f5f3650b13092e48ab5b26f5c2517a54c0d3bff67b8167f1272688eab1ed7f",
-    "css/components.css": "73cb2081442fe780b1f38b42d204c699d4bfcc6df0cd22a5b16c61e5ff38f082",
-    "css/tokens.css": "4075eae2d9106205cb6e5084bd436f363fa59987b6b9bf181815969b9edcd0ce",
+    "css/charts.css": "ae383f23dbd1a7df84668dd0c99dc4786b00d4706e23efd479def16e681cc96f",
+    "css/components.css": "1bc98595400b92f95b7a0f69fa9727d97a80b5861a5f1a8f6a077190e8a211fa",
+    "css/tokens.css": "6b9e51768fef5ac946ea899bf6d5fae73a74de9e0dd66e458be8a68806e7d13f",
     "fonts/OFL-plex-mono.txt": "03b9b5ee8909a33418aaebfa6a807da48c6edebdde79b5b026258a2463e2919b",
     "fonts/OFL-plex-sans-thai.txt": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
     "fonts/OFL-plex-sans.txt": "a8b8906fa622f65203a8c4eb7b467967c7823f4445ed7f05bd378d6b9ecf9b5d",
     "fonts/plex-mono-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
     "fonts/plex-mono-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
+    "fonts/plex-mono-vietnamese-400.woff2": "62632b6375305e70ddcafdd895218e6ae41a184fcd280a69c739460604ca00a9",
+    "fonts/plex-mono-vietnamese-500.woff2": "781633d95de88040fb77141d1e65d928c87c0144691fbc74da5a64d137a7e910",
     "fonts/plex-sans-400.woff2": "3b646991d30055a93a4ecc499713d4347953a74a947ecab435ab72070cbdab0e",
     "fonts/plex-sans-500.woff2": "0717336fb31fcdcde4b8deb3675bb4a0f7f6d484864afcd6751ac29975962203",
     "fonts/plex-sans-600.woff2": "8960851d691c054ed38e259bdcf1a6190d157b4203ed5bb32c632a863fb8ec2f",
@@ -17,6 +19,10 @@
     "fonts/plex-sans-thai-400.woff2": "0350508969dad82ffd2b7608d8299454bf19ec54e464a16a66e5a9733e83654d",
     "fonts/plex-sans-thai-500.woff2": "8249537de3768f46ce7b04e9e832c47f3ffa84900bdac2b18968d431d8814c61",
     "fonts/plex-sans-thai-600.woff2": "83f9d86c099e0006077854cac1cf6f9d3177fb0c4f356254a7d56d047c097e52",
-    "fonts/plex-sans-thai-700.woff2": "c65640f017e19c668aa927ec7e539d4306a8c77fec717ea979b12a1bb1c40121"
+    "fonts/plex-sans-thai-700.woff2": "c65640f017e19c668aa927ec7e539d4306a8c77fec717ea979b12a1bb1c40121",
+    "fonts/plex-sans-vietnamese-400.woff2": "771538f7f26551bd13ab97d585de6ce7ebe3b432837999d5b743391b48f4946a",
+    "fonts/plex-sans-vietnamese-500.woff2": "85ba3d9c2488a813bbf1d60da3a848bce4a97ac8c8a539289d8524aef6c471f9",
+    "fonts/plex-sans-vietnamese-600.woff2": "5d34b803637befe3714d55d383d9149692c39838c8deb45c8cbdd43b0fd09b98",
+    "fonts/plex-sans-vietnamese-700.woff2": "b79d0c4b68b850071e071d7e496144a30d7f91651efdc1079ca9779079d648ba"
   }
 }

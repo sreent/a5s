@@ -4,7 +4,7 @@ Every page of a5s, the studio and the server's own pages alike, shares one look,
 
 ## Ocean
 
-The look is called Ocean. It takes a hint of the sea: deep blues for what you can do, lagoon teal for agents, coral for any change to a record, and kelp green for what's going well. The palette isn't anyone's brand. An organisation's own colours replace the primitives, in one place.
+The look is called Ocean. It takes a hint of the sea: deep blues for what you can do, lagoon teal for agents, coral for any change to a record, and kelp green for what's going well. Its hues sit between MathWorks' colours and Maple's, each step's lightness fitted to the contrast its meanings need ([where the colours come from](https://github.com/sreent/ocean/blob/main/docs/design.md#where-the-colours-come-from)). An organisation's own colours replace the primitives, in one place.
 
 Ocean began here, and is now the look a5s shares with a7c and a3t, kept in its one source, [sreent/ocean](https://github.com/sreent/ocean), with its brand book, its pieces and its checks. a5s's pages load only a5s's own files, so a5s serves a copy: Ocean's tokens, its pieces, its chart colours and IBM Plex, in [`webchat/ocean`](../src/a5s/core/webchat/ocean), at the commit [`ocean.json`](../src/a5s/core/webchat/ocean/ocean.json) names, with each file's digest. Every page loads Ocean's tokens and pieces first, then [`app.css`](../src/a5s/core/webchat/app.css), which holds a5s's own alone, the chat; the studio imports the same files, and its own [`studio.css`](../studio/src/studio.css) holds only how its pages lay Ocean's pieces out: an agent's card, an instance's figures, the runs chart, the sandbox's turns and test cases. Neither restyles a piece of Ocean's. A piece a5s needs, or a change to one, is drawn in sreent/ocean first, for a7c and a3t too, and taken here at its commit:
 
@@ -35,7 +35,7 @@ Agents are drawn in `--agent-tone`, and people never are, so a page shows at a g
 
 ## Type
 
-IBM Plex Sans for text, with IBM Plex Sans Thai, drawn to match, for Thai letters, and IBM Plex Mono for ids and digests. Ocean bundles all three, under the SIL Open Font License, and a5s serves its copy ([`ocean/fonts`](../src/a5s/core/webchat/ocean/fonts)): the pages' policy loads fonts only from a5s itself, so a page loads nothing from outside, which matters on premises. The Thai family loads only where a page has Thai letters.
+IBM Plex Sans for text, and IBM Plex Mono for ids and digests, both with the letters Vietnamese adds to Latin, and IBM Plex Sans Thai, drawn to match, for Thai letters. Ocean bundles all three, under the SIL Open Font License, and a5s serves its copy ([`ocean/fonts`](../src/a5s/core/webchat/ocean/fonts)): the pages' policy loads fonts only from a5s itself, so a page loads nothing from outside, which matters on premises. The Thai family, and the Vietnamese letters, load only where a page has some.
 
 ## What the tests hold it to
 

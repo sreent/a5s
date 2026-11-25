@@ -118,9 +118,12 @@ def test_a5s_restyles_none_of_oceans_pieces_so_ocean_stays_the_one_source():
 
 def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
     assert sorted(p for p in web.OCEAN_FILES if p.startswith("fonts/")) == [
-        f"fonts/plex-{face}.woff2" for face in ("mono-400", "mono-500", "sans-400", "sans-500",
+        f"fonts/plex-{face}.woff2" for face in ("mono-400", "mono-500", "mono-vietnamese-400",
+                                                "mono-vietnamese-500", "sans-400", "sans-500",
                                                 "sans-600", "sans-700", "sans-thai-400",
-                                                "sans-thai-500", "sans-thai-600", "sans-thai-700")]
+                                                "sans-thai-500", "sans-thai-600", "sans-thai-700",
+                                                "sans-vietnamese-400", "sans-vietnamese-500",
+                                                "sans-vietnamese-600", "sans-vietnamese-700")]
     for css in (CSS, (OCEAN / "css" / "components.css").read_text(encoding="utf-8"), OWN):
         assert "https:" not in css and "//" not in re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     with channels(stack) as url:
