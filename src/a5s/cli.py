@@ -715,6 +715,20 @@ def _config(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _doctor(as_json: bool) -> None:
+    """Every check `a5s doctor` makes, said in order, and exit 1 if anything needs fixing."""
+    from a5s import doctor
+
+    found = doctor.checked()
+    try:
+        cfg: Config | None = Config.from_env()
+    except config.ConfigError:
+        cfg = None
+    print(json.dumps(doctor.as_json(found), indent=2) if as_json else doctor.told(found, cfg))
+    if any(f.state == "fix" for f in found):
+        sys.exit(1)
+
+
 def _checked(command: str) -> None:
     """Stop before anything starts if a setting can't be used, saying which and why."""
     problems, warnings = config.check(serving=command in PARTS)
@@ -760,6 +774,19 @@ def main(argv: list[str] | None = None) -> None:
 def _main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="a5s", description="An agent OS on Deep Agents.")
     sub = parser.add_subparsers(dest="command", required=True)
+    doctor = sub.add_parser("doctor", help="whether a5s can work where it runs, and what to "
+                                           "fix first",
+                            description="Check, in order, what a5s needs where it runs: its "
+                                        "settings, the database and its schema, the release and "
+                                        "whether this deployment approved it, the settings in "
+                                        "force, the core and its token, how people sign in, "
+                                        "each model's key, and the ledger's copies. Each line "
+                                        "says what it found and, where something's wrong, what "
+                                        "fixes it. Run it where the core runs, with its "
+                                        "settings, such as `kubectl exec deploy/a5s-gateway -- "
+                                        "a5s doctor`, or `helm test`. It changes nothing, and "
+                                        "exits 1 if anything needs fixing.")
+    doctor.add_argument("--json", action="store_true", help="as JSON, for a script")
     shown = sub.add_parser("config", help="every setting a5s reads, what this environment sets "
                                           "it to, and what a part would refuse to start with")
     shown.add_argument("--set", action="store_true", help="only those set here")
@@ -1041,6 +1068,8 @@ def _main(argv: list[str] | None = None) -> None:
 
     if args.command == "config":
         return _config(args)
+    if args.command == "doctor":  # before the settings' check, as it says what that finds
+        return _doctor(args.json)
     _checked(args.command)
     root = Path.cwd()
     if args.command == "up":

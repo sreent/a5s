@@ -6,7 +6,8 @@
 # replaced; each worker pool, the shared one and each agent's own, reaches the gateway alone,
 # never the database, the channels, another pool or the internet; and the sandbox, a second
 # release in a namespace of its own, on a database server of its own, tries a draft the
-# studio sends it, is reached by a5s's channels alone, and reaches nothing of a5s's.
+# studio sends it, is reached by a5s's channels alone, and reaches nothing of a5s's; and that
+# `helm test` runs the doctor, which says what to fix.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/../.."
@@ -27,6 +28,7 @@ cleanup() {
       docker exec "$CLUSTER" kubectl -n a5s logs "job/a5s-$part" 2>&1 | tail -30 || true
     done
     docker exec "$CLUSTER" kubectl -n a5s logs deploy/a5s-gateway --tail=30 2>&1 || true
+    docker exec "$CLUSTER" kubectl -n a5s logs pod/a5s-doctor 2>&1 || true
     docker exec "$CLUSTER" kubectl -n a5s-sandbox get pods 2>&1 || true
     docker exec "$CLUSTER" kubectl -n a5s-sandbox logs deploy/a5s-sandbox --tail=30 2>&1 || true
   fi
@@ -114,6 +116,23 @@ echo "The core waited for the release to be approved here, and a job recorded it
 
 k -n a5s exec deploy/a5s-scheduler -- a5s status | grep -q "a5s over the last day"
 echo "The scheduler reaches the gateway."
+
+# `helm test` runs `a5s doctor` with the core's settings, in a pod of its own. It finds the
+# database, the release this deployment approved, the settings in force and the core, and that
+# no model has its key, which this cluster never has: so it fails, naming that alone.
+if helm test a5s -n a5s --timeout 5m > "$work/tested" 2>&1; then
+  echo "The doctor found nothing to fix, though no model has its key here."
+  exit 1
+fi
+k -n a5s logs pod/a5s-doctor > "$work/doctor"
+for found in "The database at a5s_gateway@postgres:5432/postgres answers" "is approved here" \
+    "The settings in force: Version" "The core answers at http://a5s-gateway:8700" \
+    "DEEPSEEK_API_KEY isn't set"; do
+  grep -q "$found" "$work/doctor" || { cat "$work/tested" "$work/doctor"; exit 1; }
+done
+[ "$(grep -c '^fix ' "$work/doctor")" = 1 ] || { cat "$work/doctor"; exit 1; }
+echo "helm test runs the doctor, which finds the database, the approved release, the settings"
+echo "and the core, and names the one thing to fix here: no model has its key."
 
 # As on an upgrade, the core is replaced: its new pod is ready before the old one stops, so
 # what the scheduler and the workers send it never finds it away. The scheduler connects to it

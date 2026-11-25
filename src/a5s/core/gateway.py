@@ -2419,7 +2419,10 @@ def create_app(gw: Gateway) -> FastAPI:
                                   gw.data_protection(conn).flag_rubber_stamps,
                                   gw.identity.cfg.mfa if gw.identity else False)
         here = config.set_here()  # what the core runs with, as its environment gives it
-        return {**found, "configuration": {"set": here, "defaults": len(config.VARS) - len(here)}}
+        return {**found, "configuration": {"set": here, "defaults": len(config.VARS) - len(here),
+                                           # as `a5s dev` runs it, taking people's word and
+                                           # running any release (`a5s doctor` says so)
+                                           "development": gw.cfg.development}}
 
     # The audit trail, for auditors and assurance (core/audit.py), behind the service token
 

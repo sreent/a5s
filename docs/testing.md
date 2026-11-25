@@ -83,6 +83,8 @@ Persona tests (`tests/test_personas.py`) meet the studio as people new to it do,
 
 The likely mistakes' tests (`tests/test_mistakes.py`) make each mistake someone setting a5s up, running it or signing in to it is likely to make, and check that a5s says it in a line that names its fix, never as a traceback, and never with a password: a database nobody started, or that isn't there, or isn't migrated, or from a later release; a password Postgres won't take; a core nobody started, or a token that isn't its own; `a5s up` without Postgres; a token from another issuer, for another client, expired, or naming nobody in the claim a5s reads; an issuer set without its last slash; an identity provider the core can't reach; someone the directory doesn't know; a model's key never set, which the core's log says once; and, in development, a name the directory doesn't know, or no agent at work, in the web chat. The first day's commands say in their `--help` what they do and what comes next.
 
+The doctor's tests (`tests/test_doctor.py`) run `a5s doctor` against the test stack, as the core's settings have it: a working deployment has nothing to fix; a model's key never set, a release nobody approved outside development, ledger copies a deployment doesn't keep, a token the core doesn't take, an issuer the provider names otherwise, no version of the settings in force and a schema from a later release are each named with their fix; with nothing running, it says what to start and doesn't check what follows; and `--json` says the same for a script. The chart's `helm test` runs it in a pod of its own, as `deploy/helm/test.sh` checks on a cluster.
+
 If Chromium is unavailable, browser tests may skip locally. To require them, as CI does:
 
 ```sh
