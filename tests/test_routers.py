@@ -42,7 +42,8 @@ ACTS = {  # each act, with a body of the shape it takes, so it's refused for wan
     ("post", "/grade/samples"): {"grades": {"1": "right"}, "salt": "s"},
 }
 PEOPLE = ("ana", "ben", "chen", "omar", "dana", "priya", "tomas", "lena", "rosa", "kofi", "noor")
-PAGES = {"studio": "/studio/api/home", "settings": "/settings/api", "notebook": "/notebook/api",
+PAGES = {"home": "/studio/api/home", "agents": "/studio/api", "settings": "/settings/api",
+         "notebook": "/notebook/api",
          "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api"}
 
 

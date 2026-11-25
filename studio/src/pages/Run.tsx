@@ -72,7 +72,8 @@ export function RunPage({ id }: { id: string }) {
   return (
     <>
       <PageHead crumbs={crumbs} title={run ? heading(run) : t("A run")}
-                badges={run && <OutcomeBadge outcome={run.outcome} />} />
+                badges={run && <OutcomeBadge outcome={run.outcome} />}
+                about={t("One run of an agent, from what started it to how it ended: the records it read, and each tool it called through a5s's checks, allowed, refused or held for a decision.")} />
       {!run && (
         <Waiting error={error}>  {/* its figures, two cards and its map, as they will be (round 13, C11) */}
           <div className="tiles">{[0, 1, 2, 3].map((n) => <div key={n} className="tile"><Shapes lines={1} /></div>)}</div>

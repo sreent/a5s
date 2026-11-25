@@ -231,8 +231,8 @@ export function SettingsPage() {
     setFocus(undefined);
   }, [focus]);
 
-  if (error) return <><PageHead title={t("Settings")} /><Waiting error={error} /></>;
-  if (!now) return <><PageHead title={t("Settings")} /><Waiting /></>;
+  if (error) return <><PageHead title={t("Settings")} about={t("The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do.")} /><Waiting error={error} /></>;
+  if (!now) return <><PageHead title={t("Settings")} about={t("The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do.")} /><Waiting /></>;
   const settings = now;
   const w = working.current;
   const inForce = settings.in_force?.data as Data | null | undefined;
