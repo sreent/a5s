@@ -232,6 +232,10 @@ def create_app(gw: Any) -> FastAPI:
     app = FastAPI(title="a5s channels", docs_url="/docs" if explorer else None,
                   redoc_url="/redoc" if explorer else None)
 
+    @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
+    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+        return {"ok": True}
+
     app.add_middleware(Small)
     log.info("people reach a5s through %s", ", ".join(chats_on(gw)))
 

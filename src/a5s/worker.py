@@ -290,6 +290,10 @@ def create_app(gateway_url: str, agents: frozenset[str] = frozenset(),
 
     app = FastAPI(title="a5s worker")
 
+    @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
+    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+        return {"ok": True}
+
     @app.post("/work")
     def work(body: Work) -> Any:
         try:

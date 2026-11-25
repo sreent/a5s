@@ -67,6 +67,7 @@ FIGURES: dict[str, tuple[str, str]] = {
     "a5s.departures.missing": ("{person}", "People the directory no longer names, not archived"),
     "a5s.ledger.copies.behind": ("{entry}", "Ledger entries its locked copies don't hold yet"),
     "a5s.ledger.copies.age": ("s", "How long since the copier last copied, or found nothing new"),
+    "a5s.scheduler.seen.age": ("s", "How long since the scheduler last asked, as each minute"),
     "a5s.ledger.copies.failing": ("1", "Whether the copier's last try failed: 1, or 0"),
     "a5s.ledger.copies.stopped": ("1", "Whether the copier stopped until someone acts: 1, or 0"),
     "a5s.ledger.check.problems": ("{problem}", "What the copier's last full check found wrong"),
@@ -144,6 +145,7 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         "a5s.departures.missing": one(status["missing"]),
         "a5s.ledger.copies.behind": one(copies["behind"]) if copies else [],  # (round 15, D8)
         "a5s.ledger.copies.age": one(copies["copied_seconds_ago"]) if copies else [],
+        "a5s.scheduler.seen.age": one(status.get("scheduler_seen_seconds")),
         "a5s.ledger.copies.failing": one(int(bool(copies["problem"]))) if copies else [],
         "a5s.ledger.copies.stopped": one(int(copies["stopped"])) if copies else [],
         "a5s.ledger.check.problems": one(len(checked["problems"])) if checked else [],  # (E8)

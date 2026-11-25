@@ -120,3 +120,17 @@ def test_the_channels_app_serves_no_api_explorer_but_in_development(approving):
     assert [httpx.get(f"{approving}{page}", timeout=30).status_code
             for page in ("/docs", "/redoc")] == [404, 404]
     assert httpx.get(f"{approving}/openapi.json", timeout=30).status_code == 200
+
+
+def test_each_part_answers_its_probe_with_no_token_and_says_nothing_else(stack, approving):
+    """/healthz, for the cluster's probes: each part answers it over HTTP, which a part that
+    takes connections but is stuck doesn't, with nothing more, and it's in no API's description,
+    so it's no way into one (deploy/helm/a5s/templates/deployments.yaml)."""
+    from a5s import worker
+
+    for url in (stack.url, approving):
+        answer = httpx.get(f"{url}/healthz", timeout=30)
+        assert (answer.status_code, answer.json()) == (200, {"ok": True})
+        assert "/healthz" not in described(url)
+    at_work = TestClient(worker.create_app(stack.url, (), ()))
+    assert at_work.get("/healthz").json() == {"ok": True}

@@ -1518,6 +1518,10 @@ def create_app(gw: Gateway) -> FastAPI:
     app = FastAPI(title="a5s gateway", docs_url="/docs" if explorer else None,
                   redoc_url="/redoc" if explorer else None)
 
+    @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
+    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+        return {"ok": True}
+
     @app.exception_handler(psycopg.OperationalError)
     def database_down(_request, exc: psycopg.OperationalError) -> JSONResponse:
         return JSONResponse(

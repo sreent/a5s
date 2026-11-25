@@ -15,9 +15,10 @@ One Helm chart runs a5s on any Kubernetes cluster: each cloud's managed Kubernet
 | The workers, which hold no secrets, in pools: one for each agent `workers.pools` names, and the shared pool for every other | A Deployment and a Service for each pool | The gateway alone |
 | Setting up the schema and applying the signed settings | A job before each install or upgrade | Postgres |
 | Recording a release's approval | A job after each install or upgrade, once a ConfigMap holds the signatures | Postgres |
+| `helm test`'s doctor, `a5s doctor` with the core's settings | A Pod, as a test hook, which `helm test` starts | Postgres, the gateway, and outside: the identity provider |
 | The sandbox, where the studio tries the agents people are making, in a release of its own | A Deployment of one pod and a Service, inside the cluster only | Its own database server alone, and outside only for the approved models, if `sandbox.realModels` lets it |
 
-Each part runs as its own service account, which can't reach Kubernetes' own API, as a5s's own user, with a filesystem it can't write to but `/tmp`. Only the gateway and the workers take traffic from other parts, and only the channels take it from outside. Network policies need a network plugin that enforces them, such as Calico, Cilium, or the one in k3s.
+Each part runs as its own service account, which can't reach Kubernetes' own API, as a5s's own user, with a filesystem it can't write to but `/tmp`. Each that serves is probed over HTTP, at `/healthz`, which answers with no token and says nothing else, so a part that takes connections but is stuck is taken out of its Service and restarted. Only the gateway and the workers take traffic from other parts, and only the channels take it from outside. Network policies need a network plugin that enforces them, such as Calico, Cilium, or the one in k3s.
 
 ## Before installing
 

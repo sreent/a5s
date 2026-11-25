@@ -87,6 +87,8 @@ The doctor's tests (`tests/test_doctor.py`) run `a5s doctor` against the test st
 
 The status's tests (`tests/test_status.py`, `tests/test_status_page.py`) check that a calm day needs nobody, that what pages out of hours comes before what waits for working hours, each with its runbook's section, with the release and whether it's approved; that the Status page shows the team what the core last recorded, refuses anyone else, and says first when the record has gone stale or was never made; that it reads well and passes axe; and that every page's sidebar icon is drawn in both sidebars.
 
+The monitoring's test (`tests/test_monitoring.py`) checks that every metric and label the alert rules and dashboard in `deploy/monitoring` name is one the core sends, as the OpenTelemetry Collector's Prometheus exporters write it; that each alert says when it pages and names a runbook section that's there; and that what pages out of hours is what the runbooks' on-call section says pages. The router tests check that each part answers its probe, `/healthz`, with no token and nothing more, and the status's that a scheduler which stopped asking the core each minute is heard of.
+
 If Chromium is unavailable, browser tests may skip locally. To require them, as CI does:
 
 ```sh

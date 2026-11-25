@@ -116,3 +116,23 @@ def test_what_pages_comes_first_then_what_waits_for_working_hours(stack, monkeyp
     assert told[5] == (f"  Release {current.version} of a5s ({current.digest[:12]}), "
                        "not approved here.")
     assert "  Models the health gate stopped: fake." in told
+
+
+def test_a_scheduler_that_stopped_asking_is_heard_of(stack):
+    """The scheduler asks the core to record its status each minute (core/status_api.py): how
+    long since it last did is in the status, as a figure too, and past three minutes, it may be
+    away, which waits for working hours."""
+    from a5s.core import metrics
+
+    stack.scheduler().seen()
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert now["scheduler_seen_seconds"] < 60 and now["needs"] == []
+    assert metrics.figures(now)["a5s.scheduler.seen.age"][0][0] < 60
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update status_seen set at = now() - interval '7 minutes'")
+    with stack.client() as c:
+        now = c.get("/status").json()
+    [late] = now["needs"]
+    assert late["when"] == "working hours" and late["runbook"] == "docs/runbooks.md#messages-are-waiting"
+    assert late["said"].startswith("The scheduler last asked the core to record how a5s is doing 7 minutes ago")

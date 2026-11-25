@@ -160,6 +160,8 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "  as failed "
         "from tasks where parent is null").fetchone()
     copies = anchor.state(conn)  # as the copier records it (round 15, D8)
+    heard = conn.execute(  # the scheduler's heartbeat: it asks the core to record this each minute
+        "select extract(epoch from now() - at) as age from status_seen").fetchone()
     gated = [r["model"] for r in conn.execute(  # stopped by the health gate (core/health.py)
         "select distinct model from model_health where scenario = %s and gated_at is not null "
         "order by model", (scenario,))] if scenario else []
@@ -200,6 +202,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
                   "failed": tasked["failed"]},
         "missing": missing["n"],
         "copies": copies,
+        "scheduler_seen_seconds": _number(heard["age"]) if heard else None,
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "models_stopped": gated,
@@ -279,6 +282,11 @@ def needs(status: dict[str, Any]) -> list[dict[str, str]]:
         need(LATER, f"{model} is stopped, as it stalled on more than half its calls in a day: "
                     "once its provider answers again, the release approver puts it back with "
                     f"`a5s health --restore {model}`", "runs-fail-or-a-model-isnt-answering")
+    heard = status.get("scheduler_seen_seconds")
+    if heard is not None and heard > SEEN_LATE:  # it asked once, and has stopped asking
+        need(LATER, f"The scheduler last asked the core to record how a5s is doing "
+                    f"{heard / 60:.0f} minutes ago, as it does each minute, so it may be away: "
+                    "nothing is answered or swept while it is", "messages-are-waiting")
     queue = status["queue"]
     if queue["waiting"] and (queue["oldest_seconds"] or 0) > QUEUE_LATE:
         need(LATER, f"{queue['waiting']} messages are waiting, the oldest for "
