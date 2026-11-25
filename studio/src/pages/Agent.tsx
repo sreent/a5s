@@ -227,7 +227,7 @@ function PutToWork({ agent }: { agent: AgentKnown }) {
   return (
     <section className="card" id="put-to-work">
       <h2>{t("Put it to work")}</h2>
-      <p>{t("No instance runs it yet. Its first is an instance in the settings, for a few people first, reading only or asking first, so it suggests, or asks before each change. Its part's owner approves it, as any change there.")}</p>
+      <p>{t("No instance runs it yet. Its first is an instance in the settings, for a few people first, reading only or asking first, so it suggests, or asks before each change. The version that adds it is approved whole, by the owner of every part an instance in it works in.")}</p>
       {may
         ? <div className="actions"><Link className="button primary" id="put-it-to-work"
             to={{ page: "settings", search: `?add=${encodeURIComponent(agent.id)}` }}>{t("Put it to work in the settings")}</Link></div>

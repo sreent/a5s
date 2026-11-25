@@ -60,7 +60,8 @@ MAY = {
     INSTANCE_APPROVER: "approve the instances that work in no part, and say what each may do",
     RELEASE_APPROVER: "approve releases, from outside the team that runs a5s",
     samples.GRADER: "grade agents' work, never your own team's",
-    audit.AUDITOR: "read the ledger: find what was done and decided, and export it",
+    audit.AUDITOR: "read the ledger: find what was done and decided, and export it once the "
+                   "data protection officer lets the page name people",
     ASSURANCE: "hold the ledger's locked copies, test releases, and read the ledger; where the "
                "directory names you, give a group the auditor's role",
     DATA_PROTECTION: "export or erase what a5s keeps about one person, one request at a time; "

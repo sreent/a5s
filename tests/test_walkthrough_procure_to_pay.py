@@ -365,7 +365,8 @@ def audited(walk: Walk, stack: Stack, url: str) -> None:
     page = walk.as_("ken", f"{url}/audit/")
     with walk.step("Ken, of internal audit, follows it all in the audit trail: the payment Jules "
                    "approved and Ravi rejected, the one Jules approved and a5s made, and the "
-                   "correction Ravi approved. The ledger checks out.", page):
+                   "correction Ravi approved. The ledger's own check passes, though with no locked "
+                   "copies kept here, the page says nothing shows whether anyone rewrote it.", page):
         page.wait_for_selector("#find:not([hidden])", timeout=30000)
         page.fill("#instance", "ap-desk")
         page.click("#search")

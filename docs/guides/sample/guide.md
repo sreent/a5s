@@ -40,9 +40,9 @@ A new agent, due-dates, taken from an idea to work in the sample scenario throug
 
    ![The form is filled in from its plan: due-dates, in billing, serving Ben. She reviews what it changes, in words, and asks for it.](11-the-form-is-filled-in-from-its-plan-due-dates-in.png)
 
-12. Ana, who owns billing, finds it waiting for her approval on her studio home.
+12. Ana, who owns billing, finds it waiting for her approval on her studio home, and opens it.
 
-   ![Ana, who owns billing, finds it waiting for her approval on her studio home.](12-ana-who-owns-billing-finds-it-waiting-for-her-ap.png)
+   ![Ana, who owns billing, finds it waiting for her approval on her studio home, and opens it.](12-ana-who-owns-billing-finds-it-waiting-for-her-ap.png)
 
 13. She reads what it changes, and approves it, signed in afresh for that version alone.
 
