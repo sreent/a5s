@@ -49,7 +49,7 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             rows = samples.gradeable(conn, gw.scenario, person)
             names = gw.data_protection(conn).studio_names  # as a shadow's pairs are masked
-            spoken = languages.of(conn, person)  # what to know, in their language (round 15, B6)
+            spoken = languages.of(person)  # what to know, in their language (round 15, B6)
             everyone = [] if names else masking.known(conn, gw.scenario)
 
         def heard(r: dict) -> str | None:  # what was asked, masked until names are agreed

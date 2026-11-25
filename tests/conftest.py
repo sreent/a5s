@@ -514,6 +514,7 @@ MADE_UP: dict[str, tuple[tuple[str, str], ...]] = {
     "service-desk": (("itsm", "written"), ("idp", "done"), ("mdm", "written")),
     "software-delivery": (("forge", "written"),),
     "master-data": (("sap", "written"),),
+    "procure-to-pay": (("erp", "written"),),
 }
 SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's folder
 RUNNING: list[Any] = []  # the systems themselves
@@ -523,7 +524,7 @@ SANDBOX_STATE = Path(tempfile.mkdtemp(prefix="a5s-sandbox-systems-"))  # the san
 SPARE = 100  # how far the sandbox's copy of each system is from it, as each mcp.yaml says
 
 
-def scenario_systems(folder: str) -> dict[str, Any]:
+def scenario_systems(folder: str, fresh: bool = True) -> dict[str, Any]:
     """The made-up systems a scenario's mcp.yaml declares tools of, started once for the rest
     of the tests, at the addresses it declares: for each stack, with nothing written to them
     yet, so a stack starts from the scenario's data as data.yaml has it. What's been written
@@ -552,8 +553,8 @@ def scenario_systems(folder: str) -> dict[str, Any]:
             RUNNING.append(beside)
             found[f"sandbox-{name}"] = getattr(spare.state, state)
         SYSTEMS[folder] = found
-    for state in SYSTEMS[folder].values():
-        state.reset()
+    for state in SYSTEMS[folder].values() if fresh else ():  # a5s started again leaves them
+        state.reset()  # as they are, as its restart leaves an organisation's systems
     return SYSTEMS[folder]
 
 
@@ -740,6 +741,63 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
                  model) as s:
         yield s
+
+
+# Two approved models, each its own provider, for what a run does when its model isn't
+# answering (tests/test_fallbacks.py) and what each model earns (tests/test_caps_per_model.py)
+TWO_MODELS = """
+models:
+  fake:
+    provider: test
+    api: openai
+    base_url: https://fake.test/v1
+    model: fake-1
+    reported_model: fake-1
+    key_env: A5S_TEST_PROVIDER_KEY
+  spare:
+    provider: test
+    api: openai
+    base_url: https://fake.test/v2
+    model: spare-1
+    reported_model: spare-1
+    key_env: A5S_TEST_PROVIDER_KEY
+"""
+
+
+@pytest.fixture
+def two_models() -> tuple[FakeModel, FakeModel]:
+    return FakeModel(), FakeModel()
+
+
+def routed(primary: FakeModel, spare: FakeModel):
+    """Both providers behind one transport, each answering its own model's calls alone."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/v1/chat" in str(request.url):
+            return primary.handler(request)
+        if "/v2/chat" in str(request.url):
+            return spare.handler(request)
+        raise AssertionError(f"no model route for {request.url}")
+
+    return handler
+
+
+@pytest.fixture
+def fallback_stack(database, tmp_path, monkeypatch, two_models):
+    """a5s running, its assistant on 'fake' with 'spare' to fall back to, each its own model."""
+    monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
+    primary, spare = two_models
+    root = build_root(tmp_path, "fake", TWO_MODELS)
+    for spec in (root / "agents").glob("*/agent.yaml"):
+        lines = [line for line in spec.read_text(encoding="utf-8").splitlines()
+                 if not line.startswith("fallbacks:")]
+        if spec.parent.name == "assistant":
+            lines.append("fallbacks: [spare]")
+        spec.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with running(database, root,
+                 httpx.Client(transport=httpx.MockTransport(routed(primary, spare))),
+                 primary) as s:
+        yield s, primary, spare
 
 
 def listed_runs(stack: Stack) -> None:

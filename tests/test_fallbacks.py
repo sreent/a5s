@@ -6,65 +6,7 @@ for the next, so one provider's outage costs a retry, not the work."""
 
 from __future__ import annotations
 
-import httpx
-import pytest
-
 from a5s import db
-from conftest import PROVIDER_KEY, FakeModel, build_root, running
-
-TWO_MODELS = """
-models:
-  fake:
-    provider: test
-    api: openai
-    base_url: https://fake.test/v1
-    model: fake-1
-    reported_model: fake-1
-    key_env: A5S_TEST_PROVIDER_KEY
-  spare:
-    provider: test
-    api: openai
-    base_url: https://fake.test/v2
-    model: spare-1
-    reported_model: spare-1
-    key_env: A5S_TEST_PROVIDER_KEY
-"""
-
-
-@pytest.fixture
-def models() -> tuple[FakeModel, FakeModel]:
-    return FakeModel(), FakeModel()
-
-
-def routed(primary: FakeModel, spare: FakeModel):
-    """Both providers behind one transport, each answering its own model's calls alone."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "/v1/chat" in str(request.url):
-            return primary.handler(request)
-        if "/v2/chat" in str(request.url):
-            return spare.handler(request)
-        raise AssertionError(f"no model route for {request.url}")
-
-    return handler
-
-
-@pytest.fixture
-def fallback_stack(database, tmp_path, monkeypatch, models):
-    """a5s running, its assistant on 'fake' with 'spare' to fall back to, each its own model."""
-    monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    primary, spare = models
-    root = build_root(tmp_path, "fake", TWO_MODELS)
-    for spec in (root / "agents").glob("*/agent.yaml"):
-        lines = [line for line in spec.read_text(encoding="utf-8").splitlines()
-                 if not line.startswith("fallbacks:")]
-        if spec.parent.name == "assistant":
-            lines.append("fallbacks: [spare]")
-        spec.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    with running(database, root,
-                 httpx.Client(transport=httpx.MockTransport(routed(primary, spare))),
-                 primary) as s:
-        yield s, primary, spare
 
 
 def soon(stack) -> None:
@@ -174,3 +116,40 @@ def test_a_model_whose_breaker_is_open_is_passed_over_for_the_next(fallback_stac
     assert stack.scheduler().answer_waiting() == 1
     assert stack.answers(message) == ["On spare, from the start."]
     assert set(models_called(stack)) == {"spare"}  # never the open one, though nothing failed
+
+
+def test_a_run_goes_on_on_its_own_model_after_a_call_fell_back(fallback_stack):
+    """A call its fallback answered leaves the run on its own model: its next call, after the
+    tool the fallback asked for, is its own model's again, and policy lets it, so the run
+    answers rather than dying on its next call (round 16)."""
+    stack, primary, spare = fallback_stack
+    primary.failing = 2  # its first call falls back
+    spare.reply(None, ("get_record", {"key": "Q-1002"}))
+    primary.reply("Q-1002 is waiting on finance.")
+    message = stack.send("What's Q-1002's status?")
+    assert stack.scheduler().answer_waiting() == 1
+    [said] = stack.answers(message)
+    assert said.startswith("Q-1002 is waiting on finance.")
+    called = [(e["action"], e["decision"]) for e in stack.ledger()
+              if e["kind"] == "model" and e["decision"] != "record"]
+    assert called == [("fake", "allow"), ("fake", "allow")]  # each call its own model's
+    with db.transaction(stack.admin) as conn:
+        [run] = conn.execute("select model from runs").fetchall()
+    assert run["model"] == "fake"  # the model it opened on, whichever answered a call
+
+
+def test_a_message_to_a_suspended_instance_is_answered_once_though_it_names_a_fallback(
+        fallback_stack):
+    """A message is kept open, while its release names models not tried, only for a model
+    that isn't answering, never for a run a5s refused: refused, as for a suspended instance,
+    it's answered once, with why, and not taken again at once, for ever (round 16)."""
+    stack, _, _ = fallback_stack
+    stack.suspend()
+    message = stack.send("Hello")
+    scheduler = stack.scheduler()
+    claim = scheduler._claim()  # one message, one claim: the loop never spins on it
+    assert claim is not None and claim["id"] == message
+    scheduler._answer(claim)
+    assert scheduler._claim() is None  # nothing waits: it's answered
+    [said] = stack.answers(message)
+    assert "suspended" in said

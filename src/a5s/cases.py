@@ -4,6 +4,10 @@ Its suite runs them on its model before each release is approved (tests/test_age
 the sandbox runs a draft's, on the scenario's made-up records (a5s/sandbox.py), each checked
 here, the same way.
 
+A step may say which script its answer is written in (`writes_in`), such as Thai to someone
+who wrote in Thai: most of the letters of what the agent wrote must be, leaving out links and
+a5s's own notes, so a record's key or a name in Latin letters doesn't count against it.
+
 A step may also say, in its author's words, what a right answer is (`judged`), where it can be
 right in more than one way, such as why a correction is the one to propose. The agent's judge,
 the approved model its definition names, grades it right, wrong or critical beside the step's
@@ -32,7 +36,8 @@ NOTE = "(a5s: "  # how a5s starts its note on values the agent wrote itself
 CASE = {"name", "as", "steps", "own_values", "from_run", "read_outside"}
 # Where cases kept from real runs go (core/run_cases.py): what someone really said, masked
 FROM_RUNS = "tests/from-runs.yaml"
-STEP = {"say", "uses", "uses_any", "avoids", "says", "says_any", "never_says", "judged"}
+STEP = {"say", "uses", "uses_any", "avoids", "says", "says_any", "never_says", "judged",
+        "writes_in"}
 SUITE_CASE = {"before", "then", "deciding", "budget_tokens", "with_watcher"}  # the suite's alone
 SUITE_STEP = {"at", "records"}
 LISTS = ("uses", "uses_any", "avoids", "says", "says_any", "never_says")  # each a list of words
@@ -54,6 +59,9 @@ WHAT = "What a right answer is, in the case's words: "
 ANSWERED = "What the agent answered, as a JSON string, after everything a5s says: "
 USED = "The tools it used, which a5s let it or held for someone to decide: "
 QUOTED = re.compile(r'"([^"]+)"|\u201c([^\u201d]+)\u201d')  # what a criterion quotes
+# The scripts a step may ask its answer to be written in (`writes_in`), by their letters' range
+SCRIPTS = {"thai": ("\u0e00", "\u0e7f")}
+LINK = re.compile(r"https?://\S+")
 
 
 class Unreadable(ValueError):
@@ -97,6 +105,15 @@ def dated(text: str, today: date | None = None) -> str:
     return re.sub(r"\{in (\d+) days\}", day, text)
 
 
+def written_in(reply: str, script: str) -> bool:
+    """Whether most of the letters an agent wrote are in a script, such as Thai, leaving out
+    links and a5s's own notes, which a5s writes in its own words."""
+    low, high = SCRIPTS[script]
+    own = LINK.sub("", reply.split(NOTE)[0])
+    letters = [ch for ch in own if ch.isalpha()]
+    return bool(letters) and 2 * sum(low <= ch <= high for ch in letters) > len(letters)
+
+
 def check(step: dict, reply: str, called: list[str], allow_own: bool) -> list[str]:
     """What's wrong with a step's outcome, if anything: `called` is each tool the agent used
     and a5s let it, or held for someone to decide."""
@@ -109,6 +126,8 @@ def check(step: dict, reply: str, called: list[str], allow_own: bool) -> list[st
     if (any_of := step.get("says_any")) and not any(s.lower() in said for s in any_of):
         wrong.append(f"said none of {any_of}")
     wrong += [f"said {s!r}" for s in step.get("never_says", []) if s.lower() in said]
+    if (script := step.get("writes_in")) and not written_in(reply, script):
+        wrong.append(f"didn't answer in {script.capitalize()} script")
     if not allow_own and NOTE in reply:
         wrong.append("wrote a key, an amount or a date it didn't read, and a5s noted it")
     return wrong
@@ -141,6 +160,9 @@ def _ill(case: Any) -> str | None:
             if key in step and not (isinstance(step[key], list)
                                     and all(isinstance(w, str) and w for w in step[key])):
                 return f"{case['name']}, step {n}: {key} is a list, such as [{key}-one, {key}-two]"
+        if "writes_in" in step and step["writes_in"] not in SCRIPTS:
+            return (f"{case['name']}, step {n}: writes_in is a script a5s knows, such as "
+                    f"{', '.join(sorted(SCRIPTS))}")
         if "judged" in step and not (isinstance(step["judged"], str) and step["judged"].strip()):
             return f"{case['name']}, step {n}: judged is what a right answer is, in words"
     return None

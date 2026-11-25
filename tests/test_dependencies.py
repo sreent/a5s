@@ -12,7 +12,6 @@ from a5s.connectors.mcp import Served
 from a5s.core import dependencies, samples
 from a5s.definitions import Evaluation
 from conftest import accessible, raise_cap
-from test_languages import reads
 from test_r9_studio_need_to_know import with_ops
 
 
@@ -142,8 +141,8 @@ def drawn(stack, person: str = "ana", extra: dict | None = None, **changed) -> d
                                   {**stack.gateway.scenario.tools(), **(extra or {})},
                                   stack.gateway.models, stack.gateway.scenario.person(person),
                                   approved=stack.gateway.approvers_in_force(conn),
-                                  caps_of=lambda release: samples.shown_caps(
-                                      conn, stack.gateway.cfg.seal_keys, release))
+                                  caps_of=lambda release, model: samples.shown_caps(
+                                      conn, stack.gateway.cfg.seal_keys, release, [model]))
 
 
 def test_a_librarys_tools_come_from_it_and_one_acting_as_the_person_says_so(stack):
@@ -197,15 +196,6 @@ def test_a_judge_a_model_it_lacks_level_two_and_a_shadow_are_on_the_map(stack):
         "a shadow: it answers beside another, and sends nothing")
 
 
-def test_the_map_reads_in_the_language_someone_reads(stack, approving, provider):
-    reads(stack, "ana", "th")
-    found = mapped(approving, provider, "ana")
-    said = edges(found)
-    assert said[("agent:assistant", "tool:change_due_date")] == "{from} เรียกใช้ {to} ได้"
-    assert {n["key"]: n["about"] for n in found["nodes"]}["instance:assistant-finance"] == (
-        "กำลังทำงาน")
-
-
 def test_whom_an_instance_may_hand_conversations_to_is_on_the_map(stack):
     """Round 14 (C16): the teams an instance may hand conversations to are on the map, as whom
     it may ask is."""
@@ -235,8 +225,8 @@ def test_the_map_says_where_level_two_counts_and_where_it_doesnt_yet(stack):
         found = dependencies.drawn(conn, stack.gateway.scenario, stack.gateway.definitions,
                                    stack.gateway.scenario.tools(), stack.gateway.models,
                                    stack.gateway.scenario.person("ana"), approved=["ben"],
-                                   caps_of=lambda release: samples.shown_caps(
-                                       conn, stack.gateway.cfg.seal_keys, release))
+                                   caps_of=lambda release, model: samples.shown_caps(
+                                       conn, stack.gateway.cfg.seal_keys, release, [model]))
     assert edges(found)[edge] == (
         "{from} works in {to}, where it asks first; the settings let it act on its own for "
         "change-due-date, which counts only once an owner of {to} approves the settings in "

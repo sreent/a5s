@@ -1,8 +1,7 @@
 // What someone may do in a5s: each role they hold, what gave it them, the directory or a group
 // of the identity provider's, and what it lets them do. Roles change where people are managed,
 // in the identity provider, and in the signed settings that give its groups roles: not here.
-// And the language they read, theirs to choose, which a5s's pages speak to them and its agents
-// answer them in (core/languages.py); and the accounts they connect in other systems, so agents
+// And the accounts they connect in other systems, so agents
 // act there as them, with their own permissions (core/delegation.py), with the page each
 // system sends them back to.
 
@@ -11,58 +10,9 @@ import { get, send, type You } from "../api";
 import type * as gen from "../api.gen";
 import { takeConnecting } from "../auth";
 import { Badge, Confirm, useToast } from "../design";
-import { setLanguage, t } from "../i18n";
+import { t } from "../i18n";
 import { go, Link } from "../router";
-import { shellOf } from "../Sidebar";
 import { PageHead, useLoad, Waiting, when, Wide } from "../ui";
-
-// The language just chosen, whose choice takes the keyboard again once the studio, drawn anew
-// in it, shows this page again (round 14, E-L1)
-let justChosen: string | null = null;
-
-function Language({ found }: { found: You }) {
-  const toast = useToast();
-  const [problem, setProblem] = useState<string>();
-  const [chosen, setChosen] = useState(found.language);  // at once, while a5s keeps it
-  const choose = (code: string) => {
-    setProblem(undefined);
-    setChosen(code);
-    send<gen.LanguageChosen>("POST", "/studio/api/you/language", { language: code })
-      .then((kept) => {
-        shellOf(true).catch(() => null);  // the sidebar's names, afresh in it
-        justChosen = kept.language;
-        setLanguage(kept.language);  // which draws the studio again in it
-        toast(t("a5s speaks to you in {language} from now on.", {
-          language: found.languages.find((l) => l.code === kept.language)?.name ?? kept.language }));
-      })
-      .catch((e: Error) => {
-        setChosen(found.language);
-        setProblem(e.message);
-      });
-  };
-  useEffect(() => {
-    if (justChosen) {
-      document.querySelector<HTMLInputElement>(`#language input[value="${CSS.escape(justChosen)}"]`)?.focus();
-      justChosen = null;
-    }
-  }, []);
-  return (
-    <section className="card" id="language" aria-labelledby="language-title">
-      <h2 id="language-title">{t("The language you read")}</h2>
-      <p className="note">{t("a5s's pages speak it to you, and its agents answer you in it, unless you write to them in another. Your organisation's directory sets it first; it's yours to change.")}</p>
-      <div className="choices" role="radiogroup" aria-labelledby="language-title">
-        {found.languages.map((l) => (
-          <label key={l.code} className="choice" lang={l.code}>
-            <input type="radio" name="language" value={l.code} checked={chosen === l.code}
-                   onChange={() => choose(l.code)} />
-            {l.name}
-          </label>
-        ))}
-      </div>
-      {problem && <p className="problem" role="alert">{problem}</p>}
-    </section>
-  );
-}
 
 function Connections() {
   const toast = useToast();
@@ -204,7 +154,6 @@ export function YouPage() {
               ? <p className="note">{t("Your latest sign-in showed none of the groups a5s's settings give roles.")}</p>
               : <p>{t("Your latest sign-in showed")} {data.groups.map((g, i) => <span key={g}>{i > 0 && ", "}<span className="mono">{g}</span></span>)}.</p>}
           </section>
-          <Language found={data} />
           <Connections />
         </>
       )}

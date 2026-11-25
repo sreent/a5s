@@ -110,12 +110,14 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
     watched = {i["id"] for i in studio.instances(conn) if viewer is None
                or studio.watches(i, viewer)}
     hidden = 0
-    shown: dict[str, dict[tuple[str, str], int]] = {}  # each release's caps, as shown
+    shown: dict[tuple[str, str | None], dict[tuple[str, str], int]] = {}  # as shown, each
+    # release's on a model, since each model earns its own (round 16, G3)
 
-    def caps_of(release: str) -> dict[tuple[str, str], int]:
-        if release not in shown:
-            shown[release] = samples.shown_caps(conn, gw.cfg.seal_keys, release)
-        return shown[release]
+    def caps_of(release: str, model: str | None) -> dict[tuple[str, str], int]:
+        if (release, model) not in shown:
+            shown[(release, model)] = samples.shown_caps(
+                conn, gw.cfg.seal_keys, release, [model] if model else None)
+        return shown[(release, model)]
 
     in_force = list(gw.approvers_in_force(conn))
     carried = [a for a in in_force if a not in approvers] if registry.narrowed(  # a version
@@ -205,7 +207,7 @@ def shown(gw: Any, before: Settings | None, after: Settings,
                                                memberships.rooted(gw.scenario).holders)]
     try:
         with db.transaction(gw.url) as conn:
-            language = languages.of(conn, viewer)
+            language = languages.of(viewer)
             head = (conn.execute("select encode(hash, 'hex') as head from ledger order by seq "
                                  "desc limit 1").fetchone() or {"head": ""})["head"]
         key = (_digest(after), _digest(before), viewer.id, language, head)
@@ -311,7 +313,7 @@ def _decide(gw: Any, tool: Any, call: Call, settings: Settings | None, approved:
         return None
     entity = gw.tool_entity(call.tool, tool, row["pins"])
     about = parts.about(gw.scenario, row, list(call.keys), tool.action, approved,
-                        caps_of(row["release"]))
+                        caps_of(row["release"], row["model"]))
 
     def deciding(for_self: bool) -> Decision:
         context = {**about, "for_self": for_self, "over_limit": over}
@@ -355,9 +357,16 @@ def capped(gw: Any, before: Settings | None, after: Settings, caps_of: Any) -> l
         for part, acts in sorted(registry.action_levels(inst, release).items()):
             earlier = registry.action_levels(was, release).get(part, {}) if was else {}
             for action, level in sorted(acts.items()):
-                if level >= 2 > earlier.get(action, 0) and caps_of(release.release_id).get(
+                model = inst.model or release.model  # each model earns its own (round 16)
+                if level >= 2 > earlier.get(action, 0) and caps_of(release.release_id, model).get(
                         (part, action), 1) < 2:
                     found.append(f"{inst.id} is set to act on its own for {action} in {part}, "
                                  "but a5s holds it to asking first until graded samples show "
-                                 "it's accurate enough, so it makes none on its own yet.")
+                                 f"it's accurate enough on {model}, so it makes none on its "
+                                 "own yet.")
+                elif (level >= 2 and was is not None and (was.model or release.model) != model
+                      and caps_of(release.release_id, model).get((part, action), 1) < 2):
+                    found.append(f"{inst.id} moves to {model}, which hasn't earned acting on its "
+                                 f"own for {action} in {part}: a5s holds it to asking first there "
+                                 "until graded samples on that model show it's accurate enough.")
     return found

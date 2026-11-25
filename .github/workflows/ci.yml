@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [master-data, software-delivery, service-desk]
+        scenario: [master-data, software-delivery, service-desk, procure-to-pay]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - run: docker build -t a5s:dev .

@@ -27,7 +27,8 @@ REFUSED = "runs-work-only-on-records-they-may-see"  # the one reason the run hea
 
 def about(scenario: Scenario, run: dict, records: list[str], action: str | None = None,
           approved: Iterable[str] = (), caps: dict[tuple[str, str], int] | None = None,
-          standing: dict[str, dict | None] | None = None) -> dict[str, Any]:
+          standing: dict[str, dict | None] | None = None, part: str | None = None
+          ) -> dict[str, Any]:
     """What policy weighs of the records a call is about: the level it works at, whether
     they're all in the instance's parts, whether everyone the run acts for may see them, and
     whether they're all the own of the one person it acts for, as the scenario says whose each
@@ -40,10 +41,13 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
     release, part and type, which is 1 until graded samples raise it. A change about no record,
     or in a run that has read content from outside, works at level 1 at most.
 
+    A call naming no record of a tool that works in a part, such as a team's mailbox, works
+    there, at the instance's level in that part, and only where the instance works in it.
+
     A run for nobody that a mailbox's new mail started sees only what every reader of the
     mailbox may see, since its draft waits where they all read it (`audience`, round 15)."""
     parts = run.get("parts") or {}
-    touched = {scenario.part_of(r) for r in records}
+    touched = {scenario.part_of(r) for r in records} or ({part} if part else set())
     levels = [_level(scenario, run, p, action, set(approved), caps or {})
               for p in touched if p in parts]
     level = min(levels) if levels else run["level"]

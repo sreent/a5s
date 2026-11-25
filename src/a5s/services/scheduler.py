@@ -91,6 +91,18 @@ class Slots:
             return self.total - sum(self._free.values())
 
 
+def unread_keys(sent: httpx.Response) -> list[str]:
+    """The record keys a reply named that its run never read, where the core refused it for
+    them: its other refusals, such as for a message that's gone, say why in words."""
+    if sent.status_code != 409:
+        return []
+    try:
+        detail = sent.json().get("detail")
+    except ValueError:
+        return []
+    return [str(k) for k in detail.get("keys") or []] if isinstance(detail, dict) else []
+
+
 class Retry(Exception):
     """The core couldn't be reached, so the work waits and is tried again."""
 
@@ -431,18 +443,10 @@ class Scheduler:
             reply = self._worker(agent)(self.cfg.gateway_url, token, history)
             if not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
-            sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
-                                json={"to": conversation, "text": reply})
-            if sent.status_code == 409 and (keys := sent.json().get("detail", {}).get("keys")):
-                # it named record keys its run never read: one bounded correction, asked once
-                reply = self._worker(agent)(self.cfg.gateway_url, token, [*history, {
-                    "role": "task",
-                    "content": f"[from a5s, not the person] Your answer names {', '.join(keys)}, "
-                               "which this run never read. Write it again with only what you "
-                               "read, or leave the key out."}])
-                sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
-                                    json={"to": conversation, "text": reply,
-                                          "checked_once": True})
+            sent = self._send(agent, token, conversation, reply, history)
+            if sent.status_code == 409:  # the message it answers is gone, as when its sender
+                outcome = "reply denied"  # was erased: a5s writes nobody anything in its place
+                return
             if sent.status_code == 403:
                 outcome = "reply denied"
                 self._turn(claim, self._tell(inbound, notices.NOT_SENT, inst["id"]), run, topic)
@@ -460,13 +464,6 @@ class Scheduler:
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
             outcome = "model unavailable"
-            tried = [*(claim.get("tried_models") or []),
-                     *([opened["model"]] if opened.get("model") else [])]  # this one
-            if len(tried) < 1 + len(opened.get("fallbacks") or []):  # the next model gets a go
-                self._later(claim, model=opened.get("model"))
-            else:  # each of its models was tried: the person hears it, once
-                self._turn(claim, self._tell(inbound, notices.MODEL_DOWN, inst["id"]), run, topic)
-                self._later(claim, never=True, model=opened.get("model"))
         except BudgetSpent as exc:
             outcome = "budget spent"
             said, given = self._spent(agent, inst, person) if "today" in str(exc) else (
@@ -477,7 +474,17 @@ class Scheduler:
             self._turn(claim, self._tell(inbound, notices.UNFINISHED, inst["id"],
                                          who=self._ask(inst, person)), run, topic)
         finally:
-            self._close(run, outcome)
+            kept = self._close(run, outcome)
+        if outcome == "model unavailable":  # once it's closed, and the core says what's left:
+            if kept:  # the next model gets a go, as the run did nothing yet
+                self._later(claim, model=opened.get("model"))
+                return
+            tried = [*(claim.get("tried_models") or []),
+                     *([opened["model"]] if opened.get("model") else [])]  # this one
+            said = (notices.MODEL_DOWN if len(tried) >= 1 + len(opened.get("fallbacks") or [])
+                    else notices.STOPPED)  # each of its models tried, or it did some of it:
+            self._turn(claim, self._tell(inbound, said, inst["id"]), run, topic)  # once
+            self._later(claim, never=True, model=opened.get("model"))
         if outcome == "done":  # once they have their answer
             self._fold(inst["id"], conversation, agent, topic, opened.get("history_chars"),
                        members, inbound)
@@ -592,11 +599,33 @@ class Scheduler:
         it, and whoever said what its runs are given, even if they've left it since."""
         return {p: who.name for p in dict.fromkeys(people) if (who := self.scenario.person(p))}
 
-    def _close(self, run: str, outcome: str) -> None:
+    def _send(self, agent: str, token: str, to: str, reply: str,
+              history: list[dict]) -> httpx.Response:
+        """Send what a run wrote, through the core. Where it names record keys its run never
+        read, the agent writes it again once, told which, and that goes as it is: one bounded
+        correction, on every path a run writes to someone (round 16, A9)."""
+        sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
+                            json={"to": to, "text": reply})
+        if keys := unread_keys(sent):
+            reply = self._worker(agent)(self.cfg.gateway_url, token, [
+                *history, {"role": "assistant", "content": reply}, {
+                    "role": "task", "content": "[from a5s, not the person] Your answer names "
+                    f"{', '.join(keys)}, which this run never read. Write it again with only "
+                    "what you read, or leave the key out."}])
+            sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
+                                json={"to": to, "text": reply, "checked_once": True})
+        return sent
+
+    def _close(self, run: str, outcome: str) -> bool:
+        """Close a run, and whether the core kept its message open for the next model, as
+        that run found its own not answering and did nothing yet (round 16, A2)."""
         try:
-            self.gw.post(f"/runs/{run}/close", headers=self.service, json={"outcome": outcome})
+            closed = self.gw.post(f"/runs/{run}/close", headers=self.service,
+                                  json={"outcome": outcome})
         except httpx.HTTPError:
             log.exception("couldn't close run %s; it expires on its own", run)
+            return False  # the sweep closes it, and takes its message: nobody hears it twice
+        return closed.status_code < 400 and bool(closed.json().get("kept"))
 
     # Reminding people of obligations, telling them about their records, and schedules
 
@@ -639,8 +668,7 @@ class Scheduler:
                 outcome = "reply denied"
                 return
             if person:  # the agent writes to the person it reminds, and to nobody else
-                sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
-                                    json={"to": person, "text": reply})
+                sent = self._send(agent, token, person, reply, [*history, asked])
                 if sent.status_code == 403:
                     outcome = "reply denied"
                     return
@@ -675,15 +703,7 @@ class Scheduler:
         topic. Whether nothing was denied: a task still at work writes to nobody, which isn't
         a denial."""
         owner, agent = claim["owner"], claim["agent"]
-        sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
-                            json={"to": owner, "text": reply})
-        if sent.status_code == 409 and (keys := sent.json().get("detail", {}).get("keys")):
-            reply = self._worker(agent)(self.cfg.gateway_url, token, [*(history or []), {
-                "role": "assistant", "content": reply}, {"role": "task", "content":
-                f"[from a5s, not the person] Your answer names {', '.join(keys)}, which this run "
-                "never read. Write it again with only what you read, or leave the key out."}])
-            sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
-                                json={"to": owner, "text": reply, "checked_once": True})
+        sent = self._send(agent, token, owner, reply, history or [])
         if sent.status_code == 403:
             return tasking.HELD in (sent.json().get("reasons") or [])
         sent.raise_for_status()

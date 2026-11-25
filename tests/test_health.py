@@ -1,8 +1,11 @@
 """The reliability ledger and the SLO gate (core/health.py): per model, per day, how its
-calls went, and a model that fails too much is stopped until a person puts it back."""
+calls went, and a model that fails too much is stopped until the release approver puts it
+back, signed in, through the core, which records who did in the ledger."""
+
+import pytest
 
 from a5s import db
-from a5s.core import health
+from a5s.core import audit, health
 
 
 def fill(conn, scenario, alias, calls, stalls, failed=0):
@@ -50,3 +53,111 @@ def test_a5s_health_measures_this_environments_models_unless_told_otherwise(data
     cli.main(["health", "--scenario", "sample"])  # and another's, when asked
     said = capsys.readouterr().out
     assert said.startswith("elsewhere 2 calls") and "served" not in said
+
+
+def stopped(conn, scenario, alias="fake"):
+    """A model the gate stopped: more than half of 20 calls stalled."""
+    fill(conn, scenario, alias, 20, stalls=11)
+    assert health.gated(conn, scenario, alias)
+
+
+def test_a_stop_outlasts_its_day_until_a_person_puts_it_back(database):
+    """A new day doesn't put a stopped model back by itself: putting it back loosens a5s, so a
+    person does it, and it's listed for them although a5s calls it no more."""
+    with db.transaction(database) as conn:
+        stopped(conn, "sample", "fake")
+        conn.execute("update model_health set day = current_date - 1")  # midnight passed
+        assert health.gated(conn, "sample", "fake") == ("fake failed too much, and a person "
+                                                        "hasn't put it back")
+    [row] = health.report(database, "sample")  # no calls today, as a5s calls it no more
+    assert (row["model"], row["calls"], row["gated_at"] is not None) == ("fake", 0, True)
+    with db.transaction(database) as conn:
+        health.restore(conn, "sample", "fake")
+        assert health.gated(conn, "sample", "fake") is None
+    assert health.report(database, "sample") == []  # nothing today, and nothing stopped
+
+
+def test_only_the_release_approver_puts_a_stopped_model_back_and_the_ledger_says_who(stack):
+    with db.transaction(stack.admin) as conn:
+        stopped(conn, stack.gateway.scenario.name)
+    with stack.client() as c:
+        refused = c.post("/models/fake/restore", json={"by": "ana"})
+        assert refused.status_code == 403 and "release approver" in refused.json()["detail"]
+        assert c.post("/models/elsewhere/restore", json={"by": "rosa"}).status_code == 404
+        put = c.post("/models/fake/restore", json={"by": "rosa"})
+        assert put.status_code == 200 and put.json() == {"restored": "fake", "by": "rosa"}
+        again = c.post("/models/fake/restore", json={"by": "rosa"})
+        assert again.status_code == 409  # it isn't stopped now
+    with db.transaction(stack.admin) as conn:
+        assert health.gated(conn, stack.gateway.scenario.name, "fake") is None
+    [entry] = [e for e in stack.ledger() if e.get("action") == "restore-model"]
+    assert (entry["kind"], entry["decision"], entry["args"]) == (
+        "admin", "record", {"by": "rosa", "identity": "unverified (development)", "model": "fake"})
+    with db.transaction(stack.admin) as conn:  # and the auditors' report says so
+        acts = audit.report(conn, stack.gateway.scenario, [])["acts"]
+    assert [(a["what"], a["by"], a["about"]) for a in acts if a["action"] == "restore-model"] == [
+        ("put back a model the health gate stopped", "rosa", {"model": "fake"})]
+
+
+def test_putting_a_model_back_asks_for_a_sign_in_with_a_second_factor(stack, approving,
+                                                                       provider):
+    from test_mfa import PASSWORD, WITH_MFA, asking
+
+    asking(stack)
+    with db.transaction(stack.admin) as conn:
+        stopped(conn, stack.gateway.scenario.name)
+    plain, strong = (provider.id_token(person="rosa", **claims) for claims in (PASSWORD, WITH_MFA))
+    with stack.client() as c:
+        assert c.post("/models/fake/restore", json={"by": "rosa"}).status_code == 401  # no token
+        refused = c.post("/models/fake/restore", json={"identity": plain})
+        assert refused.status_code == 401 and "second factor" in refused.json()["detail"]
+        posing = c.post("/models/fake/restore", json={"by": "ana", "identity": strong})
+        assert posing.status_code == 403  # signed in as rosa, not ana
+        put = c.post("/models/fake/restore", json={"identity": strong})
+        assert put.status_code == 200 and put.json()["by"] == "rosa"
+    [entry] = [e for e in stack.ledger() if e.get("action") == "restore-model"]
+    assert entry["args"]["identity"] == "verified"
+
+
+def test_a5s_health_puts_a_model_back_through_the_core_as_the_release_approver(
+        stack, monkeypatch, capsys):
+    """The command line doesn't write to the database itself: the core checks who asks, and
+    the ledger records it, as for suspending and resuming."""
+    from a5s import cli
+    from conftest import SERVICE_TOKEN
+
+    with db.transaction(stack.admin) as conn:
+        stopped(conn, stack.gateway.scenario.name)
+    monkeypatch.setenv("A5S_ROOT", str(stack.cfg.root))
+    monkeypatch.setenv("A5S_GATEWAY_URL", stack.url)
+    monkeypatch.setenv("A5S_SERVICE_TOKEN", SERVICE_TOKEN)
+    with pytest.raises(SystemExit, match="403"):
+        cli.main(["health", "--restore", "fake", "--by", "ana"])
+    cli.main(["health", "--restore", "fake", "--by", "rosa"])
+    assert capsys.readouterr().out == "fake is back, put there by rosa.\n"
+    assert [e["args"]["by"] for e in stack.ledger() if e.get("action") == "restore-model"] == [
+        "rosa"]
+
+
+def test_an_operator_puts_a_model_back_with_their_token_as_the_release_approver(
+        stack, monkeypatch, capsys):
+    """Round 16, A5 and D5: the command line sends the operators' token where one is set, as
+    it is on the chart, and the core refused it on this route alone, so only the scheduler's
+    token could put a model back. Now it's an operator's route, and the release approver who
+    asks must be from outside the team that runs a5s, as for resuming."""
+    from dataclasses import replace
+
+    from a5s import cli
+    from test_r15_credentials import OPERATOR
+
+    with db.transaction(stack.admin) as conn:
+        stopped(conn, stack.gateway.scenario.name)
+    stack.gateway.cfg = replace(stack.gateway.cfg, operator_token=OPERATOR, team="risk")
+    monkeypatch.setenv("A5S_ROOT", str(stack.cfg.root))
+    monkeypatch.setenv("A5S_GATEWAY_URL", stack.url)
+    monkeypatch.setenv("A5S_OPERATOR_TOKEN", OPERATOR)
+    with pytest.raises(SystemExit, match="outside the team"):  # Rosa's in the team, here
+        cli.main(["health", "--restore", "fake", "--by", "rosa"])
+    stack.gateway.cfg = replace(stack.gateway.cfg, team="platform")
+    cli.main(["health", "--restore", "fake", "--by", "rosa"])
+    assert capsys.readouterr().out.endswith("fake is back, put there by rosa.\n")

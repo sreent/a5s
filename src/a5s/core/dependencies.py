@@ -74,11 +74,11 @@ ABOUT = {"mcp": "an MCP server", "records": "the scenario's own records",
 def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
           tools: dict[str, Tool], models: dict[str, ModelConfig], viewer: Person,
           language: str = languages.ENGLISH, *, approved: Iterable[str],
-          caps_of: Callable[[str], dict[tuple[str, str], int]]) -> dict:
+          caps_of: Callable[[str, str | None], dict[tuple[str, str], int]]) -> dict:
     """The map as someone may see it: each thing on it, by its kind and name, and each edge,
     from what depends to what it depends on, saying how, in the language they read. Level 2
-    counts where the settings set it only as a5s's caps for an instance's release
-    (`caps_of`), and the approvers of the settings in force (`approved`), let it, as policy
+    counts where the settings set it only as a5s's caps for an instance's release on its
+    model (`caps_of`), and the approvers of the settings in force (`approved`), let it, as policy
     weighs it (core/parts.py): where they don't, the map says so (round 14, C16)."""
     approved = list(approved)
     every = studio.instances(conn)
@@ -148,7 +148,7 @@ def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
             named = words.level(language, level)  # by name, never by number
             second = sorted(a for a, n in (there or {}).items() if n == 2)  # acting on its own
             target = node("part", part, say("part"), "/studio/settings")
-            caps = caps_of(str(inst["release"])) if second else {}
+            caps = caps_of(str(inst["release"]), inst["model"]) if second else {}
             earned = [a for a in second if caps.get((part, a), 1) >= 2]
             held = ", ".join(a for a in second if a not in earned)
             if second and not parts.owned(scenario, part, approved):  # until an owner approves

@@ -125,8 +125,10 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                               serial=row["serial"]),
                           "why": list(dict.fromkeys(why)),
                           "go": f"/studio/approve?settings={row['digest']}"})  # its own page
-    held = sum(1 for p in conn.execute("select records, acts_for from proposals "
-                                       "where status = 'waiting'")
+    held = sum(1 for p in conn.execute(  # not one they've decided, which waits for another
+                   "select records, acts_for from proposals p where status = 'waiting' and not "
+                   "exists (select 1 from proposal_decisions d where d.digest = p.digest and "
+                   "d.person = %s and d.refused is null)", (person.id,))
                if proposals.may_decide(scenario, p, person.id))  # as the directory stands now
     if held:
         found.append({"kind": "decide", "what": words.say(
@@ -189,7 +191,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
             found.append({"kind": "undo", "what": words.say(
                               language, "The {agent} made a change for you, which you can undo "
                               "until {until}: {said}", agent=made["definition"],
-                              until=languages.when(made["until"], language, person.timezone),
+                              until=languages.when(made["until"], person.timezone),
                               said=made["said"]),
                           "why": [], "go": f"/studio/undo?change={made['id']}"})
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
@@ -210,15 +212,18 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
     Counts alone, and the oldest's time: what each is, they see where they may act on it."""
     found: list[dict] = []
     scenario = gw.scenario
-    language = languages.of(conn, person)  # in the language they read (round 14)
+    language = languages.of(person)  # in the language they read (round 14)
 
     def said(one: str, many: str, n: int) -> str:
         return words.say(language, one if n == 1 else many, n=n)
 
-    held = conn.execute("select records, acts_for, proposed_at from proposals where status = "
-                        "'waiting' and instance_id = %s order by proposed_at, id",
-                        (inst["id"],)).fetchall()
-    mine = [p for p in held if proposals.may_decide(scenario, p, person.id)]  # the directory now
+    held = conn.execute(  # with whether they decided it, which waits for another (round 16)
+        "select records, acts_for, proposed_at, exists (select 1 from proposal_decisions d where "
+        "d.digest = p.digest and d.person = %s and d.refused is null) as theirs from proposals p "
+        "where status = 'waiting' and instance_id = %s order by proposed_at, id",
+        (person.id, inst["id"])).fetchall()
+    mine = [p for p in held if not p["theirs"]
+            and proposals.may_decide(scenario, p, person.id)]  # the directory now
     others = [p for p in held if p not in mine]
     if mine:
         found.append({"kind": "decide", "what": said(

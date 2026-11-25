@@ -34,6 +34,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -57,6 +58,7 @@ from a5s.core.handles import TOKEN
 from a5s.core.identity import Verifier
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
+from a5s.core.values import found as typed_values
 from a5s.core.words import kept, say
 
 REMIND, ESCALATE, LAPSE = 2, 5, 10  # working days: remind its deciders, tell their managers, lapse [starting value]
@@ -104,6 +106,44 @@ def deciders(scenario: Scenario, records: list[str],
     return found
 
 
+# An amount as a record holds it, such as 16000, "16,000.00" or "GBP 16,000.00"
+_AMOUNT = re.compile(r"\s*(?:[A-Z]{3}|[£$€¥฿])?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:[A-Z]{3})?\s*")
+
+
+def amount_of(value: object) -> float | None:
+    """A record's amount as a number, or None where it isn't one a5s can read."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    found = _AMOUNT.fullmatch(value) if isinstance(value, str) else None
+    return float(found.group(1).replace(",", "")) if found else None
+
+
+def twice(two: dict[str, tuple[str, float]], scenario: Scenario,
+          proposal: dict) -> dict[str, tuple[str, float]]:
+    """The parts where a held change needs two of the part's deciders, each with the record
+    and the amount that make it so: a part whose rule in the settings says so, where a record
+    the change names held more than the rule's amount when the change was asked for, or an
+    amount a5s can't read, so the rule never lapses on a misread."""
+    found: dict[str, tuple[str, float]] = {}
+    standing = proposal.get("standing") or {}
+    records = proposal["records"]
+    for key in records:
+        part = scenario.part_of(key)
+        if part is None or part not in two or part in found:
+            continue
+        field, above = two[part]
+        kept = standing.get(key)  # as the digest its deciders signed binds it, once held: a
+        bound = kept is not None and (not isinstance(records, dict)  # snapshot changed in the
+                                      or fingerprint_of(kept) == records[key])  # database since
+        # counts as more (round 16, B4). As it's held, the snapshot is the records system's own
+        amount = amount_of(((kept or {}).get("fields") or {}).get(field)) if bound else None
+        if amount is None or amount > above:
+            found[part] = (key, above)
+    return found
+
+
 def everyone(by_part: dict[str | None, list[Person]]) -> list[Person]:
     """Each person who may decide for any part, once."""
     return list({p.id: p for people in by_part.values() for p in people}.values())
@@ -134,6 +174,9 @@ UNASKED = "nobody asked for it: the {agent} asked for it {after}"
 UNASKED_ABOUT = "nobody asked for it: the {agent} asked for it {after}, about {whom}"
 AFTER_EVENT = "after {source} said {type} happened"
 OVER = "it waits because {over}"
+TWO_DECIDERS = ("it needs two of the deciders of {part}, as {record} holds more than {above}: "
+                "one approval alone doesn't make it")
+WAITS_ANOTHER = "{key}: you approved it, and it waits for another of its deciders."
 # and of a change, and of its words, beside them
 CHANGED = "{key} has changed since it was asked for"
 SEALED = ("The change and its records are in their system's words, which a5s seals with your "
@@ -163,8 +206,8 @@ def said(scenario: Scenario, tool: Tool, args: dict, records: dict[str, dict | N
     (samples.snapshot): never the agent's own account of it. One a run nobody asked for asked
     for, such as an event's, says so, rather than that it was for the person it's about."""
     named = [k for k in records]
-    shown = ", ".join(f"{k} {_plain(v, scenario.record_links)}" for k, v in args.items()
-                      if k != tool.record_arg)
+    shown = ", ".join(f"{_plain(k, scenario.record_links)} {_plain(v, scenario.record_links)}"
+                      for k, v in args.items() if k != tool.record_arg)  # names plain, too
     lines = [resolved(f"{tool.description.rstrip('.')}: {', '.join(named) or 'no record'}"
                       + (f", with {shown}" if shown else "") + ".", values or {})]
     lines += stood(records)
@@ -517,14 +560,17 @@ def _mac(key: str, entry: dict) -> str:
 
 
 def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
-             proposal: dict) -> tuple[dict | None, list[str]]:
+             proposal: dict, two: dict[str, tuple[str, float]] | None = None
+             ) -> tuple[dict | None, list[str]]:
     """What counts of the decisions on a held change, in the order they were made: a rejection
     by anyone who may decide it, or an approval for every part it touches, each the core
-    sealed, by someone who may decide for that part now. And what's wrong with any other.
+    sealed, by someone who may decide for that part now, and by two of them where the part's
+    rule in `two`, the settings' two_deciders, says so. And what's wrong with any other.
     {"decision", "rows"}, or None while it still waits."""
     by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
+    need = twice(two or {}, scenario, proposal)
     problems: list[str] = []
-    approved: dict[str | None, dict] = {}
+    approved: dict[str | None, dict[str, dict]] = {}
     for row in conn.execute("select * from proposal_decisions where digest = %s and refused is "
                             "null and (seal is not null or proof is null) order by id",
                             (proposal["digest"],)):
@@ -537,21 +583,24 @@ def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
         elif row["decision"] == "reject":
             return {"decision": "reject", "rows": [row]}, problems
         else:
-            for part in parts:
-                approved.setdefault(part, row)
-            if all(part in approved for part in by_part):
-                rows = list({r["id"]: r for r in approved.values()}.values())
+            for part in parts:  # each decider once in a part: four eyes are two people
+                approved.setdefault(part, {}).setdefault(row["person"], row)
+            if all(len(approved.get(part, {})) >= (2 if part in need else 1) for part in by_part):
+                rows = list({r["id"]: r for got in approved.values() for r in got.values()}.values())
                 return {"decision": "approve", "rows": rows}, problems
     return None, problems
 
 
-def settled(conn: db.Connection, scenario: Scenario, proposal: dict) -> list[str]:
+def settled(conn: db.Connection, scenario: Scenario, proposal: dict,
+            two: dict[str, tuple[str, float]] | None = None) -> list[str]:
     """Who decided a held change already, by name, so that no other decision on it counts:
-    whoever rejected it first, or approved it for every part it touches, by the decisions
-    recorded on it that a5s hasn't refused, sealed yet or not. Nobody while another decision
-    may still count, as a rejection does in a part nobody has approved (round 15, B3)."""
+    whoever rejected it first, or approved it for every part it touches, twice where the
+    part's rule in `two` says so, by the decisions recorded on it that a5s hasn't refused,
+    sealed yet or not. Nobody while another decision may still count, as a rejection does in
+    a part nobody has approved (round 15, B3), or a second approval where two are needed."""
     by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
-    approved: dict[str | None, str] = {}
+    need = twice(two or {}, scenario, proposal)
+    approved: dict[str | None, list[str]] = {}
     first: list[str] = []
     for row in conn.execute("select person, decision from proposal_decisions where digest = %s "
                             "and refused is null order by id", (proposal["digest"],)):
@@ -563,9 +612,11 @@ def settled(conn: db.Connection, scenario: Scenario, proposal: dict) -> list[str
             first = [row["person"]]
             break
         for part in parts:
-            approved.setdefault(part, row["person"])
-        if all(part in approved for part in by_part):
-            first = list(dict.fromkeys(approved.values()))
+            got = approved.setdefault(part, [])
+            if row["person"] not in got:
+                got.append(row["person"])
+        if all(len(approved.get(part, [])) >= (2 if part in need else 1) for part in by_part):
+            first = list(dict.fromkeys(p for got in approved.values() for p in got))
             break
     return [who.name if (who := scenario.person(p)) else p for p in first]
 
@@ -593,7 +644,7 @@ def asking(proposal: dict, link: str, again: bool = False,
     deciders seal, which a reader of another language is told (round 15, B6)."""
     flags = "".join(f"\n- {f}" for f in words.flags(proposal, language))
     opening = (say(language, "Still waiting for your decision: {key}, since {day}.",
-                   key=key(proposal), day=languages.day(proposal["proposed_at"], language))
+                   key=key(proposal), day=languages.day(proposal["proposed_at"]))
                if again else say(language, "{key} waits for your decision.", key=key(proposal)))
     sealed = f"\n{say(language, SEALED)}" if language != languages.ENGLISH else ""
     return (f"{opening}\n{proposal['said']}{sealed}"
@@ -660,13 +711,60 @@ def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
                "Ask again if it's still needed.", **given)
 
 
+def chosen(schema: dict, value: Any, scenario: Scenario) -> bool:
+    """Whether a value of a call holds something the agent chose, beyond naming records, at any
+    depth: any string but one whole key of a record of the scenario's parts, or one of the
+    choices its schema lists; any number, such as an amount. A date or an amount it chose after
+    reading content from outside is that content's, as much as its words are. Yes or no, and
+    nothing, carry nothing."""
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        listed = schema.get("enum") or ([schema["const"]] if "const" in schema else [])
+        if value in listed:
+            return False
+        typed = typed_values(value, getattr(scenario, "record_pattern", None))
+        return not (len(typed) == 1 and typed[0].kind == "key" and typed[0].text == value.strip()
+                    and scenario.part_of(typed[0].norm) is not None)
+    if isinstance(value, dict):
+        props = schema.get("properties") or {}
+        return any(k not in props or chosen(props[k] or {}, v, scenario)  # a name it made up
+                   for k, v in value.items())  # carries its words (round 16, B2)
+    if isinstance(value, list):
+        return any(chosen(schema.get("items") or {}, v, scenario) for v in value)
+    return True
+
+
+def carries(proposal: dict, scenario: Scenario) -> bool:
+    """Whether a held change's words carry what a run that read content from outside chose: its
+    run read some, and its call holds a value the agent chose beyond naming records, which its
+    words repeat to whoever is told of it, or given it (round 15, F1). One naming records
+    alone, and choices its tool lists, such as an invoice to approve, carries none, so telling
+    its decider what became of it marks nothing of theirs (round 16). One whose tool a5s no
+    longer has carries what it chose, as far as a5s can tell."""
+    if not proposal.get("read_outside"):
+        return False
+    tool = scenario.tools().get(proposal.get("tool") or "")
+    if tool is None:
+        return True
+    props = tool.schema.get("properties") or {}
+    args = proposal.get("args") or {}
+    # Only the record the change is about is exempt, as a whole key of it: every other value,
+    # keys and the choices a tool lists included, is what the change writes, so the agent's
+    # choice, such as the order a correction points an invoice at (round 16, B3)
+    return any(k not in props or (chosen(props[k] or {}, v, scenario) if k == tool.record_arg
+                                  else v is not None and not isinstance(v, bool))
+               for k, v in args.items())
+
+
 def brief(conn: db.Connection, instance: str, acts_for: list[str],
-          records: list[str], conversation: str | None = None) -> tuple[list[str], bool]:
+          records: list[str], conversation: str | None = None,
+          scenario: Scenario | None = None) -> tuple[list[str], bool]:
     """The changes waiting for a decision on these records, asked for the same people, for a
     run's brief: so the agent says it waits, rather than asking again. In a group chat, those
-    asked for there while everyone now in it was there. And whether one was asked for by a run
-    that read content from outside, whose words the run that's given them takes on, as what a
-    marked run passed on stays marked (round 15, F1)."""
+    asked for there while everyone now in it was there. And whether one carries what a run that
+    read content from outside wrote, whose words the run that's given them takes on, as what a
+    marked run passed on stays marked (round 15, F1; `carries`)."""
     if not records:
         return [], False
     if conversation is not None:
@@ -681,4 +779,5 @@ def brief(conn: db.Connection, instance: str, acts_for: list[str],
             "and status = 'waiting' and records ?| %s order by id",
             (instance, acts_for, records)).fetchall()
     return ([f"{key(r)} waits for a decision, asked for on {r['proposed_at']:%d %b}: {first(r)}"
-             for r in rows], any(bool(r["read_outside"]) for r in rows))
+             for r in rows], any(carries(r, scenario) if scenario else bool(r["read_outside"])
+                                 for r in rows))

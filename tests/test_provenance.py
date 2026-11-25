@@ -4,7 +4,6 @@ is the agent's own, which a5s says apart from the agent's words."""
 
 from a5s import db
 from a5s.core import handles, values
-from test_languages import reads
 
 PATTERN = r"\bQ-\d{4}\b"
 
@@ -40,15 +39,6 @@ def test_thai_dates_and_amounts_are_found_as_english_ones_are():
         "2026-11-04", "--12-20"]
     assert values.found("ปี 2026 พ.ย.", PATTERN) == []  # a year, never the 26th
     assert values.unmatched(values.found("Refund £860 by 6 Nov", PATTERN), said) == []
-
-
-def test_what_the_agent_wrote_itself_is_said_apart_in_thai_to_whoever_reads_it(stack):
-    reads(stack, "ben", "th")
-    stack.model.reply(None, ("get_record", {"key": "Q-1002"}))
-    stack.model.reply("Q-1002 คืนเงิน 999 ปอนด์ ภายใน 6 พ.ย. 69")
-    told = stack.say("ขอยอดคืนเงินหน่อย ภายใน 6 พฤศจิกายน", person="ben")
-    assert told.endswith("(a5s: 999 ปอนด์ มาจาก assistant เอง ไม่ได้มาจากระเบียนหรือจากคุณ "
-                         "โปรดตรวจสอบก่อนนำไปใช้)")  # the date was theirs, in Thai
 
 def test_what_the_agent_read_from_the_records_carries_its_source(stack):
     stack.model.reply(None, ("get_record", {"key": "Q-1001"}))

@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import signal
 import sys
@@ -284,15 +285,19 @@ def _service(cfg: Config, name: str):
     return inbox.create_app(build.gateway(cfg))  # the channels' endpoints, in the core
 
 
-def _seal_again(cfg: Config, leaked: bool) -> None:
-    """Rotate the seal key, as the core, with its settings (core/rotation.py)."""
+def _seal_again(cfg: Config, leaked: bool, lost: tuple[str, ...] = ()) -> None:
+    """Rotate the seal key, as the core, with its settings (core/rotation.py): or retire, as
+    leaked, keys a5s no longer holds, by their fingerprints."""
     if not cfg.seal_keys:
         sys.exit("Run this where the core runs, with its A5S_SEAL_KEYS, the new key first.")
+    if wrong := [f for f in lost if not re.fullmatch(r"[0-9a-f]{16}", f)]:
+        sys.exit(f"{', '.join(wrong)} isn't a seal key's fingerprint, as the core's refusal "
+                 "names it: sixteen of 0-9 and a-f")
     db.known(cfg.database_url)
     db.own_role(cfg.database_url, "gateway")
     try:
         with db.transaction(cfg.database_url) as conn:
-            done = rotation.again(conn, cfg.seal_keys, leaked=leaked)
+            done = rotation.again(conn, cfg.seal_keys, leaked=leaked, lost=lost)
     except rotation.Refused as exc:
         sys.exit(str(exc))
     print(rotation.told(done))
@@ -306,8 +311,14 @@ def _restore(cfg: Config, backup: str | None = None) -> None:
     store = build.store(cfg)
     if store is None:
         sys.exit("Set A5S_ANCHOR_STORE to the ledger's copies, as the copier has it.")
-    db.known(cfg.database_url)
     db.own_role(cfg.database_url, "gateway")
+    if backup:  # before the schema's checked: an upgrade that brings a migration, with the
+        with db.transaction(cfg.database_url) as conn:  # restore's id left set, finds it done
+            if (seq := restoring.restored(conn, backup)) is not None:  # (round 16, D6)
+                print(f"a5s restored after the backup {backup} already, as entry {seq} of the "
+                      "ledger says: nothing to do.")
+                return
+    db.known(cfg.database_url)
     try:
         with db.transaction(cfg.database_url) as conn:
             if backup and (seq := restoring.restored(conn, backup)) is not None:
@@ -770,13 +781,15 @@ def main(argv: list[str] | None = None) -> None:
     canaries.add_argument("--model", help="only this approved model")
     canaries.add_argument("--scenario", help="whose scores they are (default: the scenario "
                                              "this environment serves)")
-    health = sub.add_parser("health", help="each model's day, measured, and putting a gated "
+    health = sub.add_parser("health", help="each model's day, measured, and putting a stopped "
                                           "model back")
     health.add_argument("--database", help="the database (default: this environment's)")
     health.add_argument("--scenario", help="whose scores they are (default: the scenario this "
                                            "environment serves)")
     health.add_argument("--days", type=int, default=1, help="how many days to measure")
-    health.add_argument("--restore", metavar="MODEL", help="put a gated model back, as a person")
+    health.add_argument("--restore", metavar="MODEL", help="put a stopped model back, as the "
+                                                           "release approver, through the core")
+    health.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     exported.add_argument("--by", help="in development, the officer, who asks nowhere else")
     exported.add_argument("--out", type=Path, help="write it to this file, which only you may "
                                                    "read, rather than print it")
@@ -800,6 +813,9 @@ def main(argv: list[str] | None = None) -> None:
     again = sub.add_parser("seal-again", help="to rotate the seal key: seal again with the "
                                               "first of A5S_SEAL_KEYS what the others sealed, "
                                               "and retire them, as the core, where it runs")
+    again.add_argument("--fingerprint", action="append", default=[], metavar="FINGERPRINT",
+                       help="with --leaked: a key a5s no longer holds, as the core's refusal names "
+                            "it, retired as leaked without the core having started")
     again.add_argument("--leaked", action="store_true",
                        help="for a key that leaked: retire the keys after the first, sealing "
                             "nothing again, so what they sealed stops counting")
@@ -932,15 +948,15 @@ def main(argv: list[str] | None = None) -> None:
         from a5s.core import health as health_mod
         cfg = Config.from_env()
         url, scenario = args.database or cfg.database_url, args.scenario or _served(cfg)
-        with db.transaction(url) as conn:
-            if args.restore:
-                health_mod.restore(conn, scenario, args.restore)
-                print(f"{args.restore} is back: a person put it there.")
-            else:
-                for row in health_mod.report(url, scenario, days=args.days):
-                    state = "stopped" if row["gated_at"] else "answering"
-                    print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
-                          f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
+        if args.restore:  # a loosening: the core checks who asks, and the ledger records it
+            put = _admin(cfg, f"/models/{quote(args.restore, safe='')}/restore",
+                         {"by": args.by, "identity": config.TOKEN.read()})
+            print(f"{put['restored']} is back, put there by {put['by']}.")
+        else:
+            for row in health_mod.report(url, scenario, days=args.days):
+                state = "stopped" if row["gated_at"] else "answering"
+                print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
+                      f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
 
     if args.command == "config":
         return _config(args)
@@ -1032,7 +1048,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
     elif args.command == "seal-again":
-        _seal_again(cfg, args.leaked)
+        _seal_again(cfg, args.leaked, tuple(args.fingerprint))
     elif args.command == "restore":
         _restore(cfg, args.backup)
     elif args.command == "measures":

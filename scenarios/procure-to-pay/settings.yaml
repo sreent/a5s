@@ -1,0 +1,48 @@
+# Synthetic procure-to-pay settings. Sign changes with the owner of each part and the instance
+# approver: Jules for payables, Marco for purchasing and Wen for receiving.
+serial: 1
+data_class: synthetic
+
+# Four eyes: an invoice above 10,000 waits for two of payables' deciders, Jules and Ravi
+two_deciders:
+  payables: {field: amount, above: 10000}
+
+# How accurate graded samples must show the agent's corrections in payables are before a5s lets
+# it make them on its own
+thresholds:
+  payables: 0.95
+
+limits:
+  approve-payment: {per_run: 5, per_person_30_days: 60}
+  correct-reference: {per_run: 3, per_person_30_days: 30}
+
+instances:
+  ap-desk:
+    definition: ap-assistant
+    serves: [team:payables, ravi]
+    parts:  # its level outside them is the lowest of theirs: a draft names its record, and the
+      # mailbox's replies are payables' work (mailboxes.yaml)
+      payables: {level: asks first, actions: {correct-reference: acts on its own}}
+      purchasing: reads only
+      receiving: reads only
+    asks: [receiving-watch]
+    hands_to: [payables]
+    owner: jules
+    deputy: hana
+  buyer-desk:
+    definition: buyer-assistant
+    serves: [team:purchasing]
+    parts:  # a draft to a supplier names the order it's about, in purchasing
+      purchasing: asks first
+      receiving: reads only
+    asks: [receiving-watch]
+    owner: marco
+    deputy: ines
+  receiving-watch:
+    definition: receiving-watcher
+    serves: [team:warehouse, team:purchasing, team:payables, ravi]
+    parts:
+      receiving: reads only
+      purchasing: reads only
+    owner: wen
+    deputy: tomi

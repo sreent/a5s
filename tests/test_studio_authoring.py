@@ -162,7 +162,9 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     # that need what the suite alone does say so, and on the stand-in, one fails, and says why
     page.wait_for_selector(".case >> text=finds questions by what they mention", timeout=30000)
     page.click("#run-cases")
-    page.wait_for_selector("#cases-summary >> text=3 of 4 passed", timeout=120000)
+    page.wait_for_selector("#cases-summary >> text=3 of 5 passed", timeout=120000)
+    thai = page.locator(".case:has-text('answers in Thai someone who writes in Thai')").inner_text()
+    assert "failed" in thai  # the stand-in writes English, which a real model's run shows
     failed = page.locator(""".case:has-text("says when it can't find a record")""").inner_text()
     assert "failed" in failed and "step 1: said none of" in failed
     alone = page.locator(".case:has-text('offers a reminder, and keeps it on the yes')").inner_text()

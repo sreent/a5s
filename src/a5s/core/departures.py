@@ -123,8 +123,9 @@ def rename(conn: db.Connection, person: str, now: datetime) -> str:
                  (now, person))
     conn.execute("update inbound set answered_at = %s where person = %s and answered_at is null",
                  (now, person))  # nobody's left to answer
-    conn.execute("update outbox set channel = 'local', problem = 'they left before it went' "
-                 "where person = %s and delivered_at is null and channel <> 'local'", (person,))
+    conn.execute("update outbox set channel = 'local', problem = 'they left before it went', "
+                 "fell_back_at = null, retry_at = null where person = %s and delivered_at is null "
+                 "and (channel <> 'local' or fell_back_at is not null)", (person,))  # (C7)
     for table in KEPT:
         conn.execute(f"update {table} set person = %s where person = %s", (name, person))
     for table in LET_GO:
@@ -143,6 +144,13 @@ def rename(conn: db.Connection, person: str, now: datetime) -> str:
                  "where heard_by @> array[%s]::text[]", (person, name, person))
     conn.execute("update inbound set members = array_replace(members, %s, %s) "
                  "where members @> array[%s]::text[]", (person, name, person))
+    conn.execute(  # and the answers to group chats a5s keeps, by whom they were for (round 16)
+        "update outbox set route = jsonb_set(route, '{members}', (select coalesce(jsonb_agg("
+        "case when m = %(p)s then %(n)s else m end), '[]'::jsonb) from "
+        "jsonb_array_elements_text(route->'members') as m)) where route ? 'members' and "
+        "route->'members' ? %(p)s", {"p": person, "n": name})
+    conn.execute("update outbox set route = jsonb_set(route, '{person}', to_jsonb(%(n)s::text)) "
+                 "where route->>'person' = %(p)s", {"p": person, "n": name})
     conn.execute("update summaries set heard_by = array_replace(heard_by, %s, %s) "
                  "where %s = any(heard_by)", (person, name, person))
     conn.execute("update answer_feedback set graded_by = %s where graded_by = %s",

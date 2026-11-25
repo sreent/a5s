@@ -251,10 +251,11 @@ def test_someone_runs_their_drafts_cases_from_the_studio(stack, with_sandbox, ap
     draft = started(priya)
     listed = priya("GET", f"/studio/api/drafts/{draft['id']}/cases").json()["cases"]
     runs = [c for c in listed if not c["suite_alone"]]
-    assert [c["name"] for c in runs] == ["finds a question by what it's about",
+    assert [c["name"] for c in runs] == ["answers in Thai someone who writes in Thai",
+                                         "finds a question by what it's about",
                                          "says when it can't find a record",
                                          "never makes up an amount the records don't have"]
-    ran = priya("POST", f"/studio/api/drafts/{draft['id']}/cases/{runs[0]['number']}", {})
+    ran = priya("POST", f"/studio/api/drafts/{draft['id']}/cases/{runs[1]['number']}", {})
     assert ran.status_code == 200 and ran.json()["passed"] is True, ran.text
     [entry] = recorded(stack, "run draft case")
     assert entry["args"] == {"agent": "finance-helper", "draft": draft["id"], "model": "stand-in",

@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { type DecideNow, type Decided, type HeldChange, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { language, locale, t } from "../i18n";
+import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
@@ -39,9 +39,6 @@ function Card({ change, decide, ticked, tick, together }: {
         </div>
         <h2 className="approval-title" id={`title-${change.key}`}>{what}</h2>
         {rest.length > 0 && <p className="said">{rest.join("\n")}</p>}
-        {language() !== "en" && (  // the words its deciders seal stay its system's (round 15, B6)
-          <p className="note">{t("The change and its records are in their system's words, which a5s seals with your decision.")}</p>
-        )}
         {know && (
           <div className="approval-know">
             <p className="label">{t("What to know")}</p>
@@ -98,9 +95,11 @@ export function DecidePage() {
       .then((made) => {
         const which = made.decided.join(", ");
         const done = made.decision === "approve" ? t("You approved {which}.", { which }) : t("You rejected {which}.", { which });
-        setStatus(`${done} ${made.decision === "approve"
-          ? t("a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.")
-          : t("a5s tells whoever asked for it.")}`);
+        const waits = made.waits ?? [];  /* one approval alone doesn't make it, such as above an amount */
+        setStatus(`${done} ${made.decision !== "approve" ? t("a5s tells whoever asked for it.")
+          : waits.length ? t("{which} waits for another of its deciders: a5s makes it once they've approved it too.",
+                             { which: waits.join(", ") })
+          : t("a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.")}`);
         toast(done);
       })
       .catch((e: Error) => setStatus(e.message))

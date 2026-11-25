@@ -186,6 +186,10 @@ class Tool:
     # its parts, and only on those everyone the run acts for may see.
     record_arg: str | None = None
     record_field: str | None = None
+    # The part it works in when a call names no record, such as a team's shared mailbox: a call
+    # to it works at the instance's level in that part, and only where the instance works in it.
+    # None: at the instance's own level, which with parts is the lowest of theirs.
+    part: str | None = None
     # The type of action it takes, if it changes a part's data, such as change-due-date. It
     # names the record it changes, by record_arg. At level 1, a5s holds such a call for the
     # owner of the record's part to decide, and makes it once they approve it.
@@ -377,6 +381,10 @@ class Settings:
     # How accurate an agent's work in a part must be, as graded samples show, before a5s raises
     # its cap to level 2 there, such as {"billing": 0.98}. A part with none never earns it.
     thresholds: dict[str, float] = field(default_factory=dict)
+    # Where a held change needs two of its part's deciders, by what its record holds: for each
+    # part, the record's field with the amount, and the amount above which a second decider
+    # approves too, such as {"payables": ("amount", 10000.0)}. Four eyes, set by its owners.
+    two_deciders: dict[str, tuple[str, float]] = field(default_factory=dict)
     # Roles that come from the identity provider's groups: each group's id, as sign-ins show
     # it, and the roles its members hold, such as {"<group id>": ("part-owner:billing",)}.
     # A version's own map gives nothing towards its approval: the one in force before it does.
@@ -503,6 +511,16 @@ class _Spending(BaseModel):
         return found
 
 
+class _TwoDeciders(BaseModel):
+    """A part's four eyes: the field of a record that holds its amount, and the amount above
+    which a held change to it needs two of the part's deciders."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    field: _FIELD
+    above: Annotated[float, Field(strict=False, gt=0)]
+
+
 class _Version(BaseModel):
     """a5s's own settings format, checked strictly: names are plain words, levels are reads
     only, asks first or acts on its own, or their numbers, 0 to 2, and nothing else may be
@@ -515,6 +533,7 @@ class _Version(BaseModel):
     classified: dict[_FIELD, _ID] = Field(default_factory=dict)
     limits: dict[_ID, _Limit] = Field(default_factory=dict)
     thresholds: dict[_ID, _THRESHOLD] = Field(default_factory=dict)
+    two_deciders: dict[_ID, _TwoDeciders] = Field(default_factory=dict)
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
     groups: dict[_GROUP, list[_GROUP_ROLE]] = Field(default_factory=dict)
     data_protection: _DataProtection = Field(default_factory=_DataProtection)
@@ -554,7 +573,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
             raise SettingsError(f"instances.{iid}.asks: {', '.join(wrong)} isn't another instance "
                                 "in these settings")
     parts = {p for i in version.instances.values() for p in _part_levels(i.parts)} | set(
-        version.thresholds)
+        version.thresholds) | set(version.two_deciders)
     for group, roles in version.groups.items():  # a part's role, for a part these settings name
         if wrong := sorted({r for r in roles if r.partition(":")[0] in GROUP_PART_ROLES
                             and r.partition(":")[2] not in parts}):
@@ -570,6 +589,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         limits={a: {k: v for k, v in limit.model_dump().items() if v is not None}
                 for a, limit in version.limits.items()},
         thresholds=dict(version.thresholds),
+        two_deciders={p: (t.field, float(t.above)) for p, t in version.two_deciders.items()},
         groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
         data_protection=DataProtection(**version.data_protection.model_dump()),
         spending=Spending(agents={a: float(v) for a, v in version.spending.agents.items()},

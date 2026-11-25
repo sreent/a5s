@@ -14,9 +14,9 @@ import httpx
 
 from a5s import db, definitions
 from a5s.config import Config, load_models
-from a5s.connectors import mcp, repositories
+from a5s.connectors import mailboxes, mcp, repositories
 from a5s.core import inbox, memberships, registry
-from a5s.core.gateway import Gateway, create_app
+from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from conftest import (
     QUIET,
     ROOT,
@@ -35,11 +35,14 @@ from conftest import (
 @contextmanager
 def running_scenario(database: str, root: Path, model: FakeModel, scenario: str, folder: str,
                      http: httpx.Client | None = None, alias: str = "fake",
-                     worker_image: str | None = None, scenario_folder: Path | None = None) -> Iterator[Stack]:
+                     worker_image: str | None = None, scenario_folder: Path | None = None,
+                     again: bool = False) -> Iterator[Stack]:
     """The core, the channels and the scenario's agents, each agent on the model `alias`, with
     the core's clock where the sample's is, until a test sets it. With `worker_image`, each
     run goes to a worker from it, in a container of its own (conftest.py's `worker_for`). With
-    `scenario_folder`, the scenario's folder is that copy, such as one a walk-through changes."""
+    `scenario_folder`, the scenario's folder is that copy, such as one a walk-through changes.
+    `again` starts a5s again on the database it ran on, as after a restart or an upgrade: the
+    made-up systems keep what was done through them, as an organisation's would."""
     port = free_port()
     agents = root / "scenario-agents"
     if not agents.exists():  # else it's deployed again, with what was merged since
@@ -52,17 +55,21 @@ def running_scenario(database: str, root: Path, model: FakeModel, scenario: str,
                  root=root, development=True, seal_keys=(SEAL_KEY,), scenario=scenario,
                  scenario_folder=scenario_folder or ROOT / "scenarios" / folder, agents_folder=agents)
     module, name = scenario.split(":")
-    scenario_systems(folder)  # the systems its mcp.yaml declares tools of, if it has any
+    scenario_systems(folder, fresh=not again)  # the systems its mcp.yaml declares tools of
     found = mcp.served(getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url),
                        cfg.scenario_dir)
     found = repositories.served(found, cfg.scenario_dir)
+    # and the mailboxes its mailboxes.yaml names, which the core reads with the deployment's app,
+    # as A5S_MAIL_* names it, if any (connectors/mailboxes.py)
+    found = mailboxes.served(found, cfg.scenario_dir, database=cfg.database_url,
+                             reserved=frozenset(CORE_TOOLS), app=mailboxes.App.from_env())
     hashes = {n: t.schema_hash for n, t in found.tools().items()}
     for agent in agents.iterdir():
         definitions.pin(agent, hashes)
     directory = memberships.grouped(found, cfg.database_url, lambda conn: gw.groups_in_force(conn))
     gw = Gateway(cfg, directory, policy_of(found), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http or httpx.Client(),
-                 clock=lambda: QUIET)
+                 clock=lambda: QUIET, mail=mailboxes.of(found))
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, found.settings(), found.tools(),
                                  found.person, found.name)

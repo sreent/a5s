@@ -108,3 +108,23 @@ def test_load_refuses_a_canary_without_an_expected_answer(tmp_path):
         {"role": "user", "content": "hi"}]}]}), encoding="utf-8")
     with pytest.raises(ValueError, match="expect"):
         canaries.load(file)
+
+@pytest.mark.live
+def test_every_canary_answers_on_each_approved_model_whose_key_is_set(database):
+    """Each night (.github/workflows/nightly.yml), live: every canary on each approved model
+    whose key is set, so what drifts behind a model's name fails here, naming the canary and
+    the model, before the agents' own suites find it at a release."""
+    from pathlib import Path
+
+    from a5s.config import load_models
+
+    approved = {alias: found for alias, found in load_models(
+        Path(__file__).resolve().parents[1] / "config" / "models.yaml").items()
+        if not found.key_env or found.api_key}
+    if not approved:
+        pytest.skip("no approved model's key is set here")
+    failed = canaries.run(database, "sample", approved)
+    with db.connect(database) as conn:
+        wrong = [f"{r['canary']} on {r['model']}: {r['answered'][:120]!r}" for r in conn.execute(
+            "select canary, model, answered from canary_scores where not passed").fetchall()]
+    assert failed == 0, wrong

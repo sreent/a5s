@@ -20,6 +20,13 @@ restore`, run as the core before any part of a5s starts, then:
   writes to them first, which comes back once they write. An archive's erasure, by a name a
   later archive doesn't take, or one whose person a run looks at work for, is listed for the
   officer to ask for again;
+- lets go of each account someone connected or disconnected since the backup, whose tokens
+  the backup brings back as they were: an agent never acts as someone who withdrew it, and
+  whoever connected since connects again;
+- sets each instance suspended, resumed, retired or restored since the backup as its last
+  word in the ledger says, so the core finds it as it was;
+- retires again each seal key retired since the backup, leaked or not, as the backup brings
+  it back unretired;
 - holds what a5s was to send through a chat, which may have gone already: it waits in each
   person's local inbox instead, saying so, so nobody hears anything twice;
 - starts each mailbox afresh from now, as at its first look, so mail read since the backup
@@ -37,7 +44,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from a5s import db
-from a5s.core import anchor, departures, erasure, ledger
+from a5s.core import anchor, customers, departures, erasure, ledger
 from a5s.core.stores import Store
 
 HELD = "held after a restore from a backup: it may have gone already"
@@ -63,10 +70,11 @@ def restore(conn: db.Connection, store: Store, backup: str | None = None) -> dic
                       bytes.fromhex(row["hash"])))
     entries = [json.loads(r["entry"]) for r in rows]
     done = {"backup": backup, "put_back": len(rows), "through": rows[-1]["seq"] if rows else None,
-            **_done(conn, entries), **_erased(conn, entries)}
+            **_done(conn, entries), **_erased(conn, entries), **_since(conn, entries)}
     done["held"] = conn.execute(
-        "update outbox set channel = 'local', inbound_id = null, retry_at = null, problem = %s "
-        "where delivered_at is null and channel <> 'local'", (HELD,)).rowcount
+        "update outbox set channel = 'local', inbound_id = null, retry_at = null, problem = %s, "
+        "fell_back_at = null where delivered_at is null and (channel <> 'local' or "
+        "fell_back_at is not null)", (HELD,)).rowcount  # in the inbox, and not again (C7)
     done["mailboxes"] = conn.execute("delete from mail_state").rowcount
     ledger.append(conn, {"kind": "restore", "action": "restore", "run": None, "instance": None,
                          "acts_for": [], "decision": "record", "args": done})
@@ -111,9 +119,9 @@ def _erased(conn: db.Connection, entries: list[dict]) -> dict[str, Any]:
         person = (entry.get("args") or {}).get("person")
         if (entry.get("kind"), entry.get("action")) != ("admin", "erase") or not person:
             continue
-        if person.startswith(departures.FORMER):  # a later archive takes another name
-            left.append(person)
-            continue
+        if person.startswith((departures.FORMER, customers.DIGESTED)):  # a later archive takes
+            left.append(person)  # another name, and a customer's address is kept by its digest
+            continue  # alone, so the officer asks again with it (round 16, D1)
         try:
             erasure.erase(conn, person, now)
         except erasure.Busy:  # a run the backup kept open, which the sweep will close
@@ -121,6 +129,55 @@ def _erased(conn: db.Connection, entries: list[dict]) -> dict[str, Any]:
             continue
         again += 1
     return {"erased_again": again, "erase_again": left}
+
+
+_STATUS = {"suspend": "suspended", "retire": "retired"}  # resume: back at work
+
+
+def _since(conn: db.Connection, entries: list[dict]) -> dict[str, int]:
+    """Redo what the database's rows lost since the backup, as the entries say: let go of each
+    account connected or disconnected since, whose tokens the backup holds as they were; set
+    each instance as its last suspension, resumption, retirement or restoration left it; and
+    retire again each seal key retired since (round 16, D3, D4)."""
+    accounts = {(e["acts_for"][0], (e.get("args") or {}).get("system")) for e in entries
+                if (e.get("kind"), e.get("action")) in (("admin", "connect"),
+                                                         ("admin", "disconnect"))
+                and e.get("acts_for") and (e.get("args") or {}).get("system")}
+    let_go = 0
+    for person, system in sorted(accounts):
+        let_go += conn.execute("delete from delegations where person = %s and system = %s",
+                               (person, system)).rowcount
+        conn.execute("delete from delegation_starts where person = %s and system = %s",
+                     (person, system))
+    last: dict[str, dict] = {}
+    for e in entries:
+        if (e.get("kind") == "admin" and e.get("instance")
+                and e.get("action") in ("suspend", "resume", "retire", "restore")):
+            last[e["instance"]] = e
+    set_back = 0
+    for instance, e in sorted(last.items()):
+        args = e.get("args") or {}
+        status = _STATUS.get(e["action"]) or (args.get("status") if e["action"] == "restore"
+                                               else None)
+        set_back += conn.execute(
+            "update instances set status = coalesce(%s, case when shadows is null then 'active' "
+            "else 'shadow' end), suspended_by = case when %s = 'suspend' then %s end, "
+            "updated_at = now() where id = %s", (status, e["action"],
+                                                 args.get("suspended_by") or args.get("by"),
+                                                 instance)).rowcount
+    retired = 0
+    for e in entries:
+        args = e.get("args") or {}
+        if (e.get("kind"), e.get("action")) == ("admin", "retire-seal-key") and args.get(
+                "fingerprint"):
+            retired += conn.execute(
+                "insert into seal_keys (fingerprint, retired_at, leaked) values (%s, %s, %s) "
+                "on conflict (fingerprint) do update set retired_at = coalesce("
+                "seal_keys.retired_at, excluded.retired_at), sealing_since = null, leaked = "
+                "seal_keys.leaked or excluded.leaked",
+                (args["fingerprint"], datetime.fromisoformat(e["at"]),
+                 bool(args.get("leaked")))).rowcount
+    return {"let_go": let_go, "set_back": set_back, "keys_retired": retired}
 
 
 def told(done: dict[str, Any]) -> str:
@@ -134,6 +191,10 @@ def told(done: dict[str, Any]) -> str:
             "backup had." + (f" Ask the data protection officer to ask again to erase "
                              f"{', '.join(done['erase_again'])}, which a5s can't erase again "
                              "now." if done["erase_again"] else "") +
+            f" Let go of {done.get('let_go', 0)} accounts people connected or disconnected since "
+            "the backup, which they connect again. Set "
+            f"{done.get('set_back', 0)} instances as they were suspended, resumed or retired since, "
+            f"and retired {done.get('keys_retired', 0)} seal keys again."
             f" Held {done['held']} messages a5s was to send, which wait in each person's local "
             f"inbox. {done['mailboxes']} mailboxes start afresh from now. Look through what the "
             "runbook lists before you start a5s (docs/runbooks.md#restoring-from-a-backup).")

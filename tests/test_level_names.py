@@ -1,7 +1,6 @@
 """What an agent may do in a part, by name: it reads only, it asks first, or it acts on its own.
 Settings and agent definitions take the names, and the numbers as before; every file a5s ships,
-everything its code and policies say, and the studio's words in both languages name them, never
-a number; and the pilot's assistant, as it ships, asks first at most, whatever the settings
+everything its code and policies say, and the studio's words name them, never a number; and the pilot's assistant, as it ships, asks first at most, whatever the settings
 give it."""
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from a5s.definitions import Autonomy, load
 ROOT = Path(__file__).resolve().parents[1]
 # a level by its number, as people no longer read it: "level 2", "Level {level}", "level-1-"
 NUMBERED = re.compile(r"\blevels?[\s_-]*(?:[0-2](?!\d)|\{)", re.IGNORECASE)
-THAI_NUMBERED = re.compile(r"ระดับ\s*[0-2{]")
 
 
 def version(level: object = "asks first", part: object = None, action: object = None) -> bytes:
@@ -138,11 +136,8 @@ def test_what_a5s_says_names_each_level_never_its_number():
     numbered = [f"{path.relative_to(ROOT)}:{line}: {text}" for path in code
                 for line, text in said(ast.parse(path.read_text(encoding="utf-8"))) if NUMBERED.search(text)]
     assert numbered == []
-    for english, thai in words.TH.items():  # the catalogue, in both languages
-        assert not NUMBERED.search(english) and not THAI_NUMBERED.search(thai), english
-    assert [words.level(language, n) for language in ("en", "th") for n in (0, 1, 2, None)] == [
-        "reads only", "asks first", "acts on its own", "none",
-        words.TH["reads only"], words.TH["asks first"], words.TH["acts on its own"], words.TH["none"]]
+    assert [words.level("en", n) for n in (0, 1, 2, None)] == [
+        "reads only", "asks first", "acts on its own", "none"]
 
 
 def test_the_policies_reasons_and_names_never_number_a_level():
@@ -154,12 +149,8 @@ def test_the_policies_reasons_and_names_never_number_a_level():
             assert not NUMBERED.search(annotation), (pack.name, annotation)
 
 
-def test_the_studio_names_each_level_in_both_languages():
-    source = [p for p in (ROOT / "studio" / "src").rglob("*.ts*") if "i18n" not in p.parts]
+def test_the_studio_names_each_level():
+    source = list((ROOT / "studio" / "src").rglob("*.ts*"))
     keys = {key for path in source
             for key in re.findall(r'\bt\(\s*"((?:[^"\\]|\\.)*)"', path.read_text(encoding="utf-8"))}
     assert keys and not [k for k in keys if NUMBERED.search(k)]
-    for path in (ROOT / "studio" / "src" / "i18n" / "th").glob("*.ts"):
-        for english, thai in re.findall(r'^\s*"((?:[^"\\]|\\.)*)":\s*"((?:[^"\\]|\\.)*)"',
-                                        path.read_text(encoding="utf-8"), re.MULTILINE):
-            assert not NUMBERED.search(english) and not THAI_NUMBERED.search(thai), english

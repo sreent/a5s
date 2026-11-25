@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from conftest import ROOT
 
 SERVERS = {"service-desk": ("desk", ("itsm", "idp", "mdm")), "software-delivery": ("delivery", ("forge",)),
-           "master-data": ("master", ("sap",))}
+           "master-data": ("master", ("sap",)), "procure-to-pay": ("p2p", ("erp",))}
 
 
 def system(name: str):
@@ -101,3 +101,60 @@ def test_in_tests_the_sandbox_calls_its_own_copies():
     declared = yaml.safe_load((ROOT / "scenarios" / "master-data" / "mcp.yaml").read_text(encoding="utf-8"))["servers"]
     assert declared["sap"]["sandbox"] == f"http://127.0.0.1:{9204 + SPARE}/mcp"
     assert Path(found["sandbox-sap"].state) != Path(found["sap"].state or "/nowhere")
+
+
+def test_the_made_up_exchange_answers_the_cores_own_graph_client(monkeypatch, database):
+    """The procure-to-pay scenario's invoices mailbox, on a5s's containers: the made-up Exchange
+    (deploy/systems/mailbox.py) signs in the deployment's app alone, gives the core where the
+    inbox stands, with mail already there starting nothing, finds and reads the made-up
+    messages, keeps a reply among the drafts, and sends nothing."""
+    from datetime import UTC, datetime
+    from urllib.parse import quote
+
+    from a5s.connectors import mailboxes
+    from a5s.connectors.rest import ConnectorError
+    monkeypatch.setenv("A5S_MAIL_CLIENT_SECRET", "made-up-secret")
+    folder = ROOT / "scenarios" / "procure-to-pay"
+    client = TestClient(system("mailbox").make(folder))
+    invoices = mailboxes.declared(folder).mailboxes["invoices"]
+
+    def box(secret: str) -> mailboxes._Exchange:
+        app = mailboxes.App("harbour", "a5s-mail", secret, "http://testserver/v1.0",
+                            "http://testserver")
+        return mailboxes._Exchange("invoices", invoices, mailboxes.Graph(app, lambda: client),
+                                   database)
+
+    with pytest.raises(ConnectorError, match="didn't give a5s's app a token"):
+        box("guessed").graph.token()
+    exchange = box("made-up-secret")
+    found, link = exchange.new(None, datetime(2026, 11, 24, tzinfo=UTC))
+    assert found == [] and link.startswith("http://testserver/v1.0/")  # mail already there
+    assert exchange.new(link, datetime(2026, 11, 24, 0, 1, tzinfo=UTC))[0] == []
+    hits = exchange.search(["INV-9002"])
+    assert [h["from"] for h in hits] == ["billing@litware.example"]
+    read = exchange.read(hits[0]["key"])
+    assert read and "INV-9002" in read["text"] and not read["attachments"]
+    assert exchange.draft(hits[0]["key"], "Thank you: we're looking into it.") is None
+    assert client.app.state.drafts[0]["message"]["toRecipients"] == [  # to whom it came from
+        {"emailAddress": {"address": "billing@litware.example"}}]
+    token = exchange.graph.token()
+    message = quote(client.app.state.held[invoices.address][1]["id"], safe="")
+    path = f"/v1.0/users/{invoices.address}/messages/{message}/send"
+    sent = client.post(path, headers={"Authorization": f"Bearer {token}"})
+    assert sent.status_code == 403  # a5s sends nothing, and nor does it here
+    elsewhere = client.get("/v1.0/users/ceo@harbour.test/messages",
+                           headers={"Authorization": f"Bearer {token}"})
+    assert elsewhere.status_code == 403  # a mailbox the app isn't given
+
+
+def test_on_the_containers_the_core_alone_reads_the_made_up_exchange():
+    compose = yaml.safe_load((ROOT / "deploy" / "compose.p2p.yaml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    mailbox = services["p2p-mailbox"]
+    assert mailbox["network_mode"] == "service:gateway" and mailbox["restart"] == "unless-stopped"
+    assert mailbox["depends_on"]["gateway"]["restart"]
+    gateway = services["gateway"]["environment"]
+    assert gateway["A5S_MAIL_GRAPH"].startswith("http://127.0.0.1:")  # on its own loopback
+    assert gateway["A5S_MAIL_CLIENT_SECRET"] == mailbox["environment"]["A5S_MAIL_CLIENT_SECRET"]
+    for part in ("channels", "scheduler"):  # who reads the mailbox is the core's alone
+        assert "A5S_MAIL_CLIENT_SECRET" not in (services[part].get("environment") or {}), part

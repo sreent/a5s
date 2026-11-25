@@ -65,6 +65,16 @@ class AnchorError(Exception):
     pass
 
 
+def awaiting_restore(conn: db.Connection) -> str | None:
+    """Why a5s opens no run now, if it doesn't: the copier stopped as the ledger's copies hold
+    entries the database lacks, as after a restore from a backup, until `a5s restore` puts them
+    back. Otherwise the scheduler would answer again messages answered since the backup, and
+    make again changes made since (round 16, D9)."""
+    row = conn.execute("select problem from copier where stopped").fetchone()
+    found = str(row["problem"] or "") if row else ""
+    return found if found.startswith(RESTORED.split("{", 1)[0]) else None
+
+
 @dataclass(frozen=True)
 class Head:
     first: int  # the first entry in the segment

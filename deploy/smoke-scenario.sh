@@ -5,10 +5,12 @@
 # their made-up keys; that one of its people asks its assistant in Matrix and gets an answer
 # from the scenario's records; that the core recorded the homeserver vouching for them; that
 # the core works the scenario's obligations out from its records, each naming someone in its
-# directory; that its assurance reads who holds each role in the audit trail; and that the
-# ledger verifies against its locked copies. deploy/smoke.sh checks the rest with the sample.
+# directory; that, where it names shared mailboxes, the core signs in to a made-up Exchange
+# and reads where each stands; that its assurance reads who holds each role in the audit trail;
+# and that the ledger verifies against its locked copies. deploy/smoke.sh checks the rest with
+# the sample.
 # Needs the image first: docker build -t a5s:dev .
-#   sh deploy/smoke-scenario.sh master-data       (or software-delivery, or service-desk)
+#   sh deploy/smoke-scenario.sh master-data       (or software-delivery, service-desk or procure-to-pay)
 set -eu
 cd "$(dirname "$0")/.."
 folder=${1:-}
@@ -28,7 +30,11 @@ case "$folder" in
     class=a5s.service_desk:ServiceDeskScenario signers="ren zia max dev" assurance=zia
     asker=sam agent=desk-assistant expected=INC0000001
     question="Which tickets are about the VPN?" ;;
-  *) echo "Which scenario? master-data, software-delivery or service-desk"; exit 2 ;;
+  procure-to-pay)
+    class=a5s.procure_to_pay:ProcureToPayScenario signers="ida ken lars tara" assurance=ken
+    asker=hana agent=ap-assistant expected=INV-9002
+    question="Which invoices are on PO-4502?" ;;
+  *) echo "Which scenario? master-data, software-delivery, service-desk or procure-to-pay"; exit 2 ;;
 esac
 if command -v cygpath >/dev/null 2>&1; then
   export MSYS2_ARG_CONV_EXCL="${MSYS2_ARG_CONV_EXCL:+$MSYS2_ARG_CONV_EXCL;}/work;/keys;/config"
@@ -62,6 +68,10 @@ systems=""
 if [ "$folder" = service-desk ]; then systems="-f deploy/compose.desk.yaml"; fi
 if [ "$folder" = software-delivery ]; then systems="-f deploy/compose.delivery.yaml"; fi
 if [ "$folder" = master-data ]; then systems="-f deploy/compose.master.yaml"; fi
+if [ "$folder" = procure-to-pay ]; then  # and its invoices mailbox, in a made-up Exchange
+  systems="-f deploy/compose.p2p.yaml"
+  echo "A5S_MAIL_CLIENT_SECRET=$(random)" >> "$env_file"  # the deployment's app's, made up
+fi
 # shellcheck disable=SC2086 # $systems is one or no compose file, split on purpose
 compose() { docker compose -p "a5s-$folder" --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.storage.yaml \
@@ -154,6 +164,20 @@ strangers = [person for _, person in owed if scenario.person(person) is None]
 assert not strangers, strangers
 print(f"The core worked {len(owed)} obligations out from the records, each naming someone in "
       f"the directory, such as {owed[0][0]} for {owed[0][1]}.")
+
+# A scenario's shared mailboxes, which the core alone reads, as the deployment's app
+from a5s.connectors import mailboxes
+named = set(declared.mailboxes) if (declared := mailboxes.declared(cfg.scenario_dir)) else set()
+for _ in range(60 if named else 0):  # asked at the same sweep, at most once a minute
+    with psycopg.connect(cfg.database_url) as conn:
+        read = {box for box, at in conn.execute("select mailbox, delta from mail_state") if at}
+    if read >= named:
+        break
+    time.sleep(2)
+if named:
+    assert read >= named, f"in two minutes the core didn't read where {', '.join(sorted(named - read))} stands"
+    print(f"The core signed in as the deployment's app, and read where {', '.join(sorted(named))} "
+          "stands in Exchange.")
 PY
 
 compose exec -T gateway a5s audit report --by "$assurance" > "$work/report"

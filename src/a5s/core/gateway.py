@@ -54,6 +54,7 @@ from a5s.contract import (
 )
 from a5s.core import (
     afresh,
+    anchor,
     approvals,
     asking,
     asks,
@@ -154,7 +155,7 @@ OPERATING = frozenset({
     "/people/{person}/export", "/people/{person}/erase", "/audit/entries", "/audit/export",
     "/audit/report", "/studio/agents", "/studio/agents/{agent}", "/studio/agents/{agent}/measures",
     "/studio/instances/{instance}/measures", "/studio/instances/{instance}/runs",
-    "/studio/runs/{run_id}"})
+    "/studio/runs/{run_id}", "/models/{alias}/restore"})
 
 
 def credential(token: str) -> str:
@@ -183,6 +184,10 @@ STILL = ("{key}, which you asked for, waits still for {names} to decide it, afte
 
 # a5s's notes on what an agent left for people to check before it goes outside (round 15)
 CHECKED = "Before anyone sends what the {agent} left in {where}: {note}"
+
+# Seconds of the worker's wait for a model call that a5s keeps for itself: the chain of
+# models it tries stops this long before, so its answer, or why none came, arrives in time
+CHAIN_MARGIN = 10.0
 
 WHY = {  # why an agent's run didn't get its message through, in words people read
     "model unavailable": "its model isn't answering", "budget spent": "it has used its budget "
@@ -262,10 +267,13 @@ _TYPES = {"string": str, "integer": int, "number": int | float, "boolean": bool,
           "array": list, "null": type(None)}
 
 
-def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
+def misfit(schema: dict[str, Any], value: Any, where: str = "",
+           closed: bool = False) -> str | None:
     """Why a tool's arguments don't fit its pinned schema, if they don't: the types, required
     properties and items it names, the values it lists, and the lengths, patterns and bounds it
-    sets. A model can send anything, so a call must fit its schema before policy looks at it."""
+    sets. A model can send anything, so a call must fit its schema before policy looks at it.
+    `closed` for a tool that changes something: an argument its schema doesn't name is refused,
+    as its name could carry words of its own into what deciders read (round 16, B2)."""
     kind = schema.get("type")
     kinds = kind if isinstance(kind, list) else [kind] if kind else []
     named = where or "the arguments"
@@ -302,9 +310,10 @@ def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
                 return f"{where}{'.' if where else ''}{name} is missing"
         for name, found in value.items():
             sub = (schema.get("properties") or {}).get(name)
-            if sub is None and schema.get("additionalProperties") is False:
+            if sub is None and (closed or schema.get("additionalProperties") is False):
                 return f"{where}{'.' if where else ''}{name} isn't one of its arguments"
-            if sub and (problem := misfit(sub, found, f"{where}{'.' if where else ''}{name}")):
+            if sub and (problem := misfit(sub, found, f"{where}{'.' if where else ''}{name}",
+                                          closed)):
                 return problem
     if isinstance(value, list) and isinstance(schema.get("items"), dict):
         for n, item in enumerate(value):
@@ -353,6 +362,16 @@ class Gateway:
         if settings is None and not self.cfg.seal_keys:
             settings = self.sealed_in_force(conn)
         return settings.data_protection if settings is not None else DataProtection()
+
+    def four_eyes(self, conn: db.Connection) -> dict[str, tuple[str, float]] | None:
+        """Where a held change needs two of its part's deciders, as the settings in force say,
+        read as the officer's choices are, in the channels app too, which can't count what was
+        approved on the page (round 16, B5): None while no settings can be used, and then the
+        decide page counts every part as needing two, so one approval never settles one."""
+        settings, _ = self.settings_in_force(conn, seal=False)
+        if settings is None and not self.cfg.seal_keys:
+            settings = self.sealed_in_force(conn)
+        return settings.two_deciders if settings is not None else None
 
     def spending_in_force(self, conn: db.Connection) -> Spending:
         """What parts and agents may cost a month, as the settings in force say, read as the
@@ -441,7 +460,8 @@ class Gateway:
         level, scope = registry.levels(signed, release)
         expected = (signed.definition, sorted(signed.serves), level, scope,
                     registry.action_levels(signed, release), sorted(release.grants),
-                    release.model, release.pins, signed.owner or release.owner,
+                    signed.model or release.model,  # the settings' choice, else its release's
+                    release.pins, signed.owner or release.owner,
                     signed.deputy or release.deputy, sorted(signed.asks), signed.shadows,
                     sorted(signed.hands_to))
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
@@ -677,7 +697,7 @@ class Gateway:
         """The language someone reads, as a5s writes to them: English for anyone it doesn't
         know."""
         found = self.scenario.person(person)
-        return languages.of(conn, found) if found else languages.ENGLISH
+        return languages.of(found) if found else languages.ENGLISH
 
     def approvers_in_force(self, conn: db.Connection) -> list[str]:
         """Who approved the settings in force, by key or on a card the core sealed: who signed
@@ -693,10 +713,39 @@ class Gateway:
                 break
         return found
 
-    def caps(self, conn: db.Connection, release: str) -> dict[tuple[str, str], int]:
-        """a5s's caps for a release's types of action in each part, as the core sealed them
-        with the ledger's last word on each: 1 where there's none."""
-        return samples.caps(conn, self.cfg.seal_keys, release)
+    def caps(self, conn: db.Connection, release: str,
+             models: list[str] | None = None) -> dict[tuple[str, str], int]:
+        """a5s's caps for a release's types of action in each part, on these models, or its own
+        where none are named, as the core sealed them with the ledger's last word on each: the
+        lowest any of them earned, and 1 where any earned none (round 16, G3). Each model's
+        behaviour as the release a5s loaded works it out (round 16, A4)."""
+        return samples.caps(conn, self.cfg.seal_keys, release, models,
+                            lambda action, model: self.behaviour(release, action, model))
+
+    def behaviour(self, release: str, action: str, model: str | None) -> str | None:
+        """What decides how a release acts on a type of action on a model, its own where none
+        is named, worked out from the release a5s loaded, never read from the database, where a
+        row changed would earn what another model or release earned (round 16, A4). None for a
+        release a5s doesn't have."""
+        found = next((d for d in self.definitions.values() if d.release_id == release), None)
+        if found is None:
+            return None
+        return samples.behaviour(found.id, model or found.model, found.pins, found.tool_names,
+                                 self.scenario.tools(), action)
+
+    def answered(self, conn: db.Connection, run: str, model: str | None,
+                 before: int | None = None) -> list[str]:
+        """The models that answered a run's calls, before a ledger entry where one is given,
+        the one that answered last at the end: what a change the run asks for is made on, so it
+        acts on its own only where each of them earned it, whether the run's own model, one its
+        instance's settings put it on, or one a call fell back to (round 16, G3). The run's own
+        model where none has answered yet."""
+        rows = conn.execute(
+            "select action, max(seq) as last from ledger where run_id = %s and kind = 'model' "
+            "and decision = 'record' and (entry::jsonb -> 'outcome' ->> 'status')::int < 400 "
+            "and seq < %s group by action order by last",
+            (run, before if before is not None else 2 ** 62)).fetchall()
+        return [r["action"] for r in rows] or ([model] if model else [])
 
     def approving(self, sealing: bool = True) -> str | None:
         """Why approvers can't approve settings where they work here, if they can't: it takes
@@ -831,8 +880,8 @@ class Gateway:
         opening = Opening(
             trigger={"kind": "message", "inbound": inbound,
                      "channel": message["channel"] if message else None, "sender": sender,
-                     "topic": topic, **({"conversation": group, "asked_by": asked_by}
-                                        if group else {})},
+                     "topic": topic, "tried_models": tried,  # before it, for its close
+                     **({"conversation": group, "asked_by": asked_by} if group else {})},
             acts_for=acts_for, reasons=[problem] if problem else [],
             args={"channel": message["channel"] if message else None, "inbound": inbound},
             used=problem is not None and "already" in problem)
@@ -855,11 +904,12 @@ class Gateway:
                       shadowed: dict | None) -> str | None:
         """Why a shadow's model may not read the conversation of the instance it shadows: it
         must be approved for the settings' class of data, and for each class of field the
-        live instance's model may read, which that conversation may hold."""
+        live instance's model may read, which that conversation may hold: the models the
+        settings put each on, or else their releases' (round 16)."""
         mine = self.definitions.get(inst["definition"])
         theirs = self.definitions.get(shadowed["definition"]) if shadowed else None
-        model = self.models.get(mine.model) if mine else None
-        live = self.models.get(theirs.model) if theirs else None
+        model = self.models.get(inst.get("model") or (mine.model if mine else ""))
+        live = self.models.get((shadowed or {}).get("model") or (theirs.model if theirs else ""))
         if settings is None or model is None or live is None:
             return f"{inst['id']}'s model, or that of {inst['shadows']}, isn't one a5s knows"
         needed = {settings.data_class} | (set(settings.classified.values())
@@ -885,7 +935,7 @@ class Gateway:
         acts_for = given.pop("acts_for")
         opening = Opening(trigger=given, acts_for=acts_for, reasons=[],
                           args={"shadows": inst["shadows"], "live": live})
-        shadowed = conn.execute("select definition from instances where id = %s",
+        shadowed = conn.execute("select definition, model from instances where id = %s",
                                 (inst["shadows"],)).fetchone()
         if why := self._unfit_shadow(settings, inst, shadowed):  # what its run is given
             opening.reasons.append(why)  # of the live run's conversation is for its model too
@@ -1303,6 +1353,7 @@ class Gateway:
         approves; the rest are never called. With every candidate refused, the run keeps its
         own model, whose breaker says so again at each call."""
         refused = set(self.breakers.open())  # choosing never spends a breaker's trial:
+        own = self.models.get(row["model"])
         for alias in dict.fromkeys([row["model"], *definition.fallbacks]):  # each call still does
             if alias in (tried or []) or alias in refused:
                 continue
@@ -1311,8 +1362,11 @@ class Gateway:
             model = self.models.get(alias)
             if model is None:
                 continue
+            if own is not None and alias != row["model"] and not set(
+                    own.data_classes) <= set(model.data_classes):  # never sees more than its
+                continue  # own model may, as each call's fallback doesn't (round 16, A1)
             return model
-        return self.models.get(row["model"])
+        return own
 
     def hidden_from(self, conn: db.Connection, row: dict) -> set[str]:
         """The fields of a class a run's model isn't approved for, which it never sees: for a
@@ -1519,6 +1573,8 @@ def create_app(gw: Gateway) -> FastAPI:
         now = gw.clock()
         chosen = None  # the model the run calls, as its release names it, breakers allowing
         with db.transaction(gw.url) as conn:
+            if waits := anchor.awaiting_restore(conn):  # what's due waits, rather than be done
+                raise HTTPException(503, f"a5s opens no run until `a5s restore` has run: {waits}")
             inst = conn.execute("select * from instances where id = %s", (body.instance,)).fetchone()
             if inst is None:
                 raise HTTPException(404, f"no instance {body.instance}")
@@ -1614,8 +1670,9 @@ def create_app(gw: Gateway) -> FastAPI:
                     conn.execute("update questions set run_id = %s where id = %s",
                                  (run_id, opening.trigger["question"]))
                 if kind == "message":  # the files it came with, as the run's documents, unread
-                    opening.notes = [n for n in [files.attach(conn, run_id,
-                                                               opening.trigger["inbound"])] if n]
+                    opening.notes = [n for n in [files.attach(  # ask_about where it may
+                        conn, run_id, opening.trigger["inbound"],
+                        extractor.ASK in (inst["grants"] or []))] if n]
                     if opening.notes:  # what they sent is theirs alone to read in the studio
                         studio.readers(conn, run_id, [studio.ALONE])
                     turns_at_open(conn, inst["definition"], opening, run_id)
@@ -1641,6 +1698,12 @@ def create_app(gw: Gateway) -> FastAPI:
             if reasons and kind == asking.KIND and not opening.used:  # so the asker hears why
                 conn.execute("update questions set problem = %s where id = %s",
                              ("; ".join(reasons)[:200], opening.trigger["question"]))
+            if reasons and kind == "message" and opening.trigger.get("inbound"):
+                # a message kept open for its release's next model is kept for a model that
+                # isn't answering, never for a run a5s refused: refused, it's taken for good,
+                # as without fallbacks, or the scheduler takes it again at once, for ever
+                conn.execute("update inbound set answered_at = now() where id = %s "
+                             "and answered_at is null", (opening.trigger["inbound"],))
             ledger.append(conn, {
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": opening.acts_for,
@@ -1674,8 +1737,11 @@ def create_app(gw: Gateway) -> FastAPI:
         alone to write, so no other part puts words in anyone's mouth (round 15, F10)."""
         said = conn.execute("select person, text, conversation, members from inbound where "
                             "id = %s", (opening.trigger["inbound"],)).fetchone()
-        if said is None:
-            return
+        if said is None or conn.execute(
+                "select 1 from turns t join runs r on r.id = t.run_id where t.role = 'person' "
+                "and r.trigger->>'inbound' = %s and r.id <> %s::uuid limit 1",
+                (opening.trigger["inbound"], run)).fetchone():
+            return  # an earlier run of the message wrote them: its next model's reads them
         group = said["conversation"] if groups.of(said["conversation"]) else None
         members = list(said["members"] or []) if group else None
         topic = opening.trigger.get("topic", topics.GENERAL)
@@ -1762,8 +1828,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 definition = gw.definitions.get(inst["definition"]) if inst else None
                 tried_models = list(row["trigger"].get("tried_models") or [])
                 keep_open = len(tried_models) < len((definition.fallbacks if definition else [])
-                                                    or [])  # its release names models not tried:
-                # the scheduler tries the message again on the next, which then takes it
+                                                    or []) and not did_any(conn, run_id)
+                # its release names models not tried, and the run wrote, changed and sent
+                # nothing yet: the scheduler tries the message again on the next, which then
+                # takes it. One that did something isn't run again, as it may do it twice
+                # (docs/runbooks.md; round 16, A2)
             if not keep_open and row["trigger"].get("inbound"):
                 conn.execute("update inbound set answered_at = now() where id = %s "
                              "and answered_at is null", (row["trigger"]["inbound"],))
@@ -1773,15 +1842,20 @@ def create_app(gw: Gateway) -> FastAPI:
             if ended == "model unavailable" and (row["trigger"] or {}).get("kind") == events.KIND:
                 tried(conn, run_id, row["trigger"])  # the nested function, not the list above
         push(sends)
-        return {"closed": run_id}
+        return {"closed": run_id, "kept": keep_open}
+
+    def did_any(conn: db.Connection, run_id: str) -> bool:
+        """Whether a run wrote, changed or sent anything, or asked to: a tool it was let call,
+        or that a5s held for a decider, that does more than read."""
+        return any(not shadow_may(r["action"]) for r in conn.execute(
+            "select action from ledger where run_id = %s and kind = 'tool' and decision in "
+            "('allow', 'hold')", (run_id,)))
 
     def tried(conn: db.Connection, run_id: str, trigger: dict) -> None:
         """An event whose run its model didn't answer, and which wrote, changed and sent
         nothing, waits to be tried again, as one that can't be worked on now does, rather
         than being lost, such as a customer's mail with no reply (round 15)."""
-        if not any(not shadow_may(r["action"]) for r in conn.execute(
-                "select action from ledger where run_id = %s and kind = 'tool' and decision in "
-                "('allow', 'hold')", (run_id,))):
+        if not did_any(conn, run_id):
             events.again(conn, str(trigger.get("event")), run_id)
 
     def slice_closed(conn: db.Connection, run_id: str, row: dict,
@@ -2190,7 +2264,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                           "widens": any(c["widens"] for c in found)}})
             for approver in registry.approvers(settings, gw.scenario.holders, before,
                                                memberships.rooted(gw.scenario).holders):
-                spoken = languages.of(conn, approver)  # each in the language they read
+                spoken = languages.of(approver)  # each in the language they read
                 theirs = found if spoken == languages.ENGLISH else approvals.changes(
                     before, settings, gw.definitions, gw.scenario.person, spoken)
                 text = approvals.text(settings.serial, theirs, link, spoken)
@@ -2509,6 +2583,15 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(404, f"there's no run {run_id}")
         return found
 
+    def customer(person: str) -> bool:
+        """Whether a request names a customer by their address: one the directory doesn't
+        know, nor ever knew as someone who left, whose id an address may be (round 16, C4)."""
+        if not customers.is_address(person) or gw.scenario.person(person) is not None:
+            return False
+        with db.transaction(gw.url) as conn:
+            return conn.execute("select 1 from departures where person = %s limit 1",
+                                (person,)).fetchone() is None
+
     @services.post("/people/{person}/export")
     def export_person(person: str, body: StatusChange) -> dict:
         """All a5s keeps about someone, for their request to see it, for the data protection
@@ -2517,7 +2600,7 @@ def create_app(gw: Gateway) -> FastAPI:
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
         by, identity = officer_asked("export", person, body)
-        if customers.is_address(person) and gw.scenario.person(person) is None:
+        if customer(person):
             return export_customer(person, by, identity)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # as of one moment, so that a sweep that
             conn.execute("set transaction isolation level repeatable read read only")  # archives
@@ -2544,7 +2627,7 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
                                      "nobody")
         here = gw.scenario.person(person) is not None
-        if customers.is_address(person) and not here:
+        if customer(person):
             return erase_customer(person, body)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # the request is used only if the erasure is made
             by, identity = officer_asked("erase", person, body, conn)
@@ -2664,9 +2747,11 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # Instances: anyone with the role can make a5s safer alone.
 
-    def who_asks(body: StatusChange, loosens: bool = False) -> tuple[str, str]:
-        """Who's suspending or resuming, from their sign-in, and how a5s knows: with a second
-        factor, if what they ask loosens a5s and the deployment asks for one."""
+    def who_asks(body: StatusChange, loosens: bool = False,
+                 doing: str = "resume") -> tuple[str, str]:
+        """Who's asking to suspend, resume or put a model back, from their sign-in, and how
+        a5s knows: with a second factor, if what they ask loosens a5s and the deployment asks
+        for one, counted as `doing` when it's refused for want of one."""
         if gw.identity is not None:
             if not body.identity:
                 raise HTTPException(401, "sign in: send your token as identity")
@@ -2680,11 +2765,11 @@ def create_app(gw: Gateway) -> FastAPI:
             if body.by and body.by != person:
                 raise HTTPException(403, f"you're signed in as {person}, not {body.by}")
             if loosens and not second_factor(gw.identity.cfg, claims):
-                counted("resume")
+                counted(doing)
                 raise HTTPException(401, without_second_factor("do this"))
             return person, "verified"
         if not gw.cfg.development:
-            raise HTTPException(503, "suspending and resuming need sign-in: set A5S_OIDC_ISSUER")
+            raise HTTPException(503, "this needs sign-in: set A5S_OIDC_ISSUER")
         if not body.by or gw.scenario.person(body.by) is None:
             raise HTTPException(400, "say who you are, as someone in the directory")
         return body.by, "unverified (development)"
@@ -2706,6 +2791,28 @@ def create_app(gw: Gateway) -> FastAPI:
         if problem:
             raise HTTPException(403, problem)
         return {"resumed": instance, "by": by}
+
+    @services.post("/models/{alias}/restore")
+    def restore_model(alias: str, body: StatusChange) -> dict:
+        """Put back a model the health gate stopped (core/health.py). It loosens a5s, so only
+        the release approver does it, from outside the team that runs it, signed in as
+        themselves, with a second factor where the deployment asks for one; and the ledger
+        records who did, as it records every act."""
+        by, identity = who_asks(body, loosens=True, doing="put a model back")
+        person = gw.scenario.person(by)
+        if person is None or not suspension.lifts(person, gw.cfg.team):  # as for resuming
+            raise HTTPException(403, f"only the release approver, from outside the team that "
+                                     f"runs a5s, puts a stopped model back, and {by} isn't")
+        if alias not in gw.models:
+            raise HTTPException(404, f"{alias} isn't one of the approved models")
+        with db.transaction(gw.url) as conn:
+            if not health.stopped(conn, gw.scenario.name, alias):
+                raise HTTPException(409, f"{alias} isn't stopped, so there's nothing to put back")
+            health.restore(conn, gw.scenario.name, alias)
+            ledger.append(conn, {"kind": "admin", "action": "restore-model", "instance": None,
+                                 "decision": "record", "args": {"by": by, "identity": identity,
+                                                                "model": alias}})
+        return {"restored": alias, "by": by}
 
     # What a worker may ask, with its run token.
 
@@ -2734,7 +2841,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
                                 gw.scenario.record_pattern)
                 waiting, outside = proposals.brief(conn, row["id"], list(row["acts_for"]),
-                                                   [topic], group)
+                                                   [topic], group, gw.scenario)
                 if outside:  # a change a marked run asked for: its words mark this one too
                     conn.execute("update runs set read_outside = true where id = %s",
                                  (row["run"],))
@@ -2819,12 +2926,14 @@ def create_app(gw: Gateway) -> FastAPI:
         }
 
     def record(entry: dict) -> bool:
-        """Record what happened after a call was made. If that fails, the call still happened."""
+        """Record what happened after a call was made. If that fails, the call still happened.
+        A model's day counts only calls a5s sent it: one it skipped, as its breaker was open or
+        the gate stopped it, is in the ledger, not in how the model did (round 16, A6)."""
         try:
             with db.transaction(gw.url) as conn:
                 ledger.append(conn, entry)
-                if entry.get("kind") == "model" and "of" in entry:
-                    outcome = entry.get("outcome") or {}
+                outcome = entry.get("outcome") or {}
+                if entry.get("kind") == "model" and "of" in entry and not outcome.get("skipped"):
                     health.record(conn, gw.scenario.name, entry["action"],
                                   outcome.get("status", 500), outcome.get("seconds", 0))
             return True
@@ -2896,7 +3005,7 @@ def create_app(gw: Gateway) -> FastAPI:
             with db.transaction(gw.url) as conn:
                 given = handles.resolved_args(conn, load_run(conn, token)["run"], args)
         readable = (tool is not None and bool(action) and len(keys) <= MOST_NAMED
-                    and misfit(tool.schema, given) is None)
+                    and misfit(tool.schema, given, closed=True) is None)
         try:
             standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if readable else {}
         except Exception:  # the records system's own failure, never the run's
@@ -2932,16 +3041,20 @@ def create_app(gw: Gateway) -> FastAPI:
                     len(row["acts_for"]) == 1 and not groups.of(
                         row["trigger"].get("conversation"))) else []
                 weighed = {**row, "steered": bool(steered)}  # a team's words: level 1 at most
+                on = gw.answered(conn, row["run"], row["model"])  # each model earns its own
+                within = getattr(tool, "part", None)  # where a call naming no record works
                 about = parts.about(gw.scenario, weighed, keys, action, gw.approvers_in_force(conn),
-                                    gw.caps(conn, row["release"]), standing) if action else parts.about(
-                    gw.scenario, weighed, keys)
+                                    gw.caps(conn, row["release"], on), standing,
+                                    part=within) if action else parts.about(
+                    gw.scenario, weighed, keys, part=within)
                 decision = gw.decide(row, "call_tool", entity, [], **about,
                                      over_limit=over is not None)
                 if found[0] is None:  # fail closed
                     decision = Decision(False, (Own.SETTINGS,), explanations=(
                         f"a5s can't use the settings in force: {found[1]}",))
                 elif problem := misfit((core or tool).schema if (core or tool) else {},
-                                       handles.resolved_args(conn, row["run"], args)):
+                                       handles.resolved_args(conn, row["run"], args),
+                                       closed=bool(tool and tool.action)):
                     decision = Decision(False, (Own.ARGUMENTS,), explanations=(
                         f"the arguments don't fit the tool: {problem}",))
                 elif any(not isinstance(r, str) or not r for r in records):
@@ -2959,7 +3072,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         "a5s's own runs, such as keeping a summary, call no tools",))
                 if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
                     decision = Decision(False, (Own.STOPPED,), explanations=(why,))
-                deciding = holding(decision, records, requested, steered)
+                deciding = holding(decision, records, requested, steered, found[0], standing)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
                     decision = Decision(False, (Own.DECIDER,), explanations=(deciding,))
                 texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
@@ -2997,7 +3110,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     marked_only = bool(row["read_outside"] and action and gw.decide(
                         {**row, "read_outside": False}, "call_tool", entity, [], **parts.about(
                             gw.scenario, {**weighed, "read_outside": False}, keys, action,
-                            gw.approvers_in_force(conn), gw.caps(conn, row["release"]),
+                            gw.approvers_in_force(conn), gw.caps(conn, row["release"], on),
                             standing), over_limit=over is not None).allowed)  # (round 15, A4)
                     proposal, sends = held(conn, requested, tool, args, standing, deciding or [],
                                            seq, traced, change, over, found[0], steered,
@@ -3192,11 +3305,14 @@ def create_app(gw: Gateway) -> FastAPI:
                       f"a5s made the change the {row['definition']} asked for, which it may "
                       f"make on its own: {change}", keys[0] if keys else None,
                       heard_by=list(row["acts_for"]) if groups.of(group) else None)
+            last = gw.answered(conn, row["run"], row["model"])  # whose behaviour it shows
             for part in sorted({p for k in keys if (p := gw.scenario.part_of(k))}):
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "action", row["release"],
                              row["definition"],
                              row["id"], row["run"], part, tool.action, said, standing,
-                             asked, gw.clock())
+                             asked, gw.clock(), model=last[-1] if last else None,
+                             behaves=gw.behaviour(row["release"], str(tool.action),
+                                                  last[-1] if last else None))
             ledger.append(conn, {"kind": "tool", "action": "report", "run": row["run"],
                                  "instance": row["id"], "acts_for": asked,
                                  "decision": "record", "args": {"to": sorted(set(told)),
@@ -3222,10 +3338,14 @@ def create_app(gw: Gateway) -> FastAPI:
             return None, None
         return undo, undoing.left(tool, after, standing.get(keys[0]))
 
-    def holding(decision: Decision, records: list[str], row: dict,
-                steered: list[str]) -> list[Person] | str:
+    def holding(decision: Decision, records: list[str], row: dict, steered: list[str],
+                settings: Settings | None = None, standing: dict | None = None
+                ) -> list[Person] | str:
         """Who may decide a call policy holds, if it holds it: or why nobody may, in words.
-        Never anyone whose words it may have asked for: whom it's for, and `steered`."""
+        Never anyone whose words it may have asked for: whom it's for, and `steered`. One that
+        needs two of a part's deciders, as its settings say above an amount, and that fewer
+        than two may decide, is refused at once, rather than left to wait for a second who
+        can't come."""
         if not decision.held:
             return []
         # In the sandbox, whose people are made up and sign nobody in, a change waits for its
@@ -3235,9 +3355,22 @@ def create_app(gw: Gateway) -> FastAPI:
         asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it,
         asked = [*asked, *steered]  # and whoever of a team answered them in what it was given
         by_part = proposals.deciders(gw.scenario, records, asked)
-        if not (nobody := proposals.undecidable(by_part)):
-            return proposals.everyone(by_part)
         anyone = proposals.deciders(gw.scenario, records, [])
+        if not (nobody := proposals.undecidable(by_part)):
+            two = proposals.twice(settings.two_deciders if settings else {}, gw.scenario,
+                                  {"records": records, "standing": standing or {}})
+            for part in two:
+                if len(by_part.get(part, [])) >= 2:
+                    continue
+                only = approvals.names_of([p.name for p in by_part.get(part, [])])
+                if len(anyone.get(part, [])) < 2:
+                    return (f"this change needs two of the deciders of {part}, and only {only} "
+                            "may decide changes there: ask the part's owner to name another, or "
+                            "make it in the records system")
+                return (f"this change needs two of the deciders of {part}, and nobody decides "
+                        f"a change they asked for themselves, so only {only} may decide it: ask "
+                        "for it where someone else asks, or make it in the records system")
+            return proposals.everyone(by_part)
         if all(anyone[part] for part in by_part if not by_part[part]):
             if groups.of(row["trigger"].get("conversation")):
                 only = approvals.names_of([p.name for part in by_part if not by_part[part]
@@ -3284,6 +3417,11 @@ def create_app(gw: Gateway) -> FastAPI:
                            words.kept(proposals.UNASKED, agent=agent, after=after))
         if over is not None:
             flagged.append(words.kept(proposals.OVER, over=over))
+        for part, (record, above) in proposals.twice(  # four eyes, by what its record holds
+                settings.two_deciders, gw.scenario,
+                {"records": list(standing), "standing": standing}).items():
+            flagged.append(words.kept(proposals.TWO_DECIDERS, part=part, record=record,
+                                      above=f"{above:,.2f}"))
         flags = [words.said(languages.ENGLISH, f) for f in flagged]
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,
                                   flags, gw.clock(), change, bool(flags) or proposals.sensitive(
@@ -3340,6 +3478,9 @@ def create_app(gw: Gateway) -> FastAPI:
         room = (release.budget.per_run - spent) * CHARS_PER_TOKEN if release else 0
         read = 0
 
+        # how it may know more of a document, if its release lets it ask a5s's reader
+        more = {"ask": extractor.ASK_MORE} if extractor.ASK in (row.get("grants") or []) else {}
+
         def form(item: dict) -> dict:
             nonlocal read, room
             found = [item[f] for f in tool.outside if f in item and item[f] not in (None, "")]
@@ -3354,7 +3495,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 again = conn.execute("select number, form from run_documents where run_id = %s "
                                      "and digest = %s", (row["run"], digest)).fetchone()
             if again is not None:  # read already in this run: no second call to the model
-                return {**kept, "document": f"D-{again['number']}", extractor.OUTSIDE: again["form"]}
+                return {**kept, "document": f"D-{again['number']}", extractor.OUTSIDE: again["form"],
+                        **more}
             filled, dropped, why = None, [], "a5s couldn't read it now"
             if any(f in unseen for f in tool.outside if f in item):
                 why = "it's of a class the model here isn't approved for, so a5s didn't read it"
@@ -3389,7 +3531,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     provenance.read(conn, row["run"], f"{provenance.OUTSIDE} D-{number}", filled,
                                     gw.scenario.record_pattern)
             read += 1
-            return {**kept, "document": f"D-{number}", extractor.OUTSIDE: shown}
+            return {**kept, "document": f"D-{number}", extractor.OUTSIDE: shown, **more}
 
         def walk(value: Any) -> Any:
             if isinstance(value, list):
@@ -3681,14 +3823,16 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             if not body.checked_once and (made_up := verify.unknown_keys(
-                    conn, row["run"], text, gw.scenario.record_pattern)):
+                    conn, row["run"], text, gw.scenario.record_pattern, {
+                        v.norm for v, _ in provenance.sources(conn, gw.scenario, row)
+                        if v.kind == "key"})):  # what they said too (round 16, A10)
                 raise HTTPException(409, {"error": "unknown_keys", "keys": made_up})
             inbound = row["trigger"].get("inbound")
             # In a group chat, an answer goes to the chat, so to everyone in it, and it's kept
             # as the asker's, such as for their inbox, if the chat won't take it
             group = groups.of(body.to) and body.to == row["trigger"].get("conversation")
             owner = row["trigger"].get("sender") if group else body.to
-            route = None
+            route: dict[str, Any] | None = None
             if row["trigger"].get("kind") == shadows.KIND:
                 decision = Decision(False, (Own.SHADOW_SENDS,), explanations=(
                     "a shadow sends nothing: what it answers is kept for graders",))
@@ -3718,18 +3862,19 @@ def create_app(gw: Gateway) -> FastAPI:
                 if inbound and asked is None:  # gone meanwhile, such as erased
                     raise HTTPException(409, "the message this answers is gone: a5s answers "
                                              "nothing in its place")
-                route = (dict(asked) if inbound  # an answer, where asked
+                route = ({**asked} if inbound and asked  # an answer, where asked
                          else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
                          else gw.at_once(conn, body.to, row["definition"],  # not what they
                                          count=decision.allowed  # asked to be reminded of then
                                          and row["trigger"].get("kind") != "reminder"))
             if group and route:  # so it goes only if nobody has joined since the run began
                 route["members"] = list(row["acts_for"])
+                route["conversation"] = body.to  # whose it is, once it falls back (round 16)
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
             reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # a5s's notes
-            spoken = languages.of(conn, reader) if reader else languages.shared(  # are in the
-                conn, [gw.scenario.person(p) for p in row["acts_for"]])  # language they read
+            spoken = languages.of(reader) if reader else languages.shared(  # are in the
+                [gw.scenario.person(p) for p in row["acts_for"]])  # language they read
             if own := [t["value"] for t in traced if t["from"] is None]:  # one they read, apart
                 note = provenance.note(row["definition"], own, spoken)
                 text += "\n\n" + note
@@ -3853,6 +3998,11 @@ def create_app(gw: Gateway) -> FastAPI:
         back: list[int | None] = []  # what fell back to the inbox, from a chat that's back
         for row in sorted(rows, key=lambda r: r["id"]):  # in the order a5s wrote them
             run = str(row["run_id"]) if row["run_id"] else None
+            if not row["route"]:  # in the inbox, with no chat to go to: it stays there
+                with db.transaction(gw.url) as conn:
+                    conn.execute("update outbox set fell_back_at = null, retry_at = null where "
+                                 "id = %s", (row["id"],))
+                continue
             expected = (row["route"] or {}).get("members")  # a group's answer: for whom it was
             now_in = present(row["route"]) if expected is not None else None  # worked out
             if now_in is not None and not set(now_in) <= set(expected):
@@ -3863,17 +4013,21 @@ def create_app(gw: Gateway) -> FastAPI:
                                 deliver(row["route"], row["text"], run, row["instance_id"],
                                         card=row["card"], answer=feedback.answer(row)))
             with db.transaction(gw.url) as conn:
-                if problem is None:  # in its chat, once more, if it had fallen back
-                    conn.execute("update outbox set delivered_at = now(), retry_at = null, "
-                                 "problem = null, sent_as = %s, channel = %s, fell_back_at = null "
-                                 "where id = %s", (sent_as, row["route"]["channel"], row["id"]))
+                if problem is None:  # in its chat, once more, if it had fallen back, and
+                    conn.execute(  # what it answered again, where the message is still there
+                        "update outbox set delivered_at = now(), retry_at = null, problem = "
+                        "null, sent_as = %s, channel = %s, fell_back_at = null, inbound_id = "
+                        "coalesce(inbound_id, (select i.id from inbound i where i.id::text = "
+                        "outbox.route->>'id')) where id = %s",  # (round 16, C8)
+                        (sent_as, row["route"]["channel"], row["id"]))
+                    now = gw.clock()  # afresh: another core may have taken one since (C9)
                     back += [r["id"] for r in conn.execute(  # the chat's back for them: what
                         "update outbox set retry_at = %s where person = %s and channel = "  # fell
                         "'local' and fell_back_at > %s and delivered_at is null and route ->> "
                         "'channel' = %s and not (retry_at > %s and retry_at <= %s) returning id",
                         (now, row["person"], now - FELL_BACK, row["route"]["channel"], now,
                          now + timedelta(minutes=5)))]  # back goes now, but none another core
-                    # has taken for its five minutes
+                    # has taken for its five minutes, by the clock as it is now
                 elif row["fell_back_at"] is not None:  # not yet: again in an hour, for a day
                     conn.execute("update outbox set retry_at = %s, problem = %s where id = %s",
                                  (now + timedelta(hours=1), problem, row["id"]))
@@ -3925,9 +4079,10 @@ def create_app(gw: Gateway) -> FastAPI:
             to = gw.reach(conn, row["person"], row["agent"])  # theirs alone, never the group
             pushed = to["channel"] in PUSHED
             conn.execute("update outbox set channel = %s, route = %s, inbound_id = null, "
-                         "retry_at = null, attempts = 0, problem = 'someone joined the chat "
-                         "while it was answering' where id = %s",
-                         (to["channel"], Jsonb(to) if pushed else None, row["id"]))
+                         "retry_at = null, attempts = 0, fell_back_at = null, problem = "
+                         "'someone joined the chat while it was answering' where id = %s",
+                         (to["channel"], Jsonb(to) if pushed else None, row["id"]))  # tried
+            # as any message, and left in the inbox after its tries (round 16, C7)
             asked = conn.execute("select trigger from runs where id = %s",
                                  (run,)).fetchone() if run else None
             group = (asked["trigger"] or {}).get("conversation") if asked else None
@@ -3986,7 +4141,9 @@ def create_app(gw: Gateway) -> FastAPI:
                              "for update skip locked", (pid,)).fetchone()
             if p is None:
                 return {}
-            found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p)
+            in_force = gw.settings_in_force(conn)[0]  # where a part's four eyes need two
+            found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p,
+                                                 in_force.two_deciders if in_force else None)
             last = conn.execute(  # up to the first decision still to be sealed, which, once it
                 # is, makes the change due again
                 "select coalesce(min(id) filter (where seal is null and refused is null and proof "
@@ -4047,17 +4204,19 @@ def create_app(gw: Gateway) -> FastAPI:
         """Why an approved change can't be made now, if it can't: the instance may no longer
         act, the tool has changed since, or policy would deny the call."""
         row = conn.execute(
-            "select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.* "
-            "from runs r join instances i on i.id = r.instance_id where r.id = %s",
-            (p["run_id"],)).fetchone()
+            "select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.*, "
+            "coalesce(r.model, i.model) as model from runs r join instances i on "
+            "i.id = r.instance_id where r.id = %s", (p["run_id"],)).fetchone()
         tool = gw.scenario.tools().get(p["tool"])
         if row is None or tool is None or tool.schema_hash != p["schema_hash"]:
             return "the tool has changed since it was asked for"
         if problems := gw.check_instance(conn, row) + gw.release_problems(conn):
             return "; ".join(problems)
+        on = gw.answered(conn, row["run"], row["model"], before=p["seq"])  # as it asked
         decision = gw.decide(row, "call_tool", gw.tool_entity(p["tool"], tool, row["pins"]), [],
                              **parts.about(gw.scenario, row, list(p["records"]), tool.action,
-                                           gw.approvers_in_force(conn), gw.caps(conn, row["release"])))
+                                           gw.approvers_in_force(conn),
+                                           gw.caps(conn, row["release"], on)))
         if not (decision.allowed or decision.held):
             return "; ".join(decision.explanations) or "policy denies it now"
         return None
@@ -4133,6 +4292,9 @@ def create_app(gw: Gateway) -> FastAPI:
                       ", ".join(deciders_) or None, now, text, p["id"]))
         conn.execute("delete from proposal_values where proposal_id = %s", (p["id"],))
         if became != "lapsed":  # someone decided it: a sample of the agent's work, for grading
+            ran = conn.execute("select model from runs where id = %s", (p["run_id"],)).fetchone()
+            last = gw.answered(conn, str(p["run_id"]), ran["model"] if ran else None,
+                               before=p["seq"])  # the model whose answer asked for it
             for part in p["parts"]:
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "proposal", p["release"],
                              p["definition"],
@@ -4141,13 +4303,15 @@ def create_app(gw: Gateway) -> FastAPI:
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
                              decided_by=deciders_, flags=p["flags"],
-                             flagged=p.get("flagged"))
+                             flagged=p.get("flagged"), model=last[-1] if last else None,
+                             behaves=gw.behaviour(p["release"], p["action"],
+                                                  last[-1] if last else None))
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
                              "args": {"proposal": proposals.key(p), "by": deciders_}})
         asked, group, told_to = whom_to_tell(conn, p)
-        marked = bool(p.get("read_outside"))  # its words, as a marked run wrote them
+        marked = proposals.carries(p, gw.scenario)  # words a marked run wrote
         sends = []
         for person in told_to:
             route = gw.reach(conn, person, p["definition"])  # what they're waiting for: at once
@@ -4258,7 +4422,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      language, STILL, key=proposals.key(p),
                                      names=approvals.names_of([d.name for d in current], language),
                                      days=proposals.ESCALATE,
-                                     day=obligations.day(who, p["lapses_at"], language)), now)
+                                     day=obligations.day(who, p["lapses_at"])), now)
             if working:
                 ledger.append(conn, {"kind": "proposal", "action": "escalate",
                                      "run": str(p["run_id"]), "instance": p["instance_id"],
@@ -4289,9 +4453,8 @@ def create_app(gw: Gateway) -> FastAPI:
             if settings is None:
                 return {"changed": [], "lapsed": lapsed, "weighed": f"nothing, since {problem}"}
             for row in conn.execute(
-                    "select distinct b.behaviour, s.part, s.action from samples s join behaviours b "
-                    "on b.release = s.release and b.action = s.action where s.grade is not null"
-                    ).fetchall():
+                    "select distinct b.behaviour, s.part, s.action from samples s join "
+                    f"behaviours b on {samples.OF_SAMPLE} where s.grade is not null").fetchall():
                 found = samples.assess(conn, gw.cfg.seal_keys, row["behaviour"], row["part"],
                                        row["action"], settings.thresholds.get(row["part"]), now)
                 if found:
@@ -4476,11 +4639,12 @@ def create_app(gw: Gateway) -> FastAPI:
         """Undo one change, while its record is as the change left it, and count it, as a wrong
         grade of it, against its agent's accuracy; tell whoever it was for, and the instance's
         owner and deputy, and the ledger. Whether it was undone, refused or failed."""
-        if not undoing.intact(gw.cfg.seal_keys, row):  # not as the core kept it (round 15)
-            with db.transaction(gw.url) as conn:
-                refused_undo(conn, row, "how to undo it has changed in a5s's records since a5s "
-                             "kept it, so a5s undoes nothing: putting it right is for whoever "
-                             "decides it, in the records system")
+        if row.get("void") or not undoing.intact(gw.cfg.seal_keys, row):  # not as the core
+            with db.transaction(gw.url) as conn:  # kept it (round 15), or a5s let it go
+                refused_undo(conn, row, row.get("void") or (  # (round 16, D7)
+                    "how to undo it has changed in a5s's records since a5s kept it, so a5s "
+                    "undoes nothing: putting it right is for whoever decides it, in the records "
+                    "system"))
             return "refused"
         by = gw.scenario.tools()[row["undo"]["tool"]]
         try:  # the record as it stands, outside any transaction, in each field the change left
@@ -4700,10 +4864,11 @@ def create_app(gw: Gateway) -> FastAPI:
     def capped(conn: db.Connection, found: dict, now: datetime) -> None:
         """Tell the owners and deputies of the instances a cap governs that it changed, in
         their digest."""
-        rows = conn.execute(
-            "select i.id, i.definition, i.owner, i.deputy from instances i join behaviours b on "
-            "b.release = i.release where b.behaviour = %s and b.action = %s and i.status = 'active'",
-            (found["behaviour"], found["action"])).fetchall()
+        rows = conn.execute(  # of its release, on whichever model it earned it on, since any
+            # of its instances may fall back to it
+            "select distinct i.id, i.definition, i.owner, i.deputy from instances i join "
+            "behaviours b on b.release = i.release where b.behaviour = %s and b.action = %s "
+            "and i.status = 'active' order by i.id", (found["behaviour"], found["action"])).fetchall()
         for inst in rows:
             for person in dict.fromkeys(p for p in (inst["owner"], inst["deputy"]) if p):
                 spoken = gw.spoken(conn, person)  # each in the language they read
@@ -4777,10 +4942,10 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(503, "the core has no key to seal caps with: see A5S_SEAL_KEYS")
         with db.transaction(gw.url) as conn:
             found = samples.lower(conn, gw.cfg.seal_keys, definition.release_id, body.part,
-                                  body.action, by, gw.clock())
-            if found:
-                found["identity"] = identity
-                capped(conn, found, gw.clock())
+                                  body.action, by, gw.clock())  # on every model it earned it on
+            for each in found:
+                each["identity"] = identity
+                capped(conn, each, gw.clock())
         return {"lowered": bool(found), "cap": 1}
 
     @services.post("/deliveries/sweep")
@@ -4820,7 +4985,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 "update inbound set notices = notices + 1 where id = %s and notices < 3 "
                 "returning person, agent, channel, reply_to, members", (inbound,)).fetchone()
             if row is not None:
-                spoken = languages.shared(conn, [gw.scenario.person(m) for m in row["members"]]) \
+                spoken = languages.shared([gw.scenario.person(m) for m in row["members"]]) \
                     if row["members"] else gw.spoken(conn, row["person"])
                 if body.notice in notices.SAID:
                     try:
@@ -4909,33 +5074,43 @@ def create_app(gw: Gateway) -> FastAPI:
         # re-issued in the same run, so nothing of the run is lost, and each attempt is in
         # the ledger, by the call's sequence. The worker sees only the last attempt's answer.
         tried_here: list[str] = []  # this call's attempts, in order
-        served = alias
+        timed_out: set[str] = set()  # asked again, a model that timed out takes as long again
         recorded, status, data = None, 503, models.error_body(
             api, "no model in its chain can answer this call", "model_unavailable")
+        # The whole chain answers within the worker's wait for this call, so the worker hears
+        # why it stopped, and its run can go to the next model, rather than giving up on it
+        # with a timeout of its own (round 16, A7)
+        deadline = time.monotonic() + max(1.0, config.WORKER_TIMEOUT.read() - CHAIN_MARGIN)
         # Its own model twice: a provider's moment of slowness is asked again before the next
         # model is tried, so a stall that passes costs nothing but a moment.
         for candidate in [alias, alias, *(release.fallbacks if release else [])]:
-            if tried_here.count(candidate) >= (2 if candidate == alias else 1):
+            if candidate in timed_out or tried_here.count(candidate) >= (
+                    2 if candidate == alias else 1):
                 continue
+            if (left := deadline - time.monotonic()) < 1:
+                break  # no time left in the worker's wait: it hears the last answer
             fallback = gw.models.get(candidate)
             if fallback is None or fallback.api != api:  # the worker speaks one API style
                 continue
             if model and candidate != alias and not set(model.data_classes) <= set(
                     fallback.data_classes):  # never sees more than its own model may
                 continue
-            with db.connect(gw.url) as health_conn:
+            if candidate != alias and models.screen(api, body, fallback.images)[2]:
+                continue  # an image goes only to a model approved for images (round 16, A3)
+            with db.transaction(gw.url) as health_conn:  # pooled, as every call is
                 if gate := health.gated(health_conn, gw.scenario.name, candidate):
                     log.warning("%s", gate)
                     record({"kind": "model", "action": candidate, "run": row["run"],
                             "instance": row["id"], "decision": "record", "of": seq,
-                            "outcome": {"status": 503, "reported_model": None,
-                                        "seconds": 0, "usage": None}})
+                            "outcome": {"status": 503, "reported_model": None, "seconds": 0,
+                                        "usage": None, "skipped": "stopped"}})
                     tried_here.append(candidate)
                     continue
             if not gw.breakers.allow(candidate):  # failed in a row lately: not called for a while
                 record({"kind": "model", "action": candidate, "run": row["run"],
                         "instance": row["id"], "decision": "record", "of": seq,
-                        "outcome": {"status": 503, "reported_model": None, "usage": None}})
+                        "outcome": {"status": 503, "reported_model": None, "usage": None,
+                                    "skipped": "breaker open"}})
                 tried_here.append(candidate)
                 continue
             with traces.span(f"chat {candidate}", **{
@@ -4944,7 +5119,11 @@ def create_app(gw: Gateway) -> FastAPI:
                     "a5s.instance": row["id"]}) as current:
                 started = time.perf_counter()
                 try:
-                    status, data = models.forward(fallback, forwarded, gw.http)
+                    status, data = models.forward(fallback, forwarded, gw.http, timeout=min(
+                        config.PROVIDER_TIMEOUT.read(), left))
+                except models.ModelTimedOut as exc:
+                    timed_out.add(candidate)
+                    status, data = 503, models.error_body(api, str(exc), "model_unavailable")
                 except models.ModelUnavailable as exc:
                     status, data = 503, models.error_body(api, str(exc), "model_unavailable")
                 seconds = time.perf_counter() - started
@@ -4977,15 +5156,22 @@ def create_app(gw: Gateway) -> FastAPI:
                                            "usage": data.get("usage") if isinstance(data, dict)
                                            else None}})
             tried_here.append(candidate)
-            served = candidate
             if status < 400:
                 break
+        if status < 400 and tried_here and tried_here[-1] != alias and not recorded:
+            # which models answered decides what the run's changes may do on their own
+            # (answered), so another model's answer goes only once that's recorded (round 16)
+            status, data = 503, models.error_body(
+                api, f"a5s couldn't record that {tried_here[-1]} answered, so it doesn't pass "
+                "its answer on", "model_unavailable")
         tokens = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
         if tokens and release is not None:
             try:
                 with db.transaction(gw.url) as conn:
+                    # counted on the run, which keeps the model it opened on whichever
+                    # answered, as policy weighs its next call by it (round 16)
                     if warning := budgets.spent(conn, gw.scenario, release.budget, row, tokens,
-                                                gw.clock(), data.get("usage"), served):
+                                                gw.clock(), data.get("usage")):
                         log.warning("%s has used %s of its %s tokens for %s today", row["id"],
                                     warning["used"], warning["budget"], warning["person"])
                         ledger.append(conn, {

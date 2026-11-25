@@ -152,12 +152,6 @@ class RunCaseAsked(BaseModel):
     checked: bool = False
 
 
-class LanguageChoice(BaseModel):
-    """The language someone chooses a5s's pages speak to them in, by its code, such as th."""
-
-    language: str
-
-
 class ShadowGrade(BaseModel):
     grade: str  # better, same, worse or wrong
 
@@ -317,7 +311,7 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             asks.settle(conn, gw.scenario, studio.instances(conn))  # served since, or lapsed
             return {"you": person.name,
-                    "waiting": homes.waiting(conn, gw, person, languages.of(conn, person)),
+                    "waiting": homes.waiting(conn, gw, person, languages.of(person)),
                     "drafts": drafts.mine(conn, person),
                     "authoring": drafts.may_author(person, None)}  # a new agent, as the catalogue says
 
@@ -328,24 +322,8 @@ def router(gw: Any) -> APIRouter:
         showed, of those the settings name."""
         with db.transaction(gw.url) as conn:
             return {"you": person.name, "id": person.id,
-                    "roles": homes.roles(conn, gw, person, languages.of(conn, person)),
-                    "groups": list(memberships.stored(conn, person.id).get(person.id, ())),
-                    "language": languages.of(conn, person),
-                    "languages": [{"code": c, "name": n} for c, n in languages.SPOKEN.items()]}
-
-    @api.post("/studio/api/you/language", **shapes.answers(shapes.LanguageChosen))
-    def studio_language(body: LanguageChoice, person: Annotated[Person, Depends(someone)]) -> dict:
-        """Choose the language a5s's pages speak to whoever signed in, and its agents answer
-        them in, of those a5s's pages speak: theirs alone, kept with their preferences."""
-        with db.transaction(gw.url) as conn:
-            try:
-                chosen = languages.choose(conn, person, body.language, gw.clock())
-            except languages.Refused as e:
-                raise HTTPException(400, str(e)) from None
-            ledger.append(conn, {"kind": "admin", "action": "choose-language", "run": None,
-                                 "instance": None, "acts_for": [person.id], "decision": "record",
-                                 "args": {"language": chosen}})  # it changes what agents are told
-            return {"language": chosen}
+                    "roles": homes.roles(conn, gw, person, languages.of(person)),
+                    "groups": list(memberships.stored(conn, person.id).get(person.id, ()))}
 
     @api.get("/studio/api/shadows", **shapes.answers(shapes.Shadows))
     def studio_shadows(person: Annotated[Person, Depends(someone)]) -> dict:
@@ -453,7 +431,7 @@ def router(gw: Any) -> APIRouter:
                 if row is None or undoing.shown(conn, gw.scenario, who, change) is None:
                     raise HTTPException(404, "there's no such change of yours to undo")
                 if why := undoing.may(gw.scenario, who, row, bool(row["open"])):
-                    raise HTTPException(409, words.say(languages.of(conn, who), why))
+                    raise HTTPException(409, words.say(languages.of(who), why))
                 asked = undoing.record(conn, change, who.id, token, body.salt, claims)
         except approvals.Refused as exc:
             raise web.refusal(gw, exc) from None
@@ -588,15 +566,17 @@ def router(gw: Any) -> APIRouter:
         """What depends on what, as far as someone may see it: the parts, instances, agents,
         tools, systems and models, each joined to what it depends on (core/dependencies.py)."""
         with db.transaction(gw.url) as conn:  # level 2, as policy weighs it, and the caps as
-            shown: dict[str, dict[tuple[str, str], int]] = {}  # a page shows them
+            shown: dict[tuple[str, str | None], dict[tuple[str, str], int]] = {}  # a page
+            # shows them, each release's on a model, as each model earns its own (round 16)
 
-            def caps_of(release: str) -> dict[tuple[str, str], int]:
-                if release not in shown:
-                    shown[release] = samples.shown_caps(conn, gw.cfg.seal_keys, release)
-                return shown[release]
+            def caps_of(release: str, model: str | None) -> dict[tuple[str, str], int]:
+                if (release, model) not in shown:
+                    shown[(release, model)] = samples.shown_caps(
+                        conn, gw.cfg.seal_keys, release, [model] if model else None)
+                return shown[(release, model)]
 
             return dependencies.drawn(conn, gw.scenario, gw.definitions, gw.scenario.tools(),
-                                      gw.models, person, languages.of(conn, person),
+                                      gw.models, person, languages.of(person),
                                       approved=gw.approvers_in_force(conn), caps_of=caps_of)
 
     @api.get("/studio/api/agents/{agent}", **shapes.answers(shapes.Agent))
@@ -618,7 +598,7 @@ def router(gw: Any) -> APIRouter:
                 mine = asks.theirs(conn, gw.scenario.name, person.id, agent)
                 shown["ask"] = asks.shown(mine) if mine else None
             if waiting := [a for a in asks.waiting(conn, gw.scenario, every, person,
-                                                   languages.of(conn, person))
+                                                   languages.of(person))
                            if a["agent"] == agent]:
                 shown["asks"] = waiting
         return shown

@@ -170,9 +170,12 @@ def erase(conn: db.Connection, person: str, now: datetime,
            "any(%s)", ([*names, person],))  # the grade stays, without whose it was
     delete("feedback_grades", "update answer_feedback set graded_by = null where graded_by = "
            "any(%s)", ([*names, person],))  # as does a grade of an answer said to be wrong
-    delete("asked_in_samples", "update samples set asked = null where acts_for && %s and asked "
-           "is not null", ([*names, person],))  # the sample stays, as evidence: its seal holds
-    # what was asked by a digest alone, so it still counts (round 15, C1)
+    delete("asked_in_samples", "update samples set asked = null where asked is not null and ("
+           "acts_for && %(names)s::text[] or (%(id)s::text is not null and %(id)s = any(acts_for) "
+           "and " + window.format(at="drawn_at") + "))", {**span, "names": names})
+    # the sample stays, as evidence: its seal holds what was asked by a digest alone, so it
+    # still counts (round 15, C1). Samples keep the id, not an archive's name, so it's the
+    # id's in the holder's time, whether by the id or the archive's name (round 16, C3)
     count, stuck = run_cases.forget(conn, [*names, person])  # out of every draft holding it
     if count:
         gone["kept_cases"] = count

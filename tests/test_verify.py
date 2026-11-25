@@ -47,3 +47,13 @@ def test_what_still_names_the_key_goes_out_with_a5s_note(stack):
     assert stack.scheduler().answer_waiting() == 1
     [said] = stack.answers(message)
     assert said.startswith("Q-9999 is open, I'm sure.") and "(a5s:" in said and "Q-9999" in said  # the agent's words, and a5s's note apart from them
+
+def test_a_key_the_person_asked_about_isnt_made_up(stack):
+    """Round 16, A10: a key someone asks about that their run can't read, in a part they
+    can't see or one there isn't, was taken as made up when the agent said it back, so the run
+    was asked again to leave out what they asked about. What they said counts as read."""
+    stack.model.reply("I can't find Q-9999.")
+    message = stack.send("What's happening with Q-9999?")
+    assert stack.scheduler().answer_waiting() == 1
+    assert stack.answers(message) == ["I can't find Q-9999."]  # as it was, at once
+    assert len(stack.model.requests) == 1  # never asked again

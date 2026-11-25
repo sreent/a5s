@@ -96,7 +96,8 @@ def _files(folder: Path, under: str, leave_out: Callable[[Path], bool] = lambda 
 # Code in the package that isn't the trusted core: the scenarios a5s ships and their
 # adapters, which count as the scenario's part, and what the team runs beside the core
 SCENARIO_CODE = ("a5s/sample.py", "a5s/service_desk.py", "a5s/software_delivery.py",
-                 "a5s/master_data.py", "a5s/knowledge.py", "a5s/graphify.py")
+                 "a5s/master_data.py", "a5s/procure_to_pay.py", "a5s/knowledge.py",
+                 "a5s/graphify.py")
 SERVICE_CODE = ("a5s/worker.py", "a5s/client.py")
 
 

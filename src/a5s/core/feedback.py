@@ -41,7 +41,7 @@ MOST_SHOWN = 100  # of an agent's, those waiting for a grade first, then the new
 
 def noted(conn: db.Connection, person: Person | None) -> str:
     """What someone's told once a5s has kept what they said, in the language they read."""
-    return words.say(languages.of(conn, person), NOTED) if person is not None else NOTED
+    return words.say(languages.of(person), NOTED) if person is not None else NOTED
 
 
 class Refused(Exception):
@@ -71,8 +71,10 @@ def record(conn: db.Connection, outbox: int, person: str, said: str | None,
     their words, if any, and the ledger's word on it, by their words' hash alone: the row kept,
     or None if they'd said so already. Refused if it isn't an agent's answer to them, nor in a
     chat they were in."""
-    row = conn.execute("select o.*, i.members from outbox o left join inbound i "
-                       "on i.id = o.inbound_id where o.id = %s", (outbox,)).fetchone()
+    row = conn.execute(  # who was in the chat: as the answer's route says, which keeps it
+        "select o.*, coalesce(array(select jsonb_array_elements_text(o.route->'members')), "  # once
+        "i.members) as members from outbox o left join inbound i on i.id = o.inbound_id "  # it
+        "where o.id = %s", (outbox,)).fetchone()  # fell back, or its asker was erased (C8)
     if row is None or not answer(row):
         raise Refused("that isn't an agent's answer")
     if person != row["person"] and person not in (row["members"] or []):

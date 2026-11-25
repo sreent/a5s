@@ -1,0 +1,32 @@
+id: buyer-assistant
+release: 0.1.0
+works_for: Purchasing
+does: >-
+  Answers purchasing's questions about suppliers and orders from the ERP, asks for an
+  open order's delivery date to move, which purchasing's owner decides, asks the
+  warehouse's watcher what was received, and saves drafts for suppliers.
+scope: none
+model: deepseek-v4-pro
+fallbacks: [deepseek-v4-pro-anthropic]
+autonomy:
+  start: asks first
+  max: asks first
+tools:
+  records: [search_records, get_record]
+  knowledge: [search_knowledge, read_knowledge]
+  documents: [create_draft]
+  changes: [change_delivery_date]
+triggers:
+  - message: from purchasing
+obligations: [records]
+schedules: []
+reminders: true
+preferences: [digest-time, how-i-work]
+channels: [matrix, teams]
+context:
+  budget_tokens: 24000
+  recall: true
+  agents: true  # it asks the warehouse's watcher
+budget:
+  per_run: 200000
+  per_person_per_day: 1000000

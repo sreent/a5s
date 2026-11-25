@@ -9,7 +9,7 @@ import yaml
 
 from a5s import db
 from a5s.contract import InstanceSettings, parse_settings
-from a5s.core import impact, words
+from a5s.core import impact
 from conftest import raise_cap
 from test_levels import asked, levelled
 from test_settings_app import api
@@ -165,13 +165,6 @@ def test_each_tool_call_keeps_whether_its_run_had_read_outside_content(stack):
     asked(stack)
     calls = [e for e in stack.ledger() if e["kind"] == "tool"]
     assert calls and all(e["read_outside"] is False for e in calls)
-
-
-def test_it_reads_in_the_language_its_reviewer_reads(stack, approving, provider):
-    from test_languages import reads
-    reads(stack, "ana", "th")
-    found = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
-    assert found["about"] == words.TH[impact.ABOUT]  # in the language Ana reads
 
 
 def test_it_says_what_a_version_changes_that_it_doesnt_decide_again(stack, approving, provider):

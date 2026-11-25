@@ -1,0 +1,10 @@
+# The assistant answers people in the language they write to it in, here Thai, as they wrote,
+# with the record's key as the records system names it.
+
+- name: answers in Thai someone who writes in Thai
+  as: ben
+  steps:
+    - say: สวัสดี ช่วยบอกหน่อยได้ไหมว่าคำถาม Q-1002 ตอนนี้สถานะเป็นอย่างไร
+      uses_any: [get_record, search_records]
+      says: [Q-1002]
+      writes_in: thai

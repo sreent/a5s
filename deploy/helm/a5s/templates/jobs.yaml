@@ -51,6 +51,28 @@ spec:
   activeDeadlineSeconds: 1800
   template:
     {{- include "a5s.adminPod" (dict "root" . "args" (list "setup") "passwords" true "approval" false) | nindent 4 }}
+{{- if .Values.restore.id }}
+{{/* Before a restore, the schema brought up to date, which writes nothing to the ledger: the
+restore needs the schema of the image it runs, which a backup older than the image lacks, and
+setup, which migrates too, applies the settings, which writes to the ledger, so it comes after
+the restore (round 16, D6). */}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-7"  # before the restore, at -5
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    {{- include "a5s.adminPod" (dict "root" . "args" (list "migrate") "passwords" true "approval" false) | nindent 4 }}
+{{- end }}
 {{- with .Values.restore.id }}
 {{/* After the database is restored from a backup: `a5s restore` puts back what the ledger's
 copies hold beyond it, and the rest, before setup, which writes to the ledger, so the copies never

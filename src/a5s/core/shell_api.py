@@ -20,7 +20,6 @@ from a5s.core import (
     administration,
     audit,
     handover,
-    languages,
     notebook_api,
     registry,
     samples,
@@ -53,15 +52,6 @@ PAGES = (
     ("officer", "Data protection", "officer", "Oversee", "/studio/officer"),
 )
 
-# Each page's name, and each heading, for those who read Thai (core/languages.py)
-THAI = {"chat": "แชท", "handovers": "บทสนทนาที่ส่งต่อ", "tasks": "งาน", "notebook": "สมุดบันทึก", "studio": "สตูดิโอ",
-        "map": "แผนผัง", "decide": "การตัดสินใจ", "grade": "การให้คะแนน",
-        "shadows": "เวอร์ชันทดลอง",
-        "settings": "การตั้งค่า", "audit": "บันทึกการตรวจสอบ", "admin": "การดูแลระบบ",
-        "spending": "ค่าใช้จ่าย", "officer": "การคุ้มครองข้อมูล", "health": "สุขภาพโมเดล"}
-THAI_HEADINGS = {"Work": "ทำงาน", "Build": "สร้าง", "Decide": "ตัดสินใจ", "Oversee": "กำกับดูแล"}
-
-
 def router(gw: Any) -> APIRouter:
     """The sidebar's API, for the channels app to include."""
 
@@ -72,8 +62,8 @@ def router(gw: Any) -> APIRouter:
 
     @api.get("/shell/api", **shapes.answers(shapes.Shell))
     def shell(person: Annotated[Person, Depends(someone)]) -> dict:
-        """Who signed in, the language they read, and the pages they may use, for the sidebar
-        every page shows, in its order."""
+        """Who signed in, and the pages they may use, for the sidebar every page shows, in its
+        order."""
         roles = set(person.roles)
         decides = INSTANCE_APPROVER in roles or any(
             r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in roles)
@@ -86,14 +76,11 @@ def router(gw: Any) -> APIRouter:
                  "health": bool(roles & {RELEASE_APPROVER, ENGINEER}) or any(
                      r.startswith(ENGINEER + ":") for r in roles)}
         with db.transaction(gw.url) as conn:
-            language = languages.of(conn, person)
             found["handovers"] = handover.answers_any(conn, gw.scenario, person)
             found["shadows"] = shadows.exists(conn) and (  # a new version's answers to grade,
                 samples.GRADER in roles or bool(shadows.figures(conn, gw.scenario, person)))
-        thai = language == "th"
-        return {"you": person.name, "language": language, "pages": [
-            {"page": key, "name": THAI[key] if thai else name, "icon": icon,
-             "group": THAI_HEADINGS[group] if thai else group, "at": at}
+        return {"you": person.name, "pages": [
+            {"page": key, "name": name, "icon": icon, "group": group, "at": at}
             for key, name, icon, group, at in PAGES if found[key]]}
 
     return api

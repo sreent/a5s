@@ -25,13 +25,14 @@ export function HealthPage() {
         <tbody>{now.models.map((m) => (
           <tr key={m.model} className={m.gated_at ? "gated" : ""}>
             <td><strong>{m.model}</strong>{m.gated_at ?
-                <span className="badge">{t("stopped: a person restores it")}</span> : null}</td>
+                <span className="badge">{t("stopped until the release approver puts it back")}</span> : null}</td>
             <td>{m.calls}</td><td>{m.failed}</td><td>{m.stalls}</td>
             <td>{m.mean_seconds == null ? "—" : m.mean_seconds + "s"}</td>
             <td>{m.canary_passed} {t("passed")} · {m.canary_failed} {t("failed")}</td>
           </tr>
         ))}</tbody>
       </table>
+      <p className="note">{t("The release approver puts a stopped model back with a5s health --restore, signed in, and the ledger records who did.")}</p>
       <p className="note">
         <To go="/studio/settings">{t("Which model each instance runs on is a setting its owners approve.")}</To>
       </p>

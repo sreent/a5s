@@ -75,7 +75,7 @@ def router(gw: Any) -> APIRouter:
             asked = conn.execute("select person from settings_requests where scenario = %s and "
                                  "digest = %s order by id limit 1",
                                  (gw.scenario.name, version)).fetchone()
-            spoken = languages.of(conn, person)  # in their language, where a5s has the words
+            spoken = languages.of(person)  # in their language, where a5s has the words
         before = parse_settings(bytes(last["raw"])) if last else None
         settings = parse_settings(bytes(row["raw"]))
         found = approvals.changes(before, settings, gw.definitions, gw.scenario.person, spoken)
@@ -119,7 +119,7 @@ def router(gw: Any) -> APIRouter:
                          "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
             approved = approvals.recorded(conn, gw.scenario.name, version)
             last = approvals.latest(conn, gw.scenario.name)
-            spoken = languages.of(conn, person)
+            spoken = languages.of(person)
         settings = parse_settings(bytes(row["raw"]))
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         before = parse_settings(bytes(last["raw"])) if last else None

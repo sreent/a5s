@@ -1,0 +1,77 @@
+# The made-up ERP's procurement module, through its MCP server (docs/connectors.md#mcp-servers). In
+# this made-up organisation it's deploy/systems/erp.py, on the scenario's synthetic data, beside the
+# gateway on its own machine, and a copy of its own in the studio's sandbox, beside it, with its own
+# state, so nothing tried there changes the deployment's ERP. a5s offers its agents nothing of the
+# server's but the tools declared here, in a5s's words, and passes on only the fields each names:
+# bank details only as handles, and what suppliers sent only through a5s's reader. The three-way
+# match, and the short deliveries, are the scenario's own code.
+servers:
+  erp:
+    url: http://127.0.0.1:9206/mcp
+    sandbox: http://127.0.0.1:9306/mcp  # the sandbox's own copy, with its own state
+tools:
+  search_records:
+    server: erp
+    calls: search_procurement
+    description: Search suppliers, purchase orders, goods receipts and suppliers' invoices by words in their key, name, item, status, supplier or order.
+    arguments: {type: object, required: [query], properties: {query: {type: string}}}
+    returns: [found, key, kind, name, iban, terms, supplier, item, quantity, price, amount, delivery, status, order, received, at, note, due, link]
+    handles: [iban]
+    record_field: key
+  get_record:
+    server: erp
+    calls: read_procurement
+    description: Get one supplier, purchase order, goods receipt or invoice by its key. A supplier's bank details come as a handle, never their value.
+    arguments: {type: object, required: [key], properties: {key: {type: string, description: "A supplier, such as SUP-101, an order, such as PO-4501, a receipt, such as GR-7001, or an invoice, such as INV-9001"}}}
+    returns: [key, kind, name, iban, terms, supplier, item, quantity, price, amount, delivery, status, order, received, at, note, due, link]
+    handles: [iban]
+    record_arg: key
+    record_field: key
+  get_invoice_documents:
+    server: erp
+    calls: invoice_documents
+    description: "Get what a supplier sent with an invoice, through a5s's reader: what it asks for, and the amounts, dates and keys it names, never its words."
+    arguments: {type: object, required: [key], properties: {key: {type: string, description: "An invoice, such as INV-9002"}}}
+    returns: [key, documents, record, from, at, body]
+    handles: [from]
+    outside: [body]
+    record_arg: key
+    record_field: key
+    # what it asks for, and the handbook's warning signs of a fraud
+    extract: {asks_for: "choice:payment|a bank change|a credit note|something else", amount: amount, order: key, says_someone_approved_it_already: flag, says_it_is_urgent: flag, gives_a_new_bank_account: flag}
+  # Changes: a5s holds each for the deciders of the invoice's or order's part, where the agent
+  # asks first, two of them above the settings' amount, and makes it once they approve it, if the
+  # record hasn't changed since, once for a5s's key, which the ERP honours. None takes bank details
+  approve_invoice:
+    server: erp
+    calls: approve_invoice
+    description: "Ask for an invoice to be approved for payment, for accounts payable's deciders to decide: only one that matches its order and what was received."
+    arguments: {type: object, required: [key], additionalProperties: false, properties: {key: {type: string, pattern: "^INV-\\d{4}$", description: The invoice}}}
+    returns: [key, status, at, link]
+    writes: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: approve-payment
+  correct_invoice_order:
+    server: erp
+    calls: correct_invoice_order
+    description: "Correct the purchase order an invoice names, where the match by code shows the supplier's order it means: never to another supplier's order."
+    arguments: {type: object, required: [key, order], additionalProperties: false, properties: {key: {type: string, pattern: "^INV-\\d{4}$", description: The invoice}, order: {type: string, pattern: "^PO-\\d{4}$", description: "The order it means, such as PO-4504"}}}
+    returns: [key, order, at, link]
+    writes: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: correct-reference
+  change_delivery_date:
+    server: erp
+    calls: change_delivery_date
+    description: Ask for an open purchase order's delivery date to move, for purchasing's owner to decide.
+    arguments: {type: object, required: [key, delivery], additionalProperties: false, properties: {key: {type: string, pattern: "^PO-\\d{4}$", description: The order}, delivery: {type: string, format: date, description: "The new delivery date, such as 2026-12-11"}}}
+    returns: [key, delivery, at, link]
+    writes: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: change-delivery

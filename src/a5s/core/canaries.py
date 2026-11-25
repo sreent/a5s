@@ -1,6 +1,7 @@
 """The drift canaries (docs/model-execution.md): a fixed, versioned set of cases every
-approved model must answer exactly, asked of the providers directly and scored into the
-ledger, so a model that changes behind its name shows here first. Each canary is one
+approved model must answer exactly, asked of the providers directly and scored into a
+table of their own (canary_scores), outside the ledger's chain, so a model that changes behind
+its name shows here first. Each canary is one
 conversation with one exact expected answer, compared case-insensitively, word for word."""
 from __future__ import annotations
 

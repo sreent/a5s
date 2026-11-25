@@ -181,9 +181,10 @@ def keep(conn: db.Connection, inbound: str, files: list[File]) -> int:
     return kept
 
 
-def attach(conn: db.Connection, run: str, inbound: str) -> str | None:
+def attach(conn: db.Connection, run: str, inbound: str, asks: bool = True) -> str | None:
     """Give a run the files its message came with, as its documents, D-1 and on, unread, in
-    the caller's transaction: what a5s tells the agent of them, in its own words, if any."""
+    the caller's transaction: what a5s tells the agent of them, in its own words, if any, and
+    to ask a5s's reader about each only where its release lets it (`asks`, round 16, B10)."""
     found = conn.execute("select number, name, media_type, size, refused from inbound_files "
                          "where inbound_id = %s order by number", (inbound,)).fetchall()
     if not found:
@@ -205,8 +206,10 @@ def attach(conn: db.Connection, run: str, inbound: str) -> str | None:
     if lines:
         said.append("They sent " + ("a file" if len(lines) == 1 else f"{len(lines)} files") +
                     " with this message, which a5s's reader keeps for this run: " +
-                    "; ".join(lines) + ". Ask about each with ask_about, by its number, rather "
-                    "than guessing what it says. " + OUTSIDE)
+                    "; ".join(lines) + ". " + (
+                        "Ask about each with ask_about, by its number, rather than guessing "
+                        "what it says. " if asks else "You can't read them here: say so, "
+                        "rather than guessing what they say. ") + OUTSIDE)
     if refusals:
         said.append("They sent more that a5s didn't keep, so tell them, if it matters: " +
                     "; ".join(refusals) + ".")

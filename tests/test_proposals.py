@@ -102,7 +102,8 @@ def test_what_the_decider_approves_is_made_and_whoever_asked_is_told(stack, appr
     [p] = held(stack)
     decided = decide(approving, provider, [p["digest"]])
     assert decided.status_code == 200, decided.text
-    assert decided.json() == {"decided": ["P-1"], "decision": "approve", "by": "Ana Ortiz"}
+    assert decided.json() == {"decided": ["P-1"], "decision": "approve", "by": "Ana Ortiz",
+                              "waits": []}  # nothing more it waits for
     assert due_of(stack) == "2026-11-06"  # the gateway makes it, not the page
     assert sweep(stack)["made"] == 1
     assert due_of(stack) == "2026-11-13"

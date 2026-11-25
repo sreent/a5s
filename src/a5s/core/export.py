@@ -135,10 +135,13 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "messages_sent": rows(  # in their own conversations: what a group was told is counted
             "select o.channel, o.agent, o.text, o.at, o.delivered_at from outbox o "
             "left join inbound i on i.id = o.inbound_id where o.person = any(%(names)s) "
-            "and i.conversation is null order by o.at, o.id"),
+            "and i.conversation is null and not coalesce(o.route ? 'members', false) "
+            "order by o.at, o.id"),  # a group's answer, though it fell back (round 16, C8)
         "digest_items": rows(
             "select agent, text, at, digest_due from digest_items where person = any(%(names)s) "
             "order by at, id"),
+        "fresh_starts": rows(  # when they started a conversation afresh (round 16, C12)
+            "select agent, at from fresh_starts where person = any(%(names)s) order by at"),
         "said_wrong": rows(  # agents' answers they said were wrong (core/feedback.py), and
             "select f.agent, f.channel, f.said, f.at, f.grade, "  # how they were graded: the
             "case when o.person = any(%(names)s) and i.conversation is null then o.text end "

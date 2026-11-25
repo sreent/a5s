@@ -347,11 +347,14 @@ export type DecideNow = {
   proposals: HeldChange[];
 };
 
-// A decision recorded, for the core to check again, seal and act on.
+// A decision recorded, for the core to check again, seal and act on: and the changes an
+// approval leaves waiting for another of their deciders, such as one that needs two of a
+// part's, or a part's of its own.
 export type Decided = {
   decided: string[];
   decision: string;
   by: string;
+  waits?: string[];
 };
 
 // What the decision page sends with a sign-in made to decide: the changes it decides, by
@@ -770,21 +773,6 @@ export type Judged = {
   grade: "right" | "wrong" | "critical" | null;
   why: string;
   judge: string | null;
-};
-
-// A language a5s's pages speak, by its code, named in its own words.
-export type Language = {
-  code: string;
-  name: string;
-};
-
-// The language someone chooses a5s's pages speak to them in, by its code, such as th.
-export type LanguageChoice = {
-  language: string;
-};
-
-export type LanguageChosen = {
-  language: string;
 };
 
 // The scenario's limits for a type of change: past either, a change waits for a person,
@@ -1349,11 +1337,9 @@ export type Shadows = {
   shadows: ShadowFigures[];
 };
 
-// Who signed in, the language they read, and the pages they may use, in the sidebar's
-// order.
+// Who signed in, and the pages they may use, in the sidebar's order.
 export type Shell = {
   you: string;
-  language: string;
   pages: Place[];
 };
 
@@ -1614,6 +1600,4 @@ export type You = {
   id: string;
   roles: Role[];
   groups: string[];
-  language: string;
-  languages: Language[];
 };

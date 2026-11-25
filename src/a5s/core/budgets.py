@@ -105,9 +105,11 @@ def refused(conn: db.Connection, scenario: Scenario, budget: Budget, instance: s
 
 def spent(conn: db.Connection, scenario: Scenario, budget: Budget, run: dict, tokens: int,
           now: datetime, usage: object = None, model: str | None = None) -> dict | None:
-    """Count a model call's tokens against its run, in and out apart, with the model it
-    called, and against its person's day, whose earlier days retention lets go. The day's use,
-    if this call took it past four fifths of the budget, for a warning."""
+    """Count a model call's tokens against its run, in and out apart, and against its
+    person's day, whose earlier days retention lets go. `model` is kept on the run only where
+    it named none, since a run keeps the model it opened on, which policy weighs its every call
+    by, though a call fall back to another. The day's use, if this call took it past four
+    fifths of the budget, for a warning."""
     took = split(usage)
     conn.execute("update runs set tokens = tokens + %s, tokens_in = tokens_in + %s, "
                  "tokens_out = tokens_out + %s, tokens_cached = tokens_cached + %s, "

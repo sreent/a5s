@@ -13,7 +13,7 @@ from a5s.connectors import mailboxes
 from a5s.core import customers
 from test_erase import erase
 from test_export import export
-from test_mailboxes import exchange, readers, stack, swept  # noqa: F401
+from test_mailboxes import exchange, mailbox_part, readers, stack, swept  # noqa: F401
 
 PAT = "pat@customer.example"
 
