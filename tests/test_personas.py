@@ -21,7 +21,7 @@ import re
 import httpx
 import pytest
 
-from conftest import accessible
+from conftest import accessible, listed_runs
 from test_journeys import Journey
 from test_proposals import asked, held
 
@@ -176,6 +176,27 @@ def test_an_administrator_finds_what_waits_on_them_and_who_holds_what(stack, app
     assert "New agent" not in sidebar(page)["Build"]
     assert (walk.clicks, walk.loads) == (3, 0)
 
+
+
+def test_an_administrator_reads_an_instance_and_one_of_its_runs(stack, approving, provider,
+                                                                browser):
+    listed_runs(stack)  # enough people served for its runs to show one by one
+    asked(stack)  # one run, of Ben's asking
+    page, broken = arrive(browser, approving, provider, "ana")
+    walk = Journey(page, "an instance and a run")
+    walk.click("#pages a:has-text('Agents')")
+    walk.click(".agent-card a.agent-name:text-is('assistant')")
+    walk.click("table.grid-table a:has-text('assistant-finance')")  # the agent at work
+    page.wait_for_selector(".runs-chart .day", timeout=30000)
+    assert "One agent at work" in page.inner_text(".page-head .about")
+    reads_well(page, broken)
+    walk.click("table.runs-table a:has-text('Open') >> nth=0")  # its latest run
+    page.wait_for_selector(".agent-map .flow-state", timeout=30000)
+    assert "One run of an agent, from what started it to how it ended" in page.inner_text(
+        ".page-head .about")
+    reads_well(page, broken)
+    accessible(page)
+    assert (walk.clicks, walk.loads) == (4, 0)
 
 # Everyone in the sample: the roles the sidebar's foot names, and the pages their work needs,
 # offered in their sidebar, none of them an administrator's mode

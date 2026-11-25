@@ -262,14 +262,16 @@ export function InstancePage({ id }: { id: string }) {
   // each comes, as it did by a third of a phone's screen (round 13, C11)
   const head = Boolean(inst && standing.data && (shell.data || shell.error));
   if (standing.error) {  // refused, or none: said once, not by each part of the page (round 13, C10)
-    return <><PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } }]} title={t("An instance")} />
+    return <><PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } }]} title={t("An instance")}
+                       about={t("One agent at work: whom it serves, how far it may act in each part, what waits on it, and how its runs have gone.")} />
       <Waiting error={standing.error} /></>;
   }
   return (
     <>
       <PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } },
                          ...(inst ? [{ label: inst.agent, to: { page: "agent" as const, agent: inst.agent } }] : [])]}
-                title={inst?.id ?? t("An instance")} badges={inst && <StatusBadge status={inst.status} />}>
+                title={inst?.id ?? t("An instance")} badges={inst && <StatusBadge status={inst.status} />}
+                about={t("One agent at work: whom it serves, how far it may act in each part, what waits on it, and how its runs have gone.")}>
         {head && inst ? (
           <>
             <div className="meta"><span>{aboutInstance(inst)}</span><span>{t("run by {runners}", { runners: runners(inst) })}</span><Link to={{ page: "map", at: `instance:${inst.id}` }} id="on-the-map">{t("What it depends on")}</Link>{standing.data?.suspended_by && <span>{t("suspended by {person}", { person: standing.data.suspended_by })}</span>}{!inst.current && <span className="badge warn">{t("still on release {release}", { release: inst.release })}</span>}</div>
