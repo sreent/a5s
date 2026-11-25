@@ -26,7 +26,8 @@ def test_a_part_owner_lowers_a_cap_alone_and_its_owners_hear(stack):
     assert lowered["args"]["why"] == "lowered by ana"
     with db.transaction(stack.admin) as conn:
         told = [r["text"] for r in conn.execute("select text from digest_items where person = 'ana'")]
-    assert any("cap on assistant-finance for change-due-date in billing is now 1" in t for t in told)
+    assert any('cap on assistant-finance for change-due-date in billing is now "asks first"' in t
+               for t in told)  # its level's name, as people read levels
 
 
 def test_a_change_stopped_part_way_is_listed_and_ended_by_hand(stack, approving, provider):

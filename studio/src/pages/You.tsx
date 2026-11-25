@@ -135,7 +135,7 @@ export function YouPage() {
           <section className="card" id="roles">
             <h2>{data.you}</h2>
             {data.roles.length === 0
-              ? <p className="note">{t("You hold none of a5s's roles: you use the agents that serve you, and see your own tasks and notebook. Whoever approves the agent you'd use can add you.")}</p>
+              ? <p className="note">{t("You hold none of a5s's roles: you use the agents that serve you, and see your own tasks. Whoever approves the agent you'd use can add you.")}</p>
               : (
                 <Wide label={t("What you may do")}><table className="grid-table">
                   <thead><tr><th>{t("Role")}</th><th>{t("Lets you")}</th><th>{t("Given by")}</th></tr></thead>

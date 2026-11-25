@@ -2,8 +2,8 @@
 acts for nobody, on its schedule, which hears nobody's words, and never once it has read content
 from outside. Code keeps a note only if every record it names was read with a tool and holds
 every key, amount and date in it. Runs are given the notes whose every record their people may
-see; a note lapses after 90 days once its records stop holding it; the agent's owner, or whoever
-runs its instance, reads and removes notes on the core's page."""
+see; a note lapses once its records change, as code reads them again each day; the agent's owner,
+or whoever runs its instance, reads and removes notes on the core's page."""
 
 import os
 from datetime import timedelta

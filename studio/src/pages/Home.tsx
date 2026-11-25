@@ -34,7 +34,7 @@ export function HomePage() {
             <ul className="plain">
               <li><Link to={{ page: "agents" }}>{t("The agents you may know of")}</Link>{t(": what each does, and how those you watch are doing")}</li>
               {data.authoring && <li><Link to={{ page: "new" }}>{t("A new agent")}</Link>{t(", from a template")}</li>}
-              <li><Link to={{ page: "you" }}>{t("What you may do in a5s")}</Link>{t(", and which group gave you each role, and the language you read")}</li>
+              <li><Link to={{ page: "you" }}>{t("What you may do in a5s")}</Link>{t(", and which group gave you each role")}</li>
             </ul>
           </section>
         </>

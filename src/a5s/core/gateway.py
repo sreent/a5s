@@ -134,6 +134,7 @@ from a5s.core.slack import Slack
 from a5s.core.teams import Teams
 from a5s.core.values import Value
 from a5s.definitions import Context, Definition
+from a5s.levels import NAMES as LEVEL_NAMES
 from a5s.services import context
 
 log = logging.getLogger(__name__)
@@ -4873,15 +4874,16 @@ def create_app(gw: Gateway) -> FastAPI:
             for person in dict.fromkeys(p for p in (inst["owner"], inst["deputy"]) if p):
                 spoken = gw.spoken(conn, person)  # each in the language they read
                 given = {"instance": inst["id"], "action": found["action"], "part": found["part"],
-                         "cap": found["cap"], "why": words.say(spoken, "lowered by {by}",
+                         "cap": LEVEL_NAMES.get(found["cap"], found["cap"]),  # its name, as
+                         "why": words.say(spoken, "lowered by {by}",  # people read levels
                                                                by=found["by"])
                          if "by" in found else words.say(spoken, found["why"])}
                 digests.keep(conn, person, inst["definition"], inst["id"], None, words.say(
-                    spoken, "a5s's cap on {instance} for {action} in {part} is now {cap}: {why}, "
-                    "on {graded} grades, {errors} of them wrong.", graded=found["graded"],
+                    spoken, "a5s's cap on {instance} for {action} in {part} is now \"{cap}\": "
+                    "{why}, on {graded} grades, {errors} of them wrong.", graded=found["graded"],
                     errors=found["errors"], **given) if "graded" in found else words.say(
-                    spoken, "a5s's cap on {instance} for {action} in {part} is now {cap}: {why}.",
-                    **given), now)
+                    spoken, "a5s's cap on {instance} for {action} in {part} is now \"{cap}\": "
+                    "{why}.", **given), now)
 
     @services.get("/proposals")
     def list_proposals() -> dict:
