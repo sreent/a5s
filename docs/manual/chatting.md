@@ -42,13 +42,13 @@ Use the paperclip, paste a screenshot into the box, or drop files on it. In the 
 
 For work that takes more than one sitting, such as going through every invoice that waits, the agent offers a task, such as *I can do that as task T-1. Shall I start it?* It starts only once you say yes, in a later message, within a day, in your own chat with the agent.
 
-![The agent offers a task, and starts it once the person says yes](../guides/software-delivery/16-raj-asks-it-for-a-review-of-all-his-open-fixes-w.png)
+![The agent offers a task, and starts it once the person says yes](../guides/software-delivery/20-raj-asks-it-for-a-review-of-all-his-open-fixes-w.png)
 
 - **Watch it** on the Tasks page, `/studio/tasks`, under *Your tasks*: each task's status, how far it has got, its plan, what it has found so far, its deadline and what it has spent. Reload the page to see the latest.
 - **When it's done, or needs you,** the agent writes to you in your chat. Answer it there, and it goes on with your words. A task that waits past its deadline fails.
 - **Cancel it** with **Cancel**, then **Cancel it**. It stops at its next step and keeps what it found. To change what it's for instead, write to the agent.
 
-![The Tasks page, with a task waiting for its first part](../guides/software-delivery/17-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
+![The Tasks page, with a task waiting for its first part](../guides/software-delivery/21-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
 
 ## Have work repeat
 

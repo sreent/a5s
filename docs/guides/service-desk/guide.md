@@ -22,40 +22,56 @@ The desk's assistant, built again from nothing in the studio, as desk-helper, by
 
    ![On the agent itself: whom it works for, what it does, and how far it may act. It asks first for changes, and may make a reset on its own only where the settings and graded samples give it, as the desk's own assistant.](05-on-the-agent-itself-whom-it-works-for-what-it-do.png)
 
-6. He plans its first instance: in access, serving the sales team, as the desk's own assistant serves them. It's in force nowhere until access's owner approves it.
+6. He plans its first instance: in access, serving the sales team, Pat, Rae and Hal, as the desk's own assistant serves them. It's in force nowhere until access's owner approves it.
 
-   ![He plans its first instance: in access, serving the sales team, as the desk's own assistant serves them. It's in force nowhere until access's owner approves it.](06-he-plans-its-first-instance-in-access-serving-th.png)
+   ![He plans its first instance: in access, serving the sales team, Pat, Rae and Hal, as the desk's own assistant serves them. It's in force nowhere until access's owner approves it.](06-he-plans-its-first-instance-in-access-serving-th.png)
 
 7. He tells it how to work, in its instructions.
 
    ![He tells it how to work, in its instructions.](07-he-tells-it-how-to-work-in-its-instructions.png)
 
-8. Nothing stops its release. It needs Ren, the release approver, and its owner, whom the directory doesn't name yet; Dev publishes its pull request.
+8. Dev tries the draft in the sandbox as Sam Reyes, on its made-up records, and keeps the exchange as a test case: search_records answers about INC0000001, allowed by a5s's checks.
 
-   ![Nothing stops its release. It needs Ren, the release approver, and its owner, whom the directory doesn't name yet; Dev publishes its pull request.](08-nothing-stops-its-release-it-needs-ren-the-relea.png)
+   ![Dev tries the draft in the sandbox as Sam Reyes, on its made-up records, and keeps the exchange as a test case: search_records answers about INC0000001, allowed by a5s's checks.](08-dev-tries-the-draft-in-the-sandbox-as-sam-reyes.png)
 
-9. What desk-helper may do, and what starts it, is what the hand-written desk assistant's definition gives it, in the studio's words: nothing more, and nothing missing.
+9. They run the case there: it uses search_records again, and passes.
 
-10. The team merges its pull request, and the directory names Dev its owner, as the identity provider's administrator would.
+   ![They run the case there: it uses search_records again, and passes.](09-they-run-the-case-there-it-uses-search-records-a.png)
 
-11. Deployed again, `a5s release status` says who must sign the release that adds it: Ren, and its owner, Dev. They sign it with `a5s release sign`, and the team records it: it's approved, and a5s runs it.
+10. Nothing stops its release. It needs Ren, the release approver, and its owner, whom the directory doesn't name yet; Dev publishes its pull request.
 
-12. Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the studio's settings.
+   ![Nothing stops its release. It needs Ren, the release approver, and its owner, whom the directory doesn't name yet; Dev publishes its pull request.](10-nothing-stops-its-release-it-needs-ren-the-relea.png)
 
-   ![Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the studio's settings.](12-back-in-the-studio-its-draft-says-its-release-is.png)
+11. What desk-helper may do, and what starts it, is what the hand-written desk assistant's definition gives it, in the studio's words: nothing more, and nothing missing.
 
-13. Ola, who owns access, where it's to work, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.
+12. The team merges its pull request, and the directory names Dev its owner, as the identity provider's administrator would.
 
-   ![Ola, who owns access, where it's to work, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.](13-ola-who-owns-access-where-it-s-to-work-finds-it.png)
+13. Deployed again, `a5s release status` says who must sign the release that adds it: Ren, and its owner, Dev. They sign it with `a5s release sign`, and the team records it: it's approved, and a5s runs it.
 
-14. Hugo, who owns hardware, since the desk's own assistant works there, and a version counts once each part's owner approves it whole, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.
+14. Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the studio's settings.
 
-   ![Hugo, who owns hardware, since the desk's own assistant works there, and a version counts once each part's owner approves it whole, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.](14-hugo-who-owns-hardware-since-the-desk-s-own-assi.png)
+   ![Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the studio's settings.](14-back-in-the-studio-its-draft-says-its-release-is.png)
 
-15. Sam, in sales, asks desk-helper in the chat which tickets are about the VPN. It searches the ITSM, through its MCP server, and answers from the ticket.
+15. Ola, who owns access, where it's to work, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.
 
-   ![Sam, in sales, asks desk-helper in the chat which tickets are about the VPN. It searches the ITSM, through its MCP server, and answers from the ticket.](15-sam-in-sales-asks-desk-helper-in-the-chat-which.png)
+   ![Ola, who owns access, where it's to work, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.](15-ola-who-owns-access-where-it-s-to-work-finds-it.png)
 
-16. Zia, of assurance, reads what desk-helper did in the audit trail.
+16. Hugo, who owns hardware, since the desk's own assistant works there, and a version counts once each part's owner approves it whole, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.
 
-   ![Zia, of assurance, reads what desk-helper did in the audit trail.](16-zia-of-assurance-reads-what-desk-helper-did-in-t.png)
+   ![Hugo, who owns hardware, since the desk's own assistant works there, and a version counts once each part's owner approves it whole, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.](16-hugo-who-owns-hardware-since-the-desk-s-own-assi.png)
+
+17. Sam, in sales, asks desk-helper in the chat which tickets are about the VPN. It searches the ITSM, through its MCP server, and answers from the ticket.
+
+   ![Sam, in sales, asks desk-helper in the chat which tickets are about the VPN. It searches the ITSM, through its MCP server, and answers from the ticket.](17-sam-in-sales-asks-desk-helper-in-the-chat-which.png)
+
+18. Zia, of assurance, reads what desk-helper did in the audit trail.
+
+   ![Zia, of assurance, reads what desk-helper did in the audit trail.](18-zia-of-assurance-reads-what-desk-helper-did-in-t.png)
+
+19. Ola, who owns access, watches desk-helper-access on its own page, as the owner of one of its parts: its runs and how they ended, and what it may do.
+
+   ![Ola, who owns access, watches desk-helper-access on its own page, as the owner of one of its parts: its runs and how they ended, and what it may do.](19-ola-who-owns-access-watches-desk-helper-access-o.png)
+
+20. They open that run: search_records on INC0000001, from its message to its outcome. The studio shows what it did, never what anyone said.
+
+   ![They open that run: search_records on INC0000001, from its message to its outcome. The studio shows what it did, never what anyone said.](20-they-open-that-run-search-records-on-inc0000001.png)

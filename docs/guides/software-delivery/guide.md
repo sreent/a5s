@@ -18,56 +18,72 @@ Software delivery's dev assistant, built again from nothing in the studio, as de
 
    ![On the agent itself: whom it works for, what it does, and how far it may act, as the team's own assistant.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
 
-5. She plans its first instance in the backend and the frontend, serving the backend team: each review it asks for waits for that repository's owner.
+5. She plans its first instance in the backend and the frontend, serving the engineering, security and product people the team's own assistant serves: each review it asks for waits for that repository's owner.
 
-   ![She plans its first instance in the backend and the frontend, serving the backend team: each review it asks for waits for that repository's owner.](05-she-plans-its-first-instance-in-the-backend-and.png)
+   ![She plans its first instance in the backend and the frontend, serving the engineering, security and product people the team's own assistant serves: each review it asks for waits for that repository's owner.](05-she-plans-its-first-instance-in-the-backend-and.png)
 
 6. She tells it how to work, in its instructions.
 
    ![She tells it how to work, in its instructions.](06-she-tells-it-how-to-work-in-its-instructions.png)
 
-7. Nothing stops its release. Pam publishes its pull request.
+7. Pam tries the draft in the sandbox as Raj Iyer, on its made-up records, and keeps the exchange as a test case: get_record answers about PR-17, allowed by a5s's checks.
 
-   ![Nothing stops its release. Pam publishes its pull request.](07-nothing-stops-its-release-pam-publishes-its-pull.png)
+   ![Pam tries the draft in the sandbox as Raj Iyer, on its made-up records, and keeps the exchange as a test case: get_record answers about PR-17, allowed by a5s's checks.](07-pam-tries-the-draft-in-the-sandbox-as-raj-iyer-o.png)
 
-8. What dev-helper may do, and what starts it, is what the hand-written dev assistant's definition gives it, in the studio's words: nothing more, and nothing missing.
+8. They run the case there: it uses get_record again, and passes.
 
-9. The team merges its pull request, and the directory names Pam its owner.
+   ![They run the case there: it uses get_record again, and passes.](08-they-run-the-case-there-it-uses-get-record-again.png)
 
-10. Deployed again, Rue and Pam sign the release that adds it, and the team records it: it's approved, and a5s runs it.
+9. Nothing stops its release. Pam publishes its pull request.
 
-11. Its release signed and deployed, Pam puts it to work from its plan.
+   ![Nothing stops its release. Pam publishes its pull request.](09-nothing-stops-its-release-pam-publishes-its-pull.png)
 
-   ![Its release signed and deployed, Pam puts it to work from its plan.](11-its-release-signed-and-deployed-pam-puts-it-to-w.png)
+10. What dev-helper may do, and what starts it, is what the hand-written dev assistant's definition gives it, in the studio's words: nothing more, and nothing missing.
 
-12. Leo, who owns the backend, approves it, signed in afresh for that version alone.
+11. The team merges its pull request, and the directory names Pam its owner.
 
-   ![Leo, who owns the backend, approves it, signed in afresh for that version alone.](12-leo-who-owns-the-backend-approves-it-signed-in-a.png)
+12. Deployed again, Rue and Pam sign the release that adds it, and the team records it: it's approved, and a5s runs it.
 
-13. Nia, who owns the frontend, approves it, signed in afresh for that version alone.
+13. Its release signed and deployed, Pam puts it to work from its plan.
 
-   ![Nia, who owns the frontend, approves it, signed in afresh for that version alone.](13-nia-who-owns-the-frontend-approves-it-signed-in.png)
+   ![Its release signed and deployed, Pam puts it to work from its plan.](13-its-release-signed-and-deployed-pam-puts-it-to-w.png)
 
-14. Raj asks it to ask Sol, of security, to review his pull request too. The request waits for Leo, who owns the backend, where it is.
+14. Leo, who owns the backend, approves it, signed in afresh for that version alone.
 
-   ![Raj asks it to ask Sol, of security, to review his pull request too. The request waits for Leo, who owns the backend, where it is.](14-raj-asks-it-to-ask-sol-of-security-to-review-his.png)
+   ![Leo, who owns the backend, approves it, signed in afresh for that version alone.](14-leo-who-owns-the-backend-approves-it-signed-in-a.png)
 
-15. Leo finds it waiting for his decision, reads what it asks in a5s's own words, and approves it, signed in afresh for that alone.
+15. Nia, who owns the frontend, approves it, signed in afresh for that version alone.
 
-   ![Leo finds it waiting for his decision, reads what it asks in a5s's own words, and approves it, signed in afresh for that alone.](15-leo-finds-it-waiting-for-his-decision-reads-what.png)
+   ![Nia, who owns the frontend, approves it, signed in afresh for that version alone.](15-nia-who-owns-the-frontend-approves-it-signed-in.png)
 
-16. Raj asks it for a review of all his open fixes, which takes more than one sitting. It offers it as a task, and starts it once he says yes.
+16. Raj asks it to ask Sol, of security, to review his pull request too. The request waits for Leo, who owns the backend, where it is.
 
-   ![Raj asks it for a review of all his open fixes, which takes more than one sitting. It offers it as a task, and starts it once he says yes.](16-raj-asks-it-for-a-review-of-all-his-open-fixes-w.png)
+   ![Raj asks it to ask Sol, of security, to review his pull request too. The request waits for Leo, who owns the backend, where it is.](16-raj-asks-it-to-ask-sol-of-security-to-review-his.png)
 
-17. On his own page he watches T-1, waiting for its first slice, with what it may spend and by when.
+17. Leo finds it waiting for his decision, reads what it asks in a5s's own words, and approves it, signed in afresh for that alone.
 
-   ![On his own page he watches T-1, waiting for its first slice, with what it may spend and by when.](17-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
+   ![Leo finds it waiting for his decision, reads what it asks in a5s's own words, and approves it, signed in afresh for that alone.](17-leo-finds-it-waiting-for-his-decision-reads-what.png)
 
-18. He stops it there, since PR-17's review comes first: asked first, as what can't be undone is.
+18. Leo, who owns the backend, watches dev-helper-backend on its own page, as the owner of one of its parts: its runs and how they ended, and what it may do.
 
-   ![He stops it there, since PR-17's review comes first: asked first, as what can't be undone is.](18-he-stops-it-there-since-pr-17-s-review-comes-fir.png)
+   ![Leo, who owns the backend, watches dev-helper-backend on its own page, as the owner of one of its parts: its runs and how they ended, and what it may do.](18-leo-who-owns-the-backend-watches-dev-helper-back.png)
 
-19. Ash, of assurance, follows it in the audit trail: the review it asked for, held, decided by Leo and asked of the forge, and the task Raj stopped.
+19. They open that run: request_review on PR-17, from its message to its outcome. The studio shows what it did, never what anyone said.
 
-   ![Ash, of assurance, follows it in the audit trail: the review it asked for, held, decided by Leo and asked of the forge, and the task Raj stopped.](19-ash-of-assurance-follows-it-in-the-audit-trail-t.png)
+   ![They open that run: request_review on PR-17, from its message to its outcome. The studio shows what it did, never what anyone said.](19-they-open-that-run-request-review-on-pr-17-from.png)
+
+20. Raj asks it for a review of all his open fixes, which takes more than one sitting. It offers it as a task, and starts it once he says yes.
+
+   ![Raj asks it for a review of all his open fixes, which takes more than one sitting. It offers it as a task, and starts it once he says yes.](20-raj-asks-it-for-a-review-of-all-his-open-fixes-w.png)
+
+21. On his own page he watches T-1, waiting for its first slice, with what it may spend and by when.
+
+   ![On his own page he watches T-1, waiting for its first slice, with what it may spend and by when.](21-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
+
+22. He stops it there, since PR-17's review comes first: asked first, as what can't be undone is.
+
+   ![He stops it there, since PR-17's review comes first: asked first, as what can't be undone is.](22-he-stops-it-there-since-pr-17-s-review-comes-fir.png)
+
+23. Ash, of assurance, follows it in the audit trail: the review it asked for, held, decided by Leo and asked of the forge, and the task Raj stopped.
+
+   ![Ash, of assurance, follows it in the audit trail: the review it asked for, held, decided by Leo and asked of the forge, and the task Raj stopped.](23-ash-of-assurance-follows-it-in-the-audit-trail-t.png)

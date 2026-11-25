@@ -14,7 +14,7 @@ The web chat uses the organisation's identity provider through OpenID Connect. a
 
 The person chooses an agent and writes to it: the chat lists only the agents that serve them, once they've signed in, and names none before. A message to any other gets an answer that names nobody: to ask for it on its page in the studio, if they may know of it there, and otherwise what a5s says of an agent there isn't. Here Sam, of the service desk scenario, asks which tickets are about the VPN, and the agent answers from the made-up tickets. Each person has a conversation with the agent, not one shared with every other user. Tools and records stay within the run's permissions.
 
-![Someone asking an agent in the web chat, and its answer from the records](guides/service-desk/15-sam-in-sales-asks-desk-helper-in-the-chat-which.png)
+![Someone asking an agent in the web chat, and its answer from the records](guides/service-desk/17-sam-in-sales-asks-desk-helper-in-the-chat-which.png)
 
 The same agents can work through Matrix, Teams or Slack where the deployment enables them. The command line and web chat use the local channel.
 
@@ -22,7 +22,7 @@ The same agents can work through Matrix, Teams or Slack where the deployment ena
 
 For work that needs more than one run, the agent offers a durable task and asks before starting it. The person's answer in a later message confirms it; merely receiving the offer does not start work.
 
-![The agent offering task T-1, and starting it once the person says yes](guides/software-delivery/16-raj-asks-it-for-a-review-of-all-his-open-fixes-w.png)
+![The agent offering task T-1, and starting it once the person says yes](guides/software-delivery/20-raj-asks-it-for-a-review-of-all-his-open-fixes-w.png)
 
 a5s then works on the task in bounded runs of its own. A fresh worker resumes from the saved plan and checkpoint after a restart, rather than depending on a process staying alive.
 
@@ -30,7 +30,7 @@ a5s then works on the task in bounded runs of its own. A fresh worker resumes fr
 
 At `/studio/tasks`, the person sees their own tasks: each task's agent, status, plan, partial findings, result, deadline and tokens spent. A task can be cancelled until it ends, offered or blocked ones too. Tasks that repeat appear separately, and stopping one does not cancel its already-running task.
 
-![A task on its owner's page, waiting for its first part, with what it may spend and by when](guides/software-delivery/17-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
+![A task on its owner's page, waiting for its first part, with what it may spend and by when](guides/software-delivery/21-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
 
 To answer a task that needs its owner, the person returns to their chat with the agent. The page is in the studio, and every page's sidebar links to it, the chat's too, but later progress needs a refresh rather than appearing automatically.
 
