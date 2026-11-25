@@ -12,6 +12,7 @@ each is in docs/runbooks.md.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 from a5s import db
@@ -32,6 +33,25 @@ def outcome(found: str | None) -> str:
 
 
 
+# How long the core's record of the status may age, at a minute between records, before the
+# Status page says the scheduler, which asks for it, or the core may be away
+SEEN_LATE = 3 * 60
+
+
+def seen(conn: db.Connection, status: dict[str, Any]) -> None:
+    """Record the status as the core found it, for the studio's Status page."""
+    conn.execute("insert into status_seen (only_one, at, status) values (true, now(), %s) "
+                 "on conflict (only_one) do update set at = excluded.at, "
+                 "status = excluded.status", (json.dumps(status, default=str),))
+
+
+def last_seen(conn: db.Connection) -> tuple[dict[str, Any], float] | None:
+    """The status as the core last recorded it, and how many seconds ago: None if never."""
+    found = conn.execute("select status, extract(epoch from now() - at) as age "
+                         "from status_seen").fetchone()
+    return (found["status"], float(found["age"])) if found else None
+
+
 def second_factor_refused(conn: db.Connection, doing: str) -> None:
     """Count a refusal of what counts for want of a second factor, by what it was."""
     conn.execute("insert into second_factor_refusals (day, doing, n) values (current_date, %s, 1) "
@@ -40,12 +60,13 @@ def second_factor_refused(conn: db.Connection, doing: str) -> None:
 
 def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
            rubber_stamps: bool = False,
-           sign_ins: tuple[str, tuple[str, ...]] | Literal[False] | None = False
-           ) -> dict[str, Any]:
+           sign_ins: tuple[str, tuple[str, ...]] | Literal[False] | None = False,
+           scenario: str | None = None) -> dict[str, Any]:
     """The last day's status, by the database's clock. `keys` are the core's seal keys, for
     the caps that count; deciders are named for rubber stamps only if `rubber_stamps`.
     `sign_ins` is the second factor the identity provider's sign-ins must show for what
-    counts: None for none, and False with no identity provider."""
+    counts: None for none, and False with no identity provider. With the `scenario` a5s
+    serves, the models the health gate stopped for it, which nobody has put back."""
     queue = conn.execute(
         "select count(*) as waiting, extract(epoch from now() - min(received_at)) as oldest "
         "from inbound where answered_at is null and (retry_at is null or retry_at <= now())"
@@ -139,6 +160,9 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "  as failed "
         "from tasks where parent is null").fetchone()
     copies = anchor.state(conn)  # as the copier records it (round 15, D8)
+    gated = [r["model"] for r in conn.execute(  # stopped by the health gate (core/health.py)
+        "select distinct model from model_health where scenario = %s and gated_at is not null "
+        "order by model", (scenario,))] if scenario else []
     refused = conn.execute(  # what counts, refused for want of a second factor
         "select doing, sum(n) as n from second_factor_refusals "
         "where day >= current_date - 1 group by doing order by doing").fetchall()
@@ -178,6 +202,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "copies": copies,
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
+        "models_stopped": gated,
         "objectives": {
             "replies": {"answered": replies["n"], "p50_seconds": _number(replies["p50"]),
                         "p90_seconds": _number(replies["p90"]),
@@ -201,8 +226,151 @@ def _outcomes(rows: list[dict]) -> list[dict]:
                                                                      key=lambda i: (str(i[0][0]), i[0][1]))]
 
 
+# What needs someone now, out of hours too, as docs/runbooks.md#on-call says what pages, and what
+# can wait for working hours: each with the runbook section that says what to do
+NOW, LATER = "now", "working hours"
+QUEUE_LATE = 5 * 60  # seconds the oldest message may wait before it's worth a look
+COPIES_LATE = 30 * 60  # seconds the ledger's newest copy may age, entries waiting, before a page
+CHECK_LATE = 2 * 86400  # seconds since the copier last checked the whole ledger, before a look
+
+
+def needs(status: dict[str, Any]) -> list[dict[str, str]]:
+    """What in the status needs someone, what pages out of hours first: each `when`, now or
+    in working hours, what it is, in a sentence, and the runbook section on what to do."""
+    found: list[dict[str, str]] = []
+
+    def need(when: str, said: str, section: str) -> None:
+        found.append({"when": when, "said": said, "runbook": f"docs/runbooks.md#{section}"})
+
+    development = bool((status.get("configuration") or {}).get("development"))
+    copies, copying = status.get("copies"), "the-ledgers-copies-stop"
+    if copies is None:
+        if not development:  # which copies nothing to locked storage
+            need(LATER, "No copier has run here, so the ledger has no locked copies: run "
+                        "`a5s anchor --every`, as the chart's anchor part does", copying)
+    elif copies["stopped"]:
+        need(NOW, f"The ledger's copies have stopped until someone acts: {copies['problem']}",
+             copying)
+    else:
+        if copies["problem"]:
+            need(NOW, f"The copier's last try failed: {copies['problem']}", copying)
+        age = copies.get("copied_seconds_ago")
+        if age is not None and age > COPIES_LATE and copies.get("behind"):
+            need(NOW, f"The ledger's newest copy is {age / 60:.0f} minutes old, with "
+                      f"{copies['behind']} entries waiting to be copied", copying)
+        full = copies.get("checked")
+        if full and full["problems"]:
+            need(NOW, "The copier's check of the whole ledger found: "
+                      + "; ".join(full["problems"]), copying)
+        elif full and full["seconds_ago"] > CHECK_LATE:
+            need(LATER, f"The copier last checked the whole ledger "
+                        f"{full['seconds_ago'] / 86400:.0f} days ago", copying)
+    if stuck := status["changes"]["stuck"]:
+        need(NOW, f"{stuck} {'change' if stuck == 1 else 'changes'} stopped part way through "
+                  "being made: `a5s proposals` lists them", "changes-wait-or-stop-part-way")
+    release = status.get("release") or {}
+    if release.get("problems"):
+        need(LATER, _sentence("; ".join(release["problems"])) + " So the core opens no run.",
+             "settings-or-the-release-dont-check-out")
+    for model in status.get("breakers_open") or []:
+        need(LATER, f"{model}'s breaker is open after three failures in a row: a5s tries it "
+                    "again every five minutes", "runs-fail-or-a-model-isnt-answering")
+    for model in status.get("models_stopped") or []:
+        need(LATER, f"{model} is stopped, as it stalled on more than half its calls in a day: "
+                    "once its provider answers again, the release approver puts it back with "
+                    f"`a5s health --restore {model}`", "runs-fail-or-a-model-isnt-answering")
+    queue = status["queue"]
+    if queue["waiting"] and (queue["oldest_seconds"] or 0) > QUEUE_LATE:
+        need(LATER, f"{queue['waiting']} messages are waiting, the oldest for "
+                    f"{queue['oldest_seconds'] / 60:.0f} minutes", "messages-are-waiting")
+    if status.get("seal_keys_leaked"):
+        need(LATER, "A5S_SEAL_KEYS holds a key retired as leaked: take it out and restart the "
+                    "core, as what it sealed counts until you do", "rotating-the-seal-key")
+    if status.get("seals_waiting"):
+        need(LATER, "Seals wait under a key A5S_SEAL_KEYS is moving away from: run `a5s "
+                    "seal-again` as the core, then drop the old key", "rotating-the-seal-key")
+    if unsealed := status.get("unsealed"):
+        need(LATER, f"{unsealed} approvals, decisions and grades the gateway hasn't sealed in "
+                    "5 minutes, which don't count until it does: see A5S_SEAL_KEYS",
+             "changes-wait-or-stop-part-way")
+    for inst in status.get("not_active") or []:
+        if inst["status"] == "suspended":  # retired, a version of the settings meant
+            by = f" by {inst['suspended_by']}" if inst.get("suspended_by") else ""
+            need(LATER, f"{inst['id']} is suspended{by}: they resume it on its page, or the "
+                        "release approver does", "an-instance-isnt-active")
+    if left := status["deliveries"]["left_in_inbox"]:
+        need(LATER, f"{left} deliveries a chat didn't take were left in people's local inbox",
+             "deliveries-a-chat-didnt-take")
+    for spent in status.get("tokens") or []:
+        if spent["budget_warnings"]:
+            need(LATER, f"{spent['instance']} went past four fifths of its budget",
+                 "budgets-run-out")
+    if lapsed := status["samples"]["lapsed"]:
+        need(LATER, f"{lapsed} samples lapsed ungraded this quarter",
+             "samples-wait-to-be-graded-or-a-cap-falls")
+    objectives = status["objectives"]
+    if objectives["replies"]["met"] is False:
+        need(LATER, "Replies are slower than the objective, nine in ten within "
+                    f"{objectives['replies']['objective_seconds']}s", "an-objective-is-missed")
+    if objectives["chases"]["met"] is False:
+        need(LATER, "Fewer chases went out before what's owed fell due than the objective, "
+                    f"{objectives['chases']['objective']:.0%}", "an-objective-is-missed")
+    if missing := status.get("missing"):
+        need(LATER, f"{missing} people the directory no longer names wait to be archived",
+             "people-the-directory-no-longer-names")
+    sign_ins = status.get("sign_ins")
+    if sign_ins and not sign_ins["second_factor"]:
+        need(LATER, "Approvals, decisions, grades and the officer's requests aren't checked "
+                    "for a second factor: set A5S_OIDC_MFA, such as amr:mfa",
+             "sign-ins-refused-for-want-of-a-second-factor")
+    return sorted(found, key=lambda n: n["when"] != NOW)  # what pages first, else as listed
+
+
+def verdict(status: dict[str, Any]) -> str:
+    """The status's first line: what needs someone now, and what in working hours."""
+    found = status.get("needs")
+    if found is None:
+        found = needs(status)
+    now = sum(n["when"] == NOW for n in found)
+    later = len(found) - now
+    if not found:
+        return "Nothing needs anyone."
+    parts = ([f"{now} {'needs' if now == 1 else 'need'} someone now, out of hours too"]
+             if now else []) + ([f"{later} can wait for working hours"] if later else [])
+    return " and ".join(parts) + "."
+
+
+def released(release: dict[str, Any] | None) -> str | None:
+    """The release a5s is, and whether this deployment approved it, in a line."""
+    if not release:
+        return None
+    named = f"Release {release['version']} of a5s ({release['digest'][:12]})"
+    if release.get("approved") is None:
+        return f"{named}, run for development, which runs any release."
+    return f"{named}, {'approved here' if release['approved'] else 'not approved here'}."
+
+
+def _sentence(text: str) -> str:
+    text = text.strip()
+    return (text[:1].upper() + text[1:]).rstrip(".") + "."
+
+
 def told(status: dict[str, Any]) -> str:
-    """The status in words, for the command line."""
+    """The status in words, for the command line: first what needs someone and the release,
+    then the last day."""
+    found = status.get("needs")
+    if found is None:
+        found = needs(status)
+    head = [f"a5s: {verdict({'needs': found})}"]
+    head += [f"  {'Now' if n['when'] == NOW else 'In working hours'}: "  # ids keep their case
+             f"{n['said'].rstrip('.')}. ({n['runbook']})" for n in found]
+    if line := released(status.get("release")):
+        head.append(f"  {line}")
+    return "\n".join([*head, "", _day(status)])
+
+
+def _day(status: dict[str, Any]) -> str:
+    """The last day, line by line."""
     q, o = status["queue"], status["objectives"]
     by_kind: dict[str, int] = {}
     for r in status["runs"]:
@@ -306,6 +474,8 @@ def told(status: dict[str, Any]) -> str:
                                       + (f" by {i['suspended_by']}" if i["suspended_by"] else "")
                                       for i in status["not_active"]) or "none") + ".",
         "  Breakers open: " + (", ".join(status["breakers_open"]) or "none") + ".",
+        *([f"  Models the health gate stopped: {', '.join(status['models_stopped'])}."]
+          if status.get("models_stopped") else []),
         *([_configuration_told(status["configuration"])] if status.get("configuration") else []),
     ]
     return "\n".join(lines)

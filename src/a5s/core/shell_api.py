@@ -52,10 +52,11 @@ PAGES = (
     ("grade", "Grading", "grade", "Decide", "/studio/grade"),
     ("shadows", "Shadows", "grade", "Decide", "/studio/shadows"),
     ("settings", "Settings", "settings", "Decide", "/studio/settings"),
+    ("status", "Status", "bell", "Oversee", "/studio/status"),
     ("audit", "Audit trail", "audit", "Oversee", "/studio/audit"),
     ("admin", "Administration", "admin", "Oversee", "/studio/admin"),
     ("spending", "Spending", "spend", "Oversee", "/studio/spending"),
-    ("health", "Model health", "health", "Oversee", "/studio/health"),
+    ("health", "Model health", "model", "Oversee", "/studio/health"),
     ("officer", "Data protection", "officer", "Oversee", "/studio/officer"),
 )
 
@@ -91,6 +92,7 @@ def router(gw: Any) -> APIRouter:
                  "admin": administration.administers(person, gw.cfg.team),
                  "spending": spending.sees_any(gw.url, person),
                  "officer": DATA_PROTECTION in roles,
+                 "status": person.team == gw.cfg.team,  # as `a5s status` is theirs
                  "health": bool(roles & {RELEASE_APPROVER, ENGINEER}) or any(
                      r.startswith(ENGINEER + ":") for r in roles)}
         with db.transaction(gw.url) as conn:

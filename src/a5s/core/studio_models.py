@@ -1234,6 +1234,25 @@ class HealthNow(Shape):
     models: list[HealthModel]
 
 
+class StatusNeed(Shape):
+    """One thing that needs someone, for the Status page: now, out of hours too, or in working
+    hours, what it is, and the runbook's section on what to do."""
+
+    when: str
+    said: str
+    runbook: str
+
+
+class StatusNow(Shape):
+    """The Status page: how a5s is doing, as the core last said, and how long ago."""
+
+    seen_seconds_ago: float | None = None  # None if the core never said yet
+    verdict: str
+    needs: list[StatusNeed]
+    release: str | None = None  # the release a5s is, and whether it's approved here
+    day: list[str]  # the last day's lines, as `a5s status` says them
+
+
 class SettingsReview(Shape):
     """A version someone wrote, reviewed before they ask for it: why a5s couldn't propose it, or
     what it would change, all of it in words, and whose approval it needs."""

@@ -70,3 +70,49 @@ def test_deliveries_a_chat_didnt_take_and_budget_warnings_show(stack):
     assert ("Deliveries a chat didn't take: 1 being tried again, 1 left in people's local "
             "inbox.") in told
     assert "assistant-finance 900, 1 past four fifths" in told
+
+
+# The verdict: what needs someone now, out of hours too, then what can wait for working hours,
+# each with its runbook section, and the release a5s is, before the last day's lines
+
+def test_a_calm_day_needs_nobody(stack):
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert now["needs"] == [] and now["models_stopped"] == []
+    told = status.told(now)
+    assert told.startswith("a5s: Nothing needs anyone.\n")
+    assert "\na5s over the last day:\n" in told
+
+
+def test_what_pages_comes_first_then_what_waits_for_working_hours(stack, monkeypatch):
+    from dataclasses import replace
+
+    from a5s.core import anchor, releases
+
+    stack.suspend(by="ben")
+    with db.transaction(stack.admin) as conn:  # a model the health gate stopped
+        conn.execute("insert into model_health (scenario, model, day, calls, stalls, gated_at) "
+                     "values ('sample', 'fake', current_date, 20, 11, now())")
+    anchor.stuck(stack.admin, "the store refused to lock entry 7", stopped=True)
+    current = releases.running(stack.cfg.root, stack.cfg.scenario_dir, stack.cfg.agents_dir)
+    monkeypatch.setattr(stack.gateway, "releases", releases.Releases(current))
+    monkeypatch.setattr(stack.gateway, "cfg", replace(stack.gateway.cfg, development=False))
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert [(n["when"], n["runbook"]) for n in now["needs"]] == [
+        ("now", "docs/runbooks.md#the-ledgers-copies-stop"),
+        ("working hours", "docs/runbooks.md#settings-or-the-release-dont-check-out"),
+        ("working hours", "docs/runbooks.md#runs-fail-or-a-model-isnt-answering"),
+        ("working hours", "docs/runbooks.md#an-instance-isnt-active")]
+    assert now["release"]["approved"] is False and now["models_stopped"] == ["fake"]
+    told = status.told(now).splitlines()
+    assert told[0] == "a5s: 1 needs someone now, out of hours too and 3 can wait for working hours."
+    assert told[1] == ("  Now: The ledger's copies have stopped until someone acts: the store "
+                       "refused to lock entry 7. (docs/runbooks.md#the-ledgers-copies-stop)")
+    assert told[2].startswith(f"  In working hours: Release {current.version} of a5s isn't "
+                              "approved here:") and "So the core opens no run." in told[2]
+    assert "`a5s health --restore fake`" in told[3]
+    assert told[4].startswith("  In working hours: assistant-finance is suspended by ben")
+    assert told[5] == (f"  Release {current.version} of a5s ({current.digest[:12]}), "
+                       "not approved here.")
+    assert "  Models the health gate stopped: fake." in told

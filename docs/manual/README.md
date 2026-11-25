@@ -39,7 +39,8 @@ Most people do more than one of these: a part's owner decides changes, approves 
 | | Grading, `/studio/grade` | Graders |
 | | Shadows, `/studio/shadows` | Graders, and the people who follow a new version answering beside an instance |
 | | Settings, `/studio/settings` | Part owners, instance approvers, agents' owners, the data protection officer and assurance |
-| Oversee | Audit trail, `/studio/audit` | Auditors and assurance |
+| Oversee | Status, `/studio/status` | The team that runs a5s |
+| | Audit trail, `/studio/audit` | Auditors and assurance |
 | | Administration, `/studio/admin` | Those who own, approve, decide or oversee: owners, delegates, approvers, assurance, auditors, the data protection officer and the team that runs a5s |
 | | Spending, `/studio/spending` | Owners of agents, instances and parts, delegates, and instance approvers |
 | | Model health, `/studio/health` | The release approver and the team that runs a5s |

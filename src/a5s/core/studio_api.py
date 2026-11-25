@@ -57,6 +57,7 @@ from a5s.core import (
     shadows,
     shell_api,
     spending,
+    status_api,
     studio,
     suspension,
     tasks_api,
@@ -1350,6 +1351,7 @@ def described() -> dict:
     app.include_router(decide_api.router(SimpleNamespace(cfg=None)))  # and deciding held changes
     app.include_router(grade_api.router(SimpleNamespace(cfg=None)))  # and grading samples
     app.include_router(health_api.router(SimpleNamespace(cfg=None)))  # and the model health
+    app.include_router(status_api.router(SimpleNamespace(cfg=None)))  # and the Status page
     app.include_router(officer_api.router(SimpleNamespace(cfg=None)))  # and the officer's requests
     app.include_router(approve_api.router(SimpleNamespace(cfg=None)))  # and approving settings
     app.include_router(shell_api.router(SimpleNamespace(cfg=None)))  # and every page's sidebar

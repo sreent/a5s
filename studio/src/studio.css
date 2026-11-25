@@ -237,3 +237,7 @@ details.sent { margin-top: 0.75rem; }
 .said-wrong-list { display: grid; gap: var(--space-4); margin-block: var(--space-3); }
 
 a.avatar { text-decoration: none; }  /* the rail's way to What you may do */
+
+/* The Status page: what needs someone, then the last day, a line each (core/status_api.py) */
+#verdict .needs, #day .day { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-2); }
+#verdict .runbook { color: var(--muted); }

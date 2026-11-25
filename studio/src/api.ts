@@ -113,6 +113,7 @@ export type Home = gen.Home;
 export type Waiting = gen.Waiting;
 export type SettingsNow = gen.SettingsNow;
 export type HealthNow = gen.HealthNow;  // each model's day, measured (core/health_api.py)  // the settings, for someone who approves versions of them
+export type StatusNow = gen.StatusNow;  // how a5s is doing, as the core last said (core/status_api.py)
 export type SettingsReview = gen.SettingsReview;
 export type SettingsAsked = gen.SettingsAsked;
 export type Change = gen.Change;  // a change a version makes, in words, and whether it widens what agents do

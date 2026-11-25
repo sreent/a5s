@@ -1428,6 +1428,23 @@ export type StatusAsked = {
   at: string;
 };
 
+// One thing that needs someone, for the Status page: now, out of hours too, or in working
+// hours, what it is, and the runbook's section on what to do.
+export type StatusNeed = {
+  when: string;
+  said: string;
+  runbook: string;
+};
+
+// The Status page: how a5s is doing, as the core last said, and how long ago.
+export type StatusNow = {
+  seen_seconds_ago?: number | null;
+  verdict: string;
+  needs: StatusNeed[];
+  release?: string | null;
+  day: string[];
+};
+
 // One of someone's tasks, with an agent: how it stands, what it waits on, and what it has
 // spent; or, where its words name records they may no longer see, how it stands alone.
 export type TaskLine = {

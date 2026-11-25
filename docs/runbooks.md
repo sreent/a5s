@@ -2,7 +2,7 @@
 
 **Status:** Draft v0.1 · **Under:** [Architecture](architecture.md#operations)
 
-For the team that runs a5s. `a5s status` shows how a5s did over the last day, and the gateway's `/status` gives the same to a dashboard. Each section below says what to do when one of its lines goes wrong. Who's on call, and for what, is [below](#on-call).
+For the team that runs a5s. `a5s status` starts with what needs someone: *now*, for what pages out of hours ([on call](#on-call)), or *in working hours*, each naming the section below that says what to do, and the release a5s is and whether it's approved here; then it shows how a5s did over the last day. The gateway's `/status` gives the same to a dashboard, its `needs` the list, and the studio's Status page, `/studio/status`, shows it to the team as the core last recorded it, each minute. Each section below says what to do when one of its lines goes wrong.
 
 To follow one run, find its spans by `a5s.run.id`, where the deployment sends traces (`OTEL_EXPORTER_OTLP_ENDPOINT`), and its entries with `a5s ledger tail`, or `a5s runs show <run>`. Traces are for debugging. The ledger is the evidence.
 

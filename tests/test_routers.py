@@ -30,7 +30,7 @@ ACTING = ("/approve/", "/officer/", "/decide/", "/grade/")
 # The routes that check for themselves: the chats', each with its own sign-in or token; the web
 # chat's, which hold nobody's data; where the studio signs someone in, which holds nothing; and
 # each act's
-OWN = ("/channels/", "/chat/", "/studio/sign-in/", "/health/api", *ACTING)
+OWN = ("/channels/", "/chat/", "/studio/sign-in/", "/health/api", "/status/api", *ACTING)
 DIGEST = "0" * 64
 ACTS = {  # each act, with a body of the shape it takes, so it's refused for want of a sign-in
     ("get", "/approve/settings/{version}"): None,  # what an approver reads before approving
@@ -44,7 +44,8 @@ ACTS = {  # each act, with a body of the shape it takes, so it's refused for wan
 PEOPLE = ("ana", "ben", "chen", "omar", "dana", "priya", "tomas", "lena", "rosa", "kofi", "noor")
 PAGES = {"home": "/studio/api/home", "agents": "/studio/api", "settings": "/settings/api",
          "notebook": "/notebook/api",
-         "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api"}
+         "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api",
+         "status": "/status/api"}
 
 
 def described(url: str) -> dict[str, dict]:

@@ -29,6 +29,7 @@ export type Route =
   | { page: "map"; at?: string }  // and what's chosen on it, such as agent:assistant
   | { page: "spending"; month?: string }  // such as 2026-10, or this month
   | { page: "health" }  // each model's day, measured (core/health_api.py)
+  | { page: "status" }  // how a5s is doing, as the core last said (core/status_api.py)
   | { page: "connections" }  // back from connecting an account, so agents act as them there
   | { page: "undo"; change: string }  // a change an agent made, to undo, by its id
   | { page: "handovers" }  // the conversations handed to someone's teams
@@ -66,6 +67,7 @@ export function parse(path: string, search = ""): Route {
     return month ? { page: "spending", month } : { page: "spending" };
   }
   if (kind === "health") return { page: "health" };
+  if (kind === "status") return { page: "status" };
   if (kind === "connections") return { page: "connections" };
   if (kind === "undo") return { page: "undo", change: new URLSearchParams(search).get("change") ?? "" };
   if (kind === "approve") return { page: "approve", settings: new URLSearchParams(search).get("settings") ?? "" };
@@ -99,6 +101,7 @@ export function href(route: Route): string {
     case "handover": return `/studio/handovers/${encodeURIComponent(route.id)}`;
     case "shadows": return "/studio/shadows";
     case "health": return "/studio/health";
+    case "status": return "/studio/status";
     case "home": return "/studio/";
   }  // a case for every page, so a page without one fails the build rather than leading home
 }

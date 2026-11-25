@@ -85,6 +85,8 @@ The likely mistakes' tests (`tests/test_mistakes.py`) make each mistake someone 
 
 The doctor's tests (`tests/test_doctor.py`) run `a5s doctor` against the test stack, as the core's settings have it: a working deployment has nothing to fix; a model's key never set, a release nobody approved outside development, ledger copies a deployment doesn't keep, a token the core doesn't take, an issuer the provider names otherwise, no version of the settings in force and a schema from a later release are each named with their fix; with nothing running, it says what to start and doesn't check what follows; and `--json` says the same for a script. The chart's `helm test` runs it in a pod of its own, as `deploy/helm/test.sh` checks on a cluster.
 
+The status's tests (`tests/test_status.py`, `tests/test_status_page.py`) check that a calm day needs nobody, that what pages out of hours comes before what waits for working hours, each with its runbook's section, with the release and whether it's approved; that the Status page shows the team what the core last recorded, refuses anyone else, and says first when the record has gone stale or was never made; that it reads well and passes axe; and that every page's sidebar icon is drawn in both sidebars.
+
 If Chromium is unavailable, browser tests may skip locally. To require them, as CI does:
 
 ```sh
