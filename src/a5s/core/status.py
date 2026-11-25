@@ -13,6 +13,8 @@ each is in docs/runbooks.md.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from datetime import date
 from typing import Any, Literal
 
 from a5s import db
@@ -237,6 +239,28 @@ COPIES_LATE = 30 * 60  # seconds the ledger's newest copy may age, entries waiti
 CHECK_LATE = 2 * 86400  # seconds since the copier last checked the whole ledger, before a look
 
 
+EXPIRY_SOON = 30  # days before a credential expires that the status says so
+
+
+def expiring(expires: Mapping[str, date] | None, today: date) -> list[dict[str, Any]]:
+    """The credentials A5S_EXPIRES notes as expiring within EXPIRY_SOON days, or expired,
+    soonest first: each with the day, and the days left, below 0 once it's past."""
+    return [{"credential": name, "on": on.isoformat(), "days": (on - today).days}
+            for name, on in sorted((expires or {}).items(), key=lambda item: item[1])
+            if (on - today).days <= EXPIRY_SOON]
+
+
+def expiry(credential: dict[str, Any]) -> str:
+    """When a credential expires, in words, and what to do: as the status and the doctor say."""
+    name, on, days = credential["credential"], credential["on"], credential["days"]
+    if days < 0:
+        return (f"{name} expired on {on}, as A5S_EXPIRES notes, so whatever a5s reaches with it "
+                "refuses it: make a new one, set it where a5s takes it, and note when it expires")
+    when = "today" if days == 0 else "tomorrow" if days == 1 else f"in {days} days"
+    return (f"{name} expires on {on}, {when}, as A5S_EXPIRES notes: make a new one and set it "
+            "where a5s takes it before then, and note when that one expires")
+
+
 def needs(status: dict[str, Any]) -> list[dict[str, str]]:
     """What in the status needs someone, what pages out of hours first: each `when`, now or
     in working hours, what it is, in a sentence, and the runbook section on what to do."""
@@ -271,6 +295,8 @@ def needs(status: dict[str, Any]) -> list[dict[str, str]]:
     if stuck := status["changes"]["stuck"]:
         need(NOW, f"{stuck} {'change' if stuck == 1 else 'changes'} stopped part way through "
                   "being made: `a5s proposals` lists them", "changes-wait-or-stop-part-way")
+    for credential in status.get("expiring") or []:  # expired first, as the soonest
+        need(LATER, expiry(credential), "credentials-that-expire")
     release = status.get("release") or {}
     if release.get("problems"):
         need(LATER, _sentence("; ".join(release["problems"])) + " So the core opens no run.",

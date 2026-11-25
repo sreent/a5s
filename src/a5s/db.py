@@ -128,6 +128,18 @@ def migrations() -> list[tuple[int, str, str]]:
     return sorted(found)
 
 
+@contextmanager
+def rehearsal(url: str) -> Iterator[Connection]:
+    """A transaction rolled back whatever happens, on a connection of its own: for a command's
+    dry run, which does all it would, as it would, and keeps none of it. It holds the locks the
+    command would, for as long as it takes."""
+    with connect(url) as conn:
+        try:
+            yield conn
+        finally:
+            conn.rollback()
+
+
 def described(statements: str) -> str:
     """What a migration says it does: the first sentence of the comment it opens with, as each
     of a5s's does."""

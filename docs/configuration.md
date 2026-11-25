@@ -59,6 +59,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_SERVICE_TOKEN` | none, or `.a5s/service-token` under `A5S_ROOT` | a token | The token a5s's parts call the core with |
 | `A5S_OPERATOR_TOKEN` | none | a token | The token operators' commands call the core with, such as a5s status: where it's set, the core takes it alone for theirs, and the service token alone for the scheduler's work (round 15) |
 | `A5S_SEAL_KEYS` | none, or `.a5s/seal-key` under `A5S_ROOT` | keys, by commas | The core's own keys, sealing what people approve, decide and grade: the first seals, the others are ones it's moving from, until `a5s seal-again` retires them (docs/runbooks.md#rotating-the-seal-key) |
+| `A5S_EXPIRES` | none | credential=YYYY-MM-DD pairs, by commas, each named as you keep it, such as its secret's key | When the credentials a5s holds expire, as whoever made each noted it, such as a client secret an identity provider gives for two years at most: the status says so 30 days before each, and once it's past (docs/runbooks.md#credentials-that-expire) |
 | `A5S_GATEWAY_URL` | `http://127.0.0.1:8700` | an http(s):// address | Where the other parts reach the core |
 | `A5S_CHANNELS_URL` | `http://127.0.0.1:8703` | an http(s):// address | Where people's messages reach the core's channels |
 | `A5S_PUBLIC_URL` | none | an http(s):// address | Where people reach the channels, for links, if not A5S_CHANNELS_URL |

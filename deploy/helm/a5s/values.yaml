@@ -119,6 +119,14 @@ tokens:
   mcp: []           # such as [tickets, devices]
   repositories: []  # such as [delivery]
 
+# When the credentials a5s holds expire, as whoever made each noted it, such as a client secret
+# an identity provider gives for two years at most: each named as you keep it, such as its key in
+# the Secret, with the day, quoted. The status says so 30 days before each, and once it's past,
+# and so does `helm test` (docs/runbooks.md#credentials-that-expire).
+expires: {}
+#  registry-secret: "2027-05-01"
+#  mcp-token-tickets: "2027-01-31"
+
 # Matrix: a5s's registration on the organisation's homeserver, with its tokens in the Secret.
 matrix:
   homeserver: ""

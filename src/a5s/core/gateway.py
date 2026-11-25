@@ -2435,6 +2435,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                   gw.identity.cfg.mfa if gw.identity else False,
                                   scenario=gw.scenario.name)
             found["release"] = gw.release_status(conn)
+        found["expiring"] = status.expiring(config.EXPIRES.read(),  # credentials, as noted
+                                            datetime.now(UTC).date())
         here = config.set_here()  # what the core runs with, as its environment gives it
         found["configuration"] = {"set": here, "defaults": len(config.VARS) - len(here),
                                   # as `a5s dev` runs it, taking people's word and running

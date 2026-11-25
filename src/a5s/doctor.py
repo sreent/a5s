@@ -2,7 +2,8 @@
 
 It checks, in order, what a5s needs where it runs: its settings, the database and its schema,
 the release and whether this deployment approved it, the settings in force, the core and its
-token, how people sign in, each model's key, and the ledger's copies. Each says what it found
+token, how people sign in, each model's key, the ledger's copies, and the credentials noted to
+expire. Each says what it found
 and, where something's wrong, what fixes it, in the words a5s says it in elsewhere, such as the
 refusal a part would start with. A check that needs another first, such as the schema the
 database, says it wasn't checked, rather than failing again for the same reason.
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
+from datetime import date
 from typing import Any, Literal
 
 import psycopg
@@ -22,7 +24,7 @@ import psycopg
 from a5s import build, config, db, definitions
 from a5s.client import Client, Refused
 from a5s.config import Config, load_models
-from a5s.core import anchor, health, releases
+from a5s.core import anchor, health, releases, status
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 
 State = Literal["ok", "look", "fix", "skip"]
@@ -54,7 +56,7 @@ def checked() -> list[Found]:
         return [*found, *(Found(name, "skip", "Not checked, as a setting above can't be read.")
                           for name in ("The database", "The release", "The settings in force",
                                        "The core", "Signing in", "The models",
-                                       "The ledger's copies"))]
+                                       "The ledger's copies", "Credentials"))]
     if not problems and not warnings:
         found.append(Found("Settings", "ok", "Every setting a5s reads here can be used: "
                                              "`a5s config --set` shows those set."))
@@ -85,7 +87,27 @@ def checked() -> list[Found]:
     found += _copies(cfg, development) if usable else [
         Found("The ledger's copies", "skip", "Not checked, as a5s can't read the database "
                                              "here: see above.")]
+    found += _credentials(date.today())
     return found
+
+
+def _credentials(today: date) -> list[Found]:
+    """The credentials A5S_EXPIRES notes: each expired, to fix, and each expiring within 30
+    days, to look at, as the status says (docs/runbooks.md#credentials-that-expire)."""
+    noted = config.EXPIRES.read() or {}
+    if not noted:
+        return [Found("Credentials", "ok", "None is noted to expire in A5S_EXPIRES: note each "
+                                           "that does, such as a client secret, and the status "
+                                           "says so 30 days before it does.")]
+    soon = status.expiring(noted, today)
+    if not soon:
+        name, on = min(noted.items(), key=lambda item: item[1])
+        return [Found("Credentials", "ok", f"None of the {_count(len(noted), 'credential')} "
+                                           f"A5S_EXPIRES notes expires within "
+                                           f"{status.EXPIRY_SOON} days: the first, {name}, "
+                                           f"on {on.isoformat()}.")]
+    return [Found("Credentials", "fix" if c["days"] < 0 else "look",
+                  status.expiry(c) + ".") for c in soon]  # named as noted, in its case
 
 
 def told(found: list[Found], cfg: Config | None = None) -> str:

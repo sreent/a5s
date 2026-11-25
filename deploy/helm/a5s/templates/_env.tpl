@@ -24,6 +24,10 @@
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
 {{- end }}
+{{- with .Values.expires }}
+- name: A5S_EXPIRES  # when the credentials a5s holds expire, for its status to say so
+  value: {{ include "a5s.expires" . | quote }}
+{{- end }}
 - name: A5S_PROVIDER_TIMEOUT
   value: {{ .Values.timeouts.provider | quote }}
 {{ include "a5s.dbConnectEnv" . }}
@@ -158,4 +162,13 @@ role, and the ledger's copies, as the copier reaches them (docs/runbooks.md#rest
   value: {{ $value | quote }}
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/* The credentials values' expires names, as A5S_EXPIRES takes them: name=day, by commas. */}}
+{{- define "a5s.expires" -}}
+{{- $pairs := list }}
+{{- range $name, $day := . }}
+{{- $pairs = append $pairs (printf "%s=%v" $name $day) }}
+{{- end }}
+{{- join "," $pairs }}
 {{- end }}

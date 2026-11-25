@@ -33,6 +33,7 @@ Each part runs as its own service account, which can't reach Kubernetes' own API
 - **Where Postgres is**, for the network policies: `networkPolicies.database`, by its pods' labels or its addresses.
 - **Publishing drafts from the studio as pull requests on GitHub**, if you want a5s to open them as their authors: a GitHub App's client id and the repository, as `publishing.githubClientId` and `publishing.repo`. The App has the device flow on, and Contents and Pull requests to read and write, on that repository alone; a5s holds no secret for it. Without it, authors open their pull requests themselves, on any git host, with what the studio gives them ([publishing](../../docs/studio.md#publishing)).
 - **Where traces and operators' figures go**, if anywhere: `telemetry.endpoint`, an OpenTelemetry collector reached over HTTP, such as one that passes them on to Prometheus or Azure Monitor. A collector in the cluster also needs `networkPolicies.telemetry`, by its pods' and namespace's labels. Neither carries what anyone said, nor names a person or a record.
+- **When the credentials a5s holds expire**, where any do, such as a client secret an identity provider gives for two years at most: `expires`, each named as you keep it, such as its key in the Secret, with the day, quoted, such as `registry-secret: "2027-05-01"`. The status says so 30 days before each, and once it's past, and so does `helm test` ([runbook](../../docs/runbooks.md#credentials-that-expire)).
 
 ## Worker pools
 

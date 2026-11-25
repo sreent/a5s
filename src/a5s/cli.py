@@ -317,9 +317,15 @@ def _service(cfg: Config, name: str):
     return inbox.create_app(build.gateway(cfg))  # the channels' endpoints, in the core
 
 
-def _seal_again(cfg: Config, leaked: bool, lost: tuple[str, ...] = ()) -> None:
+# What a command's dry run says first: it did all it would, and rolled it back
+REHEARSED = "A dry run, so nothing has changed. Without --dry-run, it would say:\n"
+
+
+def _seal_again(cfg: Config, leaked: bool, lost: tuple[str, ...] = (),
+                dry_run: bool = False) -> None:
     """Rotate the seal key, as the core, with its settings (core/rotation.py): or retire, as
-    leaked, keys a5s no longer holds, by their fingerprints."""
+    leaked, keys a5s no longer holds, by their fingerprints. With `dry_run`, it does all of it
+    and rolls it back, saying what it would have done."""
     if not cfg.seal_keys:
         sys.exit("Run this where the core runs, with its A5S_SEAL_KEYS, the new key first.")
     if wrong := [f for f in lost if not re.fullmatch(r"[0-9a-f]{16}", f)]:
@@ -328,18 +334,20 @@ def _seal_again(cfg: Config, leaked: bool, lost: tuple[str, ...] = ()) -> None:
     db.known(cfg.database_url)
     db.own_role(cfg.database_url, "gateway")
     try:
-        with db.transaction(cfg.database_url) as conn:
+        with (db.rehearsal if dry_run else db.transaction)(cfg.database_url) as conn:
             done = rotation.again(conn, cfg.seal_keys, leaked=leaked, lost=lost)
     except rotation.Refused as exc:
         sys.exit(str(exc))
-    print(rotation.told(done))
+    print((REHEARSED if dry_run else "") + rotation.told(done))
 
 
-def _restore(cfg: Config, backup: str | None = None) -> None:
+def _restore(cfg: Config, backup: str | None = None, dry_run: bool = False) -> None:
     """Restore what a5s keeps after its database was restored from a backup, as the core, with
     the ledger's copies as the copier reads them (core/restoring.py): with the core's database
     address, such as in the copier's container, which reaches the store. Once for a backup it
-    names, as the chart's job does at each install or upgrade while its settings name one."""
+    names, as the chart's job does at each install or upgrade while its settings name one.
+    With `dry_run`, as in a restore drill, it does all of it and rolls it back, saying what it
+    would have done: it reads the copies, and writes to them never."""
     store = build.store(cfg)
     if store is None:
         sys.exit("Set A5S_ANCHOR_STORE to the ledger's copies, as the copier has it.")
@@ -352,7 +360,7 @@ def _restore(cfg: Config, backup: str | None = None) -> None:
                 return
     db.known(cfg.database_url)
     try:
-        with db.transaction(cfg.database_url) as conn:
+        with (db.rehearsal if dry_run else db.transaction)(cfg.database_url) as conn:
             if backup and (seq := restoring.restored(conn, backup)) is not None:
                 print(f"a5s restored after the backup {backup} already, as entry {seq} of the "
                       "ledger says: nothing to do.")
@@ -360,7 +368,7 @@ def _restore(cfg: Config, backup: str | None = None) -> None:
             done = restoring.restore(conn, store, backup)
     except anchor.AnchorError as exc:
         sys.exit(str(exc))
-    print(restoring.told(done))
+    print((REHEARSED if dry_run else "") + restoring.told(done))
 
 
 def _stopping() -> threading.Event:
@@ -812,7 +820,8 @@ def _main(argv: list[str] | None = None) -> None:
                                         "settings, the database and its schema, the release and "
                                         "whether this deployment approved it, the settings in "
                                         "force, the core and its token, how people sign in, "
-                                        "each model's key, and the ledger's copies. Each line "
+                                        "each model's key, the ledger's copies, and the "
+                                        "credentials noted to expire. Each line "
                                         "says what it found and, where something's wrong, what "
                                         "fixes it. Run it where the core runs, with its "
                                         "settings, such as `kubectl exec deploy/a5s-gateway -- "
@@ -954,6 +963,9 @@ def _main(argv: list[str] | None = None) -> None:
                                              "would send again, and start mailboxes afresh")
     restore.add_argument("--id", dest="backup", help="the backup's name, as the chart's "
                          "restore.id gives it: once a5s has restored after it, nothing more")
+    restore.add_argument("--dry-run", action="store_true",
+                         help="do all of it and roll it back, saying what it would do, as in "
+                              "a restore drill (docs/runbooks.md#backing-up-and-a-restore-drill)")
     again = sub.add_parser("seal-again", help="to rotate the seal key: seal again with the "
                                               "first of A5S_SEAL_KEYS what the others sealed, "
                                               "and retire them, as the core, where it runs")
@@ -963,6 +975,9 @@ def _main(argv: list[str] | None = None) -> None:
     again.add_argument("--leaked", action="store_true",
                        help="for a key that leaked: retire the keys after the first, sealing "
                             "nothing again, so what they sealed stops counting")
+    again.add_argument("--dry-run", action="store_true",
+                       help="do all of it and roll it back, saying what it would seal again, "
+                            "or what would stop counting")
     measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
                                                "pilot's later stages show: what fell due and "
                                                "was met, who came back, what runs cost, how "
@@ -1196,9 +1211,9 @@ def _main(argv: list[str] | None = None) -> None:
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
     elif args.command == "seal-again":
-        _seal_again(cfg, args.leaked, tuple(args.fingerprint))
+        _seal_again(cfg, args.leaked, tuple(args.fingerprint), args.dry_run)
     elif args.command == "restore":
-        _restore(cfg, args.backup)
+        _restore(cfg, args.backup, args.dry_run)
     elif args.command == "measures":
         print(measures.told(_core(cfg, lambda core: core.measures(
             args.days, agent=args.agent, instance=args.instance))))

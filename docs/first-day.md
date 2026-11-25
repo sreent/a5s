@@ -116,7 +116,7 @@ helm install a5s deploy/helm/a5s -n a5s -f test-values.yaml  # the values from s
 
 The core opens no run until the release is approved here, as [the chart's README](../deploy/helm/README.md#install) says: `a5s release show` in the gateway prints it, the sample's release approvers sign it (`a5s release sign`), and a ConfigMap of their signatures, named in `release.approval`, is recorded at the next `helm upgrade`. Then `kubectl -n a5s exec deploy/a5s-gateway -- a5s release status` ends "Approved here.", and `a5s status` reports.
 
-Then check the install as a whole: `helm test a5s -n a5s` runs `a5s doctor` in a pod of its own, with the core's settings, and `kubectl -n a5s logs pod/a5s-doctor` shows what it found. It checks the settings, the database and its schema, the release and its approval, the settings in force, the core and its token, the identity provider, each model's key and the ledger's copies, says on each line what to fix, and fails while anything needs fixing. Fix them in the order it lists them, as a later one may follow from an earlier ([runbooks](runbooks.md#start-with-a5s-doctor)).
+Then check the install as a whole: `helm test a5s -n a5s` runs `a5s doctor` in a pod of its own, with the core's settings, and `kubectl -n a5s logs pod/a5s-doctor` shows what it found. It checks the settings, the database and its schema, the release and its approval, the settings in force, the core and its token, the identity provider, each model's key, the ledger's copies and the credentials noted to expire, says on each line what to fix, and fails while anything needs fixing. Fix them in the order it lists them, as a later one may follow from an earlier ([runbooks](runbooks.md#start-with-a5s-doctor)).
 
 ## 7. The four checks
 
