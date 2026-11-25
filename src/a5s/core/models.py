@@ -7,12 +7,16 @@ its own network, speaks the same API, and may need no key at all.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 import httpx
 
 from a5s import config
 from a5s.config import ModelConfig
+
+log = logging.getLogger("a5s.models")
 
 
 class ModelUnavailable(Exception):
@@ -21,6 +25,16 @@ class ModelUnavailable(Exception):
 
 class ModelTimedOut(ModelUnavailable):
     """A provider that didn't answer in time: asked again, it would take as long again."""
+
+
+class KeyMissing(ModelUnavailable):
+    """A model whose provider takes a key that isn't set here: every call to it fails for that
+    until whoever runs a5s sets it."""
+
+
+# When the core last said in its log that a key isn't set, by the key's name: every call to its
+# models fails for it, and the log says so at most once an hour for each, not at every call
+_UNSET_SAID: dict[str, float] = {}
 
 
 # What a5s forwards to a provider. Anything else, such as a provider's own web search,
@@ -82,7 +96,14 @@ def forward(model: ModelConfig, body: dict[str, Any], http: httpx.Client,
     provider timeout, for its answer."""
     key = model.api_key
     if model.key_env and not key:
-        raise ModelUnavailable(f"{model.key_env} isn't set")
+        said = (f"{model.key_env} isn't set, so a5s can't call {model.provider}'s "
+                f"{model.model}: set it to the provider's API key where the core runs, and the "
+                "sandbox, and start them again (config/models.yaml names each model's key)")
+        now = time.monotonic()
+        if now - _UNSET_SAID.get(model.key_env, now - 3600) >= 3600:
+            _UNSET_SAID[model.key_env] = now
+            log.warning(said)
+        raise KeyMissing(said)
     payload = {**body, "model": model.model}
     if model.api == "openai":
         url = f"{model.base_url}/chat/completions"

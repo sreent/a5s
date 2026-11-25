@@ -32,6 +32,17 @@ class IdentityError(Exception):
     pass
 
 
+def shown(value: Any) -> str:
+    """A value from a token or the provider, as a refusal shows it: quoted, a list's items
+    joined, and never so long that it buries what's wrong."""
+    if isinstance(value, list):
+        return ", ".join(shown(v) for v in value) or "nobody"
+    if value is None or value == "":
+        return "nothing"
+    said = repr(str(value))
+    return said if len(said) <= 120 else said[:117] + "...'"
+
+
 class UnknownPerson(IdentityError):
     """The token checks out, but names nobody the directory knows."""
 
@@ -155,8 +166,10 @@ class Verifier:
         url = self.cfg.metadata_url or f"{self.cfg.issuer.rstrip('/')}/.well-known/openid-configuration"
         discovery = self.http.get(url)
         discovery.raise_for_status()
-        if discovery.json().get("issuer") != self.cfg.issuer:
-            raise IdentityError("the identity provider names a different issuer")
+        if (named := discovery.json().get("issuer")) != self.cfg.issuer:
+            raise IdentityError(f"the identity provider at {url} names its issuer {shown(named)}, "
+                                f"and A5S_OIDC_ISSUER is {shown(self.cfg.issuer)}: set "
+                                "A5S_OIDC_ISSUER to exactly the provider's, to the last slash")
         self._metadata = discovery.json()
         keys = self.http.get(discovery.json()["jwks_uri"])
         keys.raise_for_status()
@@ -169,8 +182,12 @@ class Verifier:
             try:
                 fetched = self._fetch()
             except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
-                raise IdentityUnavailable("the identity provider couldn't be reached: "
-                                          f"{type(exc).__name__}") from exc
+                where = self.cfg.metadata_url or self.cfg.issuer
+                raise IdentityUnavailable(
+                    f"the identity provider at {where} couldn't be reached, or answered nothing "
+                    f"a5s could read ({type(exc).__name__}): check that the core reaches it, and "
+                    "that A5S_OIDC_ISSUER, or A5S_OIDC_METADATA_URL where its metadata is "
+                    "elsewhere, names it") from exc
             (self._keys, self._published), self._fetched_at = fetched, time.monotonic()
         return self._keys
 
@@ -205,7 +222,33 @@ class Verifier:
         except IdentityError:
             raise
         except (jwt.PyJWTError, httpx.HTTPError, KeyError, ValueError) as exc:
-            raise IdentityError(str(exc) or type(exc).__name__) from exc
+            raise IdentityError(self.why(token, exc)) from exc
+
+    def why(self, token: str, exc: Exception) -> str:
+        """Why a token doesn't check out, in words that name what it says against what a5s
+        takes, and the setting that decides it, where PyJWT's own words name neither."""
+        try:
+            said = jwt.decode(token, options={"verify_signature": False})
+        except jwt.PyJWTError:
+            said = {}
+        if isinstance(exc, jwt.InvalidIssuerError):
+            return (f"it's from the issuer {shown(said.get('iss'))}, and a5s takes sign-ins from "
+                    f"{shown(self.cfg.issuer)}, as A5S_OIDC_ISSUER sets it: set that to exactly "
+                    "what the provider's tokens name")
+        if isinstance(exc, jwt.InvalidAudienceError):
+            ours = [self.cfg.audience] if isinstance(self.cfg.audience, str) else self.cfg.audience
+            return (f"it's for {shown(said.get('aud'))}, and a5s takes tokens for "
+                    f"{', '.join(map(shown, ours)) or 'none'}: A5S_OIDC_AUDIENCE, with "
+                    "A5S_WEBCHAT_CLIENT_ID, names the client ids a5s takes tokens for")
+        if isinstance(exc, jwt.ExpiredSignatureError):
+            return "it has expired: sign in again"
+        if isinstance(exc, jwt.ImmatureSignatureError):
+            return (f"it isn't valid yet, by more than the {self.cfg.leeway} seconds a5s allows: "
+                    "the clocks of the identity provider and of the machine a5s runs on "
+                    "disagree, so set both by a time server")
+        if isinstance(exc, jwt.MissingRequiredClaimError):
+            return f"it has no {exc.claim} claim, which a5s needs in every sign-in"
+        return str(exc) or type(exc).__name__
 
     def endpoints(self) -> dict:
         """Where people sign in, and where codes become tokens, from the provider's metadata."""
@@ -222,7 +265,12 @@ class Verifier:
         """Who a checked token's claims are for."""
         person = claims.get(self.cfg.person_claim)
         if not isinstance(person, str) or not person:
-            raise IdentityError(f"it names nobody in {self.cfg.person_claim}")
+            held = ", ".join(sorted(k for k, v in claims.items() if isinstance(v, str) and v))
+            raise IdentityError(
+                f"it names nobody in {self.cfg.person_claim}, the claim A5S_OIDC_PERSON_CLAIM "
+                f"says names people: it names someone in {held or 'none'}, so set "
+                "A5S_OIDC_PERSON_CLAIM to the one that holds their id in the directory, such as "
+                "oid for Entra ID")
         return person
 
 
@@ -235,7 +283,13 @@ def whose(verifier: Verifier, scenario: Any, claims: dict) -> Any:
     prefix = verifier.cfg.directory_prefix
     person = scenario.find(f"{prefix}:{claim}") if prefix else scenario.person(claim)
     if person is None:
-        raise UnknownPerson("a5s doesn't know who you are: ask an instance approver to add you")
+        sought = f"{prefix}:{claim}" if prefix else claim
+        raise UnknownPerson(
+            f"a5s doesn't know who you are: your sign-in names you {shown(claim)} in "
+            f"{verifier.cfg.person_claim}, and a5s's directory has nobody as {shown(sought)}. "
+            "Ask an instance approver, or whoever runs a5s, to add you to the directory. If "
+            "you're in it as someone else, whoever runs a5s sets which claim names you, "
+            "A5S_OIDC_PERSON_CLAIM, and how the directory knows it, A5S_OIDC_DIRECTORY_PREFIX")
     signed_in = getattr(scenario, "signed_in", None)
     return signed_in(person, claims, verifier.cfg.groups_claim) if signed_in else person
 

@@ -33,7 +33,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 **Shows as:** runs ending `failed` or `model unavailable`, a breaker open, or a model stopped on the studio's health page.
 
 1. A breaker opens after three failures in a row, and a5s tries the model again every five minutes on its own. Where an agent's release names `fallbacks`, other approved models, a5s tries a failed call again on the next of them, and then the message, and people hear that the model isn't answering only once every one was tried; without fallbacks, they hear at once ([model fallbacks](model-fallbacks.md)).
-2. Check the provider's own status, and that its key is set where the gateway runs.
+2. Check the provider's own status, and that its key is set where the gateway runs. A key that isn't set fails every call to its models, and the core's log says so, at most once an hour for each key, naming it: `DEEPSEEK_API_KEY isn't set, so a5s can't call deepseek's deepseek-chat`. Set it where the core runs, and the sandbox, and start them again: [`config/models.yaml`](../config/models.yaml) names each model's key.
 3. A model that answers with another model's name is refused (`model_mismatch`). That's the provider changing its model, not a5s failing: tell the agent owner.
 4. a5s falls back only to the approved models a release names, never to one that isn't approved. Naming fallbacks, or moving an agent to another approved model, is a new release, which the release approver signs; a version of the settings may also put one instance on another approved model.
 5. a5s stops calling a model that stalls on more than half its calls in a day, once it has had 20, and the stop lasts, past midnight too, until a person puts it back. `a5s health` shows each model's day, and each stopped model, as the studio's health page, `/studio/health`, does. It reads the database and the scenario of wherever it runs, so run it where the core runs: `kubectl exec deploy/a5s-gateway -- a5s health`. Putting a model back loosens a5s, so only the release approver does it, once the provider answers again: `a5s health --restore <model>`, with their own sign-in in `A5S_TOKEN` and its second factor where the deployment asks for one, through the core, which records who did in the ledger. Only where nobody signs in, as in development, does `--by` name them.
@@ -192,6 +192,29 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 
 1. Each part keeps a pool of `A5S_DB_POOL_SIZE` connections, 10 by default, and connects afresh only as many again while they're all in use. Past that, work waits ten seconds for the pool and then fails, to be tried again. So each part uses at most twice its pool: size Postgres's limit to that, for every replica of each part.
 2. Work that waits behind the ledger's lock for 30 seconds fails, and is tried again: look for what held it, such as a slow records system read inside a transaction.
+
+## Nobody can sign in, or one person can't
+
+**Shows as:** a page or the web chat saying someone's sign-in doesn't check out, or that a5s doesn't know who they are.
+
+Each refusal names what the sign-in said against what a5s takes, and the setting that decides it, so read it out to whoever runs a5s ([the first day](first-day.md#2-peoples-sign-in)):
+
+1. **It's from another issuer**, or the identity provider names its issuer otherwise than `A5S_OIDC_ISSUER`: set it to exactly what the provider's tokens name, to the last slash. Entra ID's v1 tokens name `https://sts.windows.net/<tenant>/`, with the slash, and its v2 tokens `https://login.microsoftonline.com/<tenant>/v2.0`, without.
+2. **It's for another client:** `A5S_OIDC_AUDIENCE`, with the web chat's `A5S_WEBCHAT_CLIENT_ID`, names the client ids a5s takes tokens for. Add the one the refusal names, if it's a5s's.
+3. **It names nobody in the claim:** `A5S_OIDC_PERSON_CLAIM` names the claim that holds people's ids in the directory, and the refusal lists the claims the sign-in holds. Set it to the one people can't change: `oid` for Entra ID, or `sub`.
+4. **a5s doesn't know who they are:** the refusal says the id the sign-in names, and the one a5s looked for in the directory. For one person, the directory doesn't name them: add them where the scenario's directory comes from. For everyone, the claim is wrong, or `A5S_OIDC_DIRECTORY_PREFIX`, which a directory that knows people's accounts as `entra:<object id>` needs.
+5. **The identity provider couldn't be reached:** the core can't reach it, or its metadata isn't where a5s looks, at the issuer's `/.well-known/openid-configuration`: check the core's network, or set `A5S_OIDC_METADATA_URL`.
+6. **It has expired, or isn't valid yet:** the first, signing in again fixes. The second is the clocks of the provider and of the machines a5s runs on disagreeing by more than 30 seconds: set both by a time server.
+
+## A command stops, saying what to fix
+
+**Shows as:** a line from `a5s` naming what's wrong and what fixes it, where a traceback once was ([`tests/test_mistakes.py`](../tests/test_mistakes.py)).
+
+1. **It can't reach the database:** the line says where it looked, never with the password, and what Postgres said. Nothing answering there means Postgres isn't started, which `a5s up` does for development, or `A5S_DATABASE_URL` points elsewhere. A password Postgres won't take is `A5S_DATABASE_URL`'s, or, for a part's own role, the one `a5s migrate` gave it from `A5S_DB_<PART>_PASSWORD`.
+2. **It found none of a5s's tables:** the database isn't migrated: run `a5s migrate` as its administrator, or `a5s setup`, which migrates it and applies the settings.
+3. **It can't reach the core:** start it, as `a5s dev` does for development, or set `A5S_GATEWAY_URL` to where it is.
+4. **401 from the core:** the token isn't the core's: set `A5S_SERVICE_TOKEN`, or `A5S_OPERATOR_TOKEN` where the deployment sets one ([below](#the-operators-token)).
+5. **`a5s up` can't find Postgres:** install Postgres 16, or Docker Desktop on Windows; or run Postgres yourself, set `A5S_DATABASE_URL` to it, and run `a5s migrate` rather than `a5s up`.
 
 ## The database is away
 

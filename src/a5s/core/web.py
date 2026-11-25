@@ -85,7 +85,10 @@ def sender(gw: Any, authorization: str | None, claimed: str | None) -> tuple[str
     if not claimed:
         raise HTTPException(400, "say who the message is from")
     if gw.scenario.person(claimed) is None:
-        raise HTTPException(403, "a5s doesn't know who you are")
+        raise HTTPException(403, f"a5s doesn't know who you are: its directory has nobody as "
+                                 f"{claimed!r}. In development, say who you are by the id of "
+                                 "someone in the scenario's directory, such as ana in the "
+                                 "sample's")
     return claimed, "unverified (development)"
 
 

@@ -20,6 +20,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
+import psycopg
+import psycopg.errors
 import yaml
 
 from a5s import authoring, build, config, db, definitions, devdb, gitops, worker
@@ -637,14 +639,46 @@ def _approves(approval: releases.Approval) -> str:
     return ", ".join(said)
 
 
+# What fixes the refusals an operator's command most often meets from the core: a token that
+# isn't the core's, by what the core says (core/gateway.py)
+TOKEN_FIXES = {
+    "service token required": "set A5S_SERVICE_TOKEN to the core's own",
+    "the operators' token required": "set A5S_OPERATOR_TOKEN to the operators' token the core "
+                                     "was started with",
+}
+
+
 def _core(cfg: Config, call, timeout: float = 30):
-    """A call to the core's API, through its client (a5s/client.py), or the reason it's refused."""
+    """A call to the core's API, through its client (a5s/client.py), or the reason it's refused,
+    with what fixes it where that's known."""
     with Client(cfg.gateway_url, cfg.operator_token or cfg.service_token,  # operators' own
                 timeout=timeout) as core:
         try:
             return call(core)
         except Refused as exc:
-            sys.exit(f"{exc.status}: {exc.text or exc.detail}" if exc.status else str(exc.detail))
+            if not exc.status:  # nothing answered there
+                sys.exit(f"{exc.detail}. Is it running? `a5s dev` runs it for development; "
+                         "otherwise set A5S_GATEWAY_URL to where yours is.")
+            said = f"{exc.status}: {exc.text or exc.detail}"
+            fix = next((f for told, f in TOKEN_FIXES.items() if told in str(exc.detail)), None)
+            sys.exit(f"{said}\nTo fix it, {fix}." if fix else said)
+
+
+def _unmigrated(command: str, exc: psycopg.errors.UndefinedTable) -> str | None:
+    """What a command says when the database has none of a5s's tables yet, as it hasn't been
+    migrated: None if it has them, so what's missing is something else."""
+    url = config.DATABASE_URL.read()
+    try:
+        with db.connect(url) as conn:
+            migrated = conn.execute("select to_regclass('schema_migrations') as t").fetchone()
+    except psycopg.Error:
+        return None
+    if migrated and migrated["t"] is not None:
+        return None
+    where, _ = db.where(url)
+    return (f"a5s {command} found none of a5s's tables in the database at {where} ({exc}): run "
+            "`a5s migrate` there first, as its administrator, or `a5s setup`, which migrates it "
+            "and applies the settings.")
 
 
 def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30) -> dict:
@@ -706,6 +740,24 @@ def _served(cfg: Config) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """a5s's command line. What stops a command for a reason someone can fix, such as a database
+    nobody started or a schema not yet migrated, it says in a line that names the fix, rather
+    than as a traceback."""
+    given = sys.argv[1:] if argv is None else argv
+    command = next((a for a in given if not a.startswith("-")), "")
+    try:
+        _main(argv)
+    except psycopg.OperationalError as exc:
+        sys.exit(db.refusal(exc, config.DATABASE_URL.read(), f"a5s {command}"))
+    except psycopg.errors.UndefinedTable as exc:
+        if (told := _unmigrated(command, exc)) is None:
+            raise
+        sys.exit(told)
+    except (db.NewerSchema, db.OlderSchema, db.WrongRole, devdb.Missing) as exc:
+        sys.exit(f"a5s {command} can't go on: {exc}.")
+
+
+def _main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="a5s", description="An agent OS on Deep Agents.")
     sub = parser.add_subparsers(dest="command", required=True)
     shown = sub.add_parser("config", help="every setting a5s reads, what this environment sets "
@@ -714,10 +766,24 @@ def main(argv: list[str] | None = None) -> None:
     shown.add_argument("--json", action="store_true", help="as JSON")
     shown.add_argument("--markdown", action="store_true",
                        help="the table docs/configuration.md shows")
-    sub.add_parser("up", help="start a local Postgres and set up the schema")
+    sub.add_parser("up", help="start a local Postgres and set up the schema",
+                   description="For development: start Postgres in .a5s/pg, on port 54329, "
+                               "with the schema and each part's role in place, and make the "
+                               "core's own service token and seal key in .a5s/. It runs "
+                               "Postgres 16 from this machine's own programs, or in Docker "
+                               "Desktop on Windows. Next: `a5s apply`, then `a5s dev`.")
     sub.add_parser("down", help="stop the local Postgres")
-    sub.add_parser("migrate", help="bring the schema up to date, as the administrator")
-    sub.add_parser("apply", help="bring instances in line with the settings and releases")
+    sub.add_parser("migrate", help="bring the schema up to date, as the administrator",
+                   description="Run the migrations this release has and the database lacks, "
+                               "as the database's administrator (A5S_DATABASE_URL), and give "
+                               "each part's role the password A5S_DB_<PART>_PASSWORD sets.")
+    sub.add_parser("apply", help="bring instances in line with the settings and releases",
+                   description="Bring the instances in line with the scenario's signed "
+                               "settings and the agents in A5S_AGENTS_DIR: start those the "
+                               "settings add, and change or retire the rest. It refuses, "
+                               "saying why, a version that lacks an approval it needs or is "
+                               "older than the one in force. On a database of your own, run "
+                               "`a5s migrate` first.")
     pin = sub.add_parser("pin", help="pin the schemas of an agent's tools in its release")
     pin.add_argument("agent")
     agent = sub.add_parser("agent", help="make an agent from a template, or check agents before "
@@ -738,7 +804,9 @@ def main(argv: list[str] | None = None) -> None:
     sign = sub.add_parser("sign", help="sign the current settings, as a person")
     sign.add_argument("--as", dest="person", required=True)
     sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
-    sub.add_parser("setup", help="migrate and apply the settings, as the administrator")
+    sub.add_parser("setup", help="migrate and apply the settings, as the administrator",
+                   description="`a5s migrate`, then `a5s apply`: what a deployment's "
+                               "migration job runs, as the database's administrator.")
     propose = sub.add_parser("propose", help="ask the instance approvers to approve the settings "
                                              "where they work, with a card")
     propose.add_argument("--file", type=Path, help="a version of the settings (default: the "
@@ -750,7 +818,12 @@ def main(argv: list[str] | None = None) -> None:
         service.add_argument("--host", default="127.0.0.1")
         service.add_argument("--port", type=int, default=port)
     sub.add_parser("scheduler", help="answer the messages the core receives")
-    sub.add_parser("dev", help="run the core, the channels and the scheduler, for development")
+    sub.add_parser("dev", help="run the core, the channels and the scheduler, for development",
+                   description="For development only: run the core on port 8700, the "
+                               "channels and the web chat on 8703, and the scheduler, in one "
+                               "process. It takes people's word for who they are and runs "
+                               "whatever release it is. Run `a5s up` and `a5s apply` first; "
+                               "then chat at http://127.0.0.1:8703/chat/ or with `a5s say`.")
     boxed = sub.add_parser("sandbox", help="run the sandbox, where people try the agents they're "
                                            "making, on its own database")
     boxed.add_argument("--host", default="0.0.0.0")
@@ -804,7 +877,11 @@ def main(argv: list[str] | None = None) -> None:
                                                           "id erases nobody")
     erased.add_argument("--by", help="in development, the officer, who asks nowhere else")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
-                                  "objectives")
+                                  "objectives",
+                   description="How a5s is doing, as the core at A5S_GATEWAY_URL tells it: its "
+                               "queue, runs, denials, budgets, objectives and the ledger's "
+                               "copies. It calls the core with A5S_OPERATOR_TOKEN, or "
+                               "A5S_SERVICE_TOKEN where the deployment sets none.")
     restore = sub.add_parser("restore", help="after the database is restored from a backup, "
                                              "as the core, before any part starts: put back "
                                              "the ledger's entries its copies hold, take as "
@@ -932,6 +1009,8 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("a5s").setLevel(logging.INFO)
+    if args.command not in PARTS:  # a command says once, in its own words, that it can't reach
+        logging.getLogger("psycopg.pool").setLevel(logging.ERROR)  # the database, and why
 
     if args.command == "canaries":
         from a5s.core import canaries as canary_runs

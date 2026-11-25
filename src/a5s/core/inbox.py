@@ -700,8 +700,12 @@ def create_app(gw: Any) -> FastAPI:
         with db.transaction(gw.url) as conn:
             rows = conn.execute("select definition, serves from instances "
                                 "where status in ('active', 'suspended')").fetchall()
-        return {"agents": sorted({r["definition"] for r in rows if r["definition"] in gw.definitions
-                                  and registry.serving(gw.scenario, r["serves"], who)})}
+        listed: dict = {"agents": sorted({r["definition"] for r in rows
+                                          if r["definition"] in gw.definitions
+                                          and registry.serving(gw.scenario, r["serves"], who)})}
+        if gw.cfg.development and not rows:  # none at work here at all, so the chat says to
+            listed["at_work"] = False  # apply the settings first
+        return listed
 
     @app.get("/channels/local/conversation")
     def conversation(agent: str, limit: int = 50, person: str | None = None,
