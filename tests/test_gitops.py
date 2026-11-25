@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from a5s import cli, gitops
+from a5s.core import releases
 from conftest import ROOT
 from test_configuration import HELM
 
@@ -85,6 +86,19 @@ def next_release(manifest: Path) -> Path:
     return manifest
 
 
+def earlier_release(manifest: Path) -> tuple[Path, str]:
+    """The release before this checkout's, which lacked its newest migration; and that
+    migration's name."""
+    earlier = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    core = earlier["parts"]["core"]
+    newest = max(name for name in core if releases.MIGRATION.match(name))
+    del core[newest]
+    earlier["version"] = f"{earlier['version']}-earlier"
+    path = manifest.with_name("earlier.yaml")
+    path.write_text(yaml.safe_dump(earlier, sort_keys=False), encoding="utf-8")
+    return path, Path(newest).stem
+
+
 def test_a_release_deploys_once_everyone_it_needs_has_signed_it_in_the_environment(env, capsys):
     said = promote(env, released(capsys), capsys)
     assert "It needs the release approver" in said and "signs it there" in said
@@ -106,6 +120,34 @@ def test_a_release_deploys_once_everyone_it_needs_has_signed_it_in_the_environme
     source = yaml.safe_load((env / "source.yaml").read_text(encoding="utf-8"))
     assert source["spec"]["url"] == "https://github.com/OWNER/a5s"  # as the environment said
     assert tagged["metadata"] == source["metadata"]  # which the tag patches
+
+
+def test_promoting_says_whether_a_release_migrates_and_so_how_it_rolls_back(env, capsys,
+                                                                          tmp_path):
+    """Migrations only go forward: the release before won't start on a database a later one
+    migrated. So promoting a release, and the check on its pull request, say whether it
+    migrates the database, and with which, as that decides whether reverting the merge rolls
+    it back (docs/runbooks.md#upgrading-and-rolling-back)."""
+    manifest = released(capsys)
+    earlier, newest = earlier_release(manifest)
+    first = promote(env, earlier, capsys)
+    assert "It migrates" not in first and "It adds no migration" not in first  # nothing before
+    sign(env, *EVERYONE)
+    before = as_it_runs(env, tmp_path)
+    said = promote(env, manifest, capsys)
+    assert (f"It migrates the database, with {newest}: the release before won't start on a "
+            "database it migrated, so rolling back past it means restoring the database from a "
+            "backup taken before it, or rolling forward "
+            "(docs/runbooks.md#upgrading-and-rolling-back).") in said
+    sign(env, *EVERYONE)
+    capsys.readouterr()
+    checked = verify(env, capsys, before)
+    assert f"It migrates the database, with {newest}:" in checked and "Ready to deploy" in checked
+    with pytest.raises(SystemExit):  # weighed against no release before: none to roll back to
+        verify(env, capsys)
+    assert "It migrates" not in capsys.readouterr().out
+    said = promote(env, next_release(manifest), capsys)
+    assert "It adds no migration, so rolling back is reverting the merge that deploys it." in said
 
 
 def test_a_signature_made_beside_the_environment_leaves_its_values_stale(env, capsys):

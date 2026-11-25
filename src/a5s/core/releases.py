@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -210,6 +211,34 @@ def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None,
         "signers": _signers(scenario_dir),
     }
     return (_HEADER + yaml.safe_dump(data, sort_keys=True, width=1000)).encode()
+
+
+# A migration, as a release's manifest names its file in the core's part
+MIGRATION = re.compile(r"^a5s/migrations/(\d{4})_[\w-]+\.sql$")
+ROLLING_BACK = "docs/runbooks.md#upgrading-and-rolling-back"
+
+
+def migrations_in(raw: bytes) -> list[str]:
+    """The migrations a release holds, in order, as their files name them, such as
+    0124_status_seen."""
+    core = (yaml.safe_load(raw).get("parts") or {}).get("core") or {}
+    return sorted(Path(name).stem for name in core if MIGRATION.match(name))
+
+
+def migrating(before: bytes | None, raw: bytes) -> str | None:
+    """What a release does to the database, against the release an environment ran before, and
+    so what rolling back past it takes: None for an environment's first, which has none to roll
+    back to, and for the same release signed again. Migrations run forward alone, and a release
+    won't start on a database a later one migrated (db.known), so rolling back past one that
+    migrates means restoring the database."""
+    if before is None or before == raw:
+        return None
+    new = [m for m in migrations_in(raw) if m not in set(migrations_in(before))]
+    if not new:
+        return "It adds no migration, so rolling back is reverting the merge that deploys it."
+    return (f"It migrates the database, with {', '.join(new)}: the release before won't start "
+            "on a database it migrated, so rolling back past it means restoring the database "
+            f"from a backup taken before it, or rolling forward ({ROLLING_BACK}).")
 
 
 @dataclass(frozen=True)

@@ -136,12 +136,26 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 2. A note goes by itself once its records change, checked each day apart from the retention sweep, so a records system that's down holds up no other sweep: its notes wait to be checked. The notebook keeps its newest 50.
 3. A note can't carry anyone's words, nor anything from outside: only a run on a schedule writes one, from records it read, and it reaches only people who may see every record that run read. If one seems to, tell assurance, with the note's number.
 
+## Upgrading, and rolling back
+
+**When:** a new release of a5s is to be deployed, or one just deployed misbehaves.
+
+Migrations only go forward. A release won't start on a database a later release migrated, as it doesn't know what those migrations mean, so rolling back is redeploying the release before only while no migration has run. Past one, it means restoring the database. So know, before you upgrade, whether the release migrates.
+
+1. Before: run `helm test <release>`, or `a5s doctor` where a5s isn't on a cluster, and fix what it names, so whatever breaks next is the upgrade's.
+2. See what the release does to the database. Where Flux deploys a5s, `a5s release promote` says so, and so does the check on the pull request that deploys it: "It adds no migration", or "It migrates the database, with 0124_status_seen". Elsewhere, run `a5s migrate --pending` from the release you're upgrading to, its image or a5s installed at its version, with the database's address as its administrator: it names each migration it would run and what each does, and runs none.
+3. If it migrates, take a backup of the database first, and note which release runs now. A backup taken before the upgrade is the only way back past it.
+4. Upgrade as you deploy: merge the pull request that promotes it, where Flux deploys a5s; `helm upgrade` with its image, whose setup job migrates the database before the parts start; or, on the container stack, pull its images and `docker compose up -d`, whose `setup` migrates first. Migrations wait for a table's lock 15 seconds at most, and are tried three times, so one that can't get it fails the release rather than holding up a5s.
+5. After: `helm test <release>` or `a5s doctor` again, and `a5s status`, whose first line says whether anything needs someone now.
+
+To roll back a release that added no migration, revert the merge that deployed it, or `helm rollback <release>`, or deploy the image before. To roll back one that migrated the database, roll forward if you can, to a release that fixes what went wrong. If you can't: stop every part of a5s, restore the database from the backup taken before the upgrade, and deploy the release before as [restoring from a backup](#restoring-from-a-backup) says, `a5s restore` included, so what a5s did since the backup is back in its ledger.
+
 ## a5s won't start: the database is from a later release
 
 **Shows as:** a service exiting with "the database is at migration N, from a later release of a5s than this one".
 
 1. Someone rolled a5s back after a release migrated its database. The older release doesn't know what the newer migrations mean, such as messages from group chats, so it won't serve.
-2. Roll forward to the release that migrated it, or restore the database from before it, and roll back then. Migrations wait for a table's lock 15 seconds at most, and are tried three times, so one that can't get it fails the release rather than holding up a5s.
+2. Roll forward to the release that migrated it, or restore the database from the backup taken before it, and roll back then, as [upgrading, and rolling back](#upgrading-and-rolling-back) says.
 
 ## a5s won't start: the database is older than the release
 
@@ -257,7 +271,7 @@ Each refusal names what the sign-in said against what a5s takes, and the setting
 1. Settings: the reason names whose approval is missing, such as the owner of a part. They sign the version again, with their key, or approve it on a card. If an approver left, whoever holds the role now does.
 2. If the core's seal key was retired as leaked (`a5s seal-again --leaked`), approvals made on cards need making again ([rotating the seal key](#rotating-the-seal-key)).
 3. The release: `a5s release status` says what it still needs, and who must sign. Where Flux deploys a5s ([deploy/gitops](../deploy/gitops/README.md)), the check on the pull request that deploys it says the same, and nothing deploys until it passes; each person it still needs signs it in the environment's folder, `a5s release sign --environment`.
-4. To roll a release back where Flux deploys a5s, revert the pull request that deployed it: Flux deploys the release before, whose approval the core has recorded already.
+4. To roll a release back where Flux deploys a5s, revert the pull request that deployed it: Flux deploys the release before, whose approval the core has recorded already. A release that migrated the database needs the database restored too ([upgrading, and rolling back](#upgrading-and-rolling-back)).
 
 ## The ledger's copies stop
 

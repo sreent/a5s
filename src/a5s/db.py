@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -125,6 +126,27 @@ def migrations() -> list[tuple[int, str, str]]:
         if entry.name.endswith(".sql"):
             found.append((int(entry.name.split("_", 1)[0]), entry.name, entry.read_text(encoding="utf-8")))
     return sorted(found)
+
+
+def described(statements: str) -> str:
+    """What a migration says it does: the first sentence of the comment it opens with, as each
+    of a5s's does."""
+    said = []
+    for line in statements.splitlines():
+        if not line.startswith("--"):
+            break
+        said.append(line.removeprefix("--").strip())
+    return re.split(r"(?<=\.)\s", " ".join(said), maxsplit=1)[0] or "it says nothing of itself"
+
+
+def applied(url: str) -> set[int]:
+    """The migrations a database has had, by number: none for one a5s never migrated. It
+    changes nothing."""
+    with transaction(url) as conn:
+        made = conn.execute("select to_regclass('schema_migrations') is not null as made")
+        if not (made.fetchone() or {}).get("made"):
+            return set()
+        return {r["version"] for r in conn.execute("select version from schema_migrations")}
 
 
 class NewerSchema(RuntimeError):

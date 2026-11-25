@@ -90,6 +90,36 @@ def _migrate(cfg: Config, url: str | None = None) -> None:
           f"Passwords set for {', '.join(passwords) or 'no roles'}.")
 
 
+def _pending(url: str) -> None:
+    """What `a5s migrate` would run, before it runs: each migration this release has and the
+    database lacks, and what it says it does. Once one runs, the release before won't start on
+    the database (db.known), so rolling back past it means restoring the database. It changes
+    nothing."""
+    where, _ = db.where(url)
+    done, known = db.applied(url), db.migrations()
+    newest = known[-1][0]
+    if (found := max(done, default=0)) > newest:
+        sys.exit(f"The database at {where} is at migration {found}, from a later release of a5s "
+                 f"than this one, which goes to {newest}: run that release, or restore the "
+                 f"database from before it ({releases.ROLLING_BACK}).")
+    pending = [(name, statements) for version, name, statements in known if version not in done]
+    if not done:
+        print(f"The database at {where} has no schema yet: `a5s migrate` makes it, with this "
+              f"release's {len(known)} migrations.")
+    elif not pending:
+        print(f"Nothing to migrate: the database at {where} has each of this release's "
+              f"migrations, to {newest}.")
+    else:
+        print(f"`a5s migrate` would run {len(pending)} "
+              f"migration{'' if len(pending) == 1 else 's'} on the database at {where}, "
+              "in one transaction:")
+        for name, statements in pending:
+            print(f"- {Path(name).stem}: {db.described(statements)}")
+        print("Once they've run, the release before won't start on the database, so take a "
+              "backup first: rolling back past them means restoring it "
+              f"({releases.ROLLING_BACK}).")
+
+
 def _apply(cfg: Config) -> None:
     sc = build.scenario(cfg)
     found, settings = definitions.load_all(cfg.agents_dir), sc.settings()
@@ -617,6 +647,8 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
         print(f"- It needs {releases.who(need.role)}, because {need.why}.")
     if verdict.signed_by:
         print(f"Signed by {', '.join(verdict.signed_by)}.")
+    if migrates := releases.migrating(before, raw):  # what rolling back past it takes
+        print(migrates)
     if args.what == "promote":
         print(f"{folder} runs it once that's merged" + (
             "." if verdict.ok else ": each person it still needs signs it there, with "
@@ -800,10 +832,16 @@ def _main(argv: list[str] | None = None) -> None:
                                "Postgres 16 from this machine's own programs, or in Docker "
                                "Desktop on Windows. Next: `a5s apply`, then `a5s dev`.")
     sub.add_parser("down", help="stop the local Postgres")
-    sub.add_parser("migrate", help="bring the schema up to date, as the administrator",
-                   description="Run the migrations this release has and the database lacks, "
-                               "as the database's administrator (A5S_DATABASE_URL), and give "
-                               "each part's role the password A5S_DB_<PART>_PASSWORD sets.")
+    migrate = sub.add_parser("migrate", help="bring the schema up to date, as the administrator",
+                             description="Run the migrations this release has and the database "
+                                         "lacks, as the database's administrator "
+                                         "(A5S_DATABASE_URL), and give each part's role the "
+                                         "password A5S_DB_<PART>_PASSWORD sets. With --pending, "
+                                         "say which it would run, and run none: from the release "
+                                         "you're upgrading to, before the upgrade "
+                                         "(docs/runbooks.md#upgrading-and-rolling-back).")
+    migrate.add_argument("--pending", action="store_true",
+                         help="say which migrations would run, and what each does, and run none")
     sub.add_parser("apply", help="bring instances in line with the settings and releases",
                    description="Bring the instances in line with the scenario's signed "
                                "settings and the agents in A5S_AGENTS_DIR: start those the "
@@ -1080,7 +1118,7 @@ def _main(argv: list[str] | None = None) -> None:
         return _keygen(args.person, args.out)
     cfg = Config.from_env()
     if args.command == "migrate":
-        _migrate(cfg)
+        _pending(cfg.database_url) if args.pending else _migrate(cfg)
     elif args.command == "apply":
         _apply(cfg)
     elif args.command == "pin":
