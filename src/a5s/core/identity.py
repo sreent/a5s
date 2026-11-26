@@ -12,6 +12,7 @@ sender itself, so no service can claim that a message came from someone else.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -47,9 +48,20 @@ class UnknownPerson(IdentityError):
     """The token checks out, but names nobody the directory knows."""
 
 
+log = logging.getLogger(__name__)
+UNREACHED = ("a5s can't check sign-ins just now, as the identity provider doesn't answer it: "
+             "try again in a minute")
+
+
 class IdentityUnavailable(IdentityError):
     """The identity provider couldn't be reached, or answered nothing a5s could read, so a5s
-    couldn't check the token just now: neither that it checks out, nor that it doesn't."""
+    couldn't check the token just now: neither that it checks out, nor that it doesn't. Whoever
+    sent the token hears only that; where the provider was, and what to check, is `detail`, for
+    the operators' log and `a5s doctor`, as it may name an address inside (round 17, D7)."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(UNREACHED)
+        self.detail = detail
 
 
 @dataclass(frozen=True)
@@ -194,11 +206,12 @@ class Verifier:
                 fetched = self._fetch()
             except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
                 where = self.cfg.metadata_url or self.cfg.issuer
-                raise IdentityUnavailable(
-                    f"the identity provider at {where} couldn't be reached, or answered nothing "
-                    f"a5s could read ({type(exc).__name__}): check that the core reaches it, and "
-                    "that A5S_OIDC_ISSUER, or A5S_OIDC_METADATA_URL where its metadata is "
-                    "elsewhere, names it") from exc
+                detail = (f"the identity provider at {where} couldn't be reached, or answered "
+                          f"nothing a5s could read ({type(exc).__name__}): check that the core "
+                          "reaches it, and that A5S_OIDC_ISSUER, or A5S_OIDC_METADATA_URL where "
+                          "its metadata is elsewhere, names it")
+                log.warning("%s", detail)
+                raise IdentityUnavailable(detail) from exc
             (self._keys, self._published), self._fetched_at = fetched, time.monotonic()
         return self._keys
 

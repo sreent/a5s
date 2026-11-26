@@ -11,7 +11,16 @@ from a5s import db, definitions
 from a5s.config import Config, load_currency, load_models
 from a5s.connectors import libraries, mailboxes, mcp, repositories
 from a5s.contract import Scenario
-from a5s.core import delegation, memberships, metrics, registration, registry, status, traces
+from a5s.core import (
+    delegation,
+    environment,
+    memberships,
+    metrics,
+    registration,
+    registry,
+    status,
+    traces,
+)
 from a5s.core.events import EventsConfig
 from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from a5s.core.identity import verifier_from_env
@@ -110,6 +119,8 @@ def app(cfg: Config | None = None):
         raise RuntimeError("the scenario's mailboxes.yaml names mailboxes, which the core reads "
                            "with the deployment's app in Microsoft 365: set A5S_MAIL_TENANT, "
                            "A5S_MAIL_CLIENT_ID and A5S_MAIL_CLIENT_SECRET")  # from the same
+    if why := environment.published_refused(cfg.scenario_dir, cfg.root):  # (round 17, D3)
+        raise RuntimeError(why)
     traces.setup("a5s-gateway")  # scenario, needs no secret of it (round 15, D4)  # if the deployment names an OpenTelemetry endpoint
     gw = gateway(cfg)
     metrics.setup("a5s-gateway", lambda: read_status(gw))  # and its figures, for its monitoring

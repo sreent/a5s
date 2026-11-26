@@ -92,11 +92,11 @@ def checked() -> list[Found]:
                                              "here: see above.")]
     found += _needs(told)
     found += _credentials(date.today())
-    found += _deployment(development)
+    found += _deployment(development, cfg)
     return found
 
 
-def _deployment(development: bool) -> list[Found]:
+def _deployment(development: bool, cfg: Config | None = None) -> list[Found]:
     """Which deployment this is, as the band across the top of every page says it: unnamed
     outside development, every page says to treat it as production, which is worth naming
     (core/environment.py)."""
@@ -105,6 +105,8 @@ def _deployment(development: bool) -> list[Found]:
     except config.ConfigError:  # the settings' check names it
         return [Found("This deployment", "skip", "Not checked, as A5S_ENVIRONMENT can't be read: "
                                                  "see above.")]
+    if cfg is not None and (why := environment.published_refused(cfg.scenario_dir, cfg.root)):
+        return [Found("This deployment", "fix", _sentence(f"The core won't start: {why}"))]
     if not here["named"]:  # as the core's settings here have it, as the channels' should
         return [Found("This deployment", "look",
                       "Nobody has named this deployment, so the band across the top of every "
@@ -294,8 +296,9 @@ def _signing_in(development: bool) -> list[Found]:
                       "sign in with (docs/first-day.md).")]
     try:
         Verifier(given).endpoints()
-    except IdentityError as exc:
-        return [Found("Signing in", "fix", _sentence(f"a5s can't check sign-ins: {exc}"))]
+    except IdentityError as exc:  # where, and what to check, as the operators read it
+        return [Found("Signing in", "fix",
+                      _sentence(f"a5s can't check sign-ins: {getattr(exc, 'detail', exc)}"))]
     found = [Found("Signing in", "ok", f"The identity provider at {given.issuer} answers, as "
                                        "A5S_OIDC_ISSUER names it, and publishes its keys.")]
     if given.mfa_said_none:  # as the deployment says its provider's tokens show (round 17, A10)

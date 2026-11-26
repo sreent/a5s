@@ -237,3 +237,11 @@ def test_the_models_are_those_the_settings_in_force_put_instances_on(long_token,
     said = [f.said for f in found("The models") if f.state == "fix"]
     assert any(s.startswith("nowhere, which the assistant uses, isn't one config/models.yaml "
                             "approves") for s in said), said
+
+
+def test_production_on_keys_a5s_publishes_is_to_fix(long_token, stack, monkeypatch):
+    """A deployment that says it's production, on the sample's people, whose private keys are
+    in a5s's repository, is to fix: the core won't start on them (round 17, D3)."""
+    deployed(monkeypatch, stack, A5S_ENVIRONMENT="production", A5S_DEVELOPMENT=None)
+    [deployment] = found("This deployment")
+    assert deployment.state == "fix" and "keys a5s publishes" in deployment.said

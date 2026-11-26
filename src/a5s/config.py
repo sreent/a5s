@@ -639,6 +639,10 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
         problems.append("A5S_DEVELOPMENT takes people's word for who they are, and turns checks "
                         "off that an identity provider's deployment needs: with A5S_OIDC_ISSUER "
                         "set, unset A5S_DEVELOPMENT")
+    if development and (kind := read(ENVIRONMENT, None)) in ("production", "staging"):
+        problems.append(f"A5S_DEVELOPMENT takes people's word for who they are and runs any "  # (D3)
+                        f"release, and A5S_ENVIRONMENT says this is {kind}: unset "
+                        "A5S_DEVELOPMENT, or name the deployment a test")
     if short := [k for k in keys if len(k) < LEAST_SECRET]:
         problems.append(f"A5S_SEAL_KEYS has a key of {len(short[0])} characters: each takes at "
                         f"least {LEAST_SECRET}, made at random, as `a5s up` makes them")
@@ -713,7 +717,7 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     return (problems + strangers, noted) if serving else (problems, strangers + noted)
 
 
-_PASSWORD = re.compile(r"(?i)((?:^|[?&\s])(?:ssl)?password=)[^&\s]*")
+_PASSWORD = re.compile(r"(?i)((?:^|[?&\s])(?:ssl)?password=)('(?:[^'\\]|\\.)*'|[^&\s]*)")
 
 
 def masked(text: str) -> str:

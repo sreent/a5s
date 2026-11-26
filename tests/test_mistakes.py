@@ -196,9 +196,12 @@ def test_a_provider_the_core_cant_reach_names_where_and_the_settings():
                         httpx.Client(transport=httpx.MockTransport(away)))
     with pytest.raises(IdentityError) as refused:
         verifier.person(FakeIssuer().token("ana"))
-    said = str(refused.value)
+    said = refused.value.detail  # for the operators' log and the doctor
     assert "the identity provider at https://id.test/realms/a5s couldn't be reached" in said
     assert "A5S_OIDC_ISSUER, or A5S_OIDC_METADATA_URL" in said
+    # whoever sent the token hears only that sign-in can't be checked (round 17, D7)
+    assert str(refused.value).startswith("a5s can't check sign-ins just now")
+    assert "id.test" not in str(refused.value) and "A5S_" not in str(refused.value)
 
 
 def test_someone_the_directory_doesnt_know_hears_how_they_were_named_and_looked_for():

@@ -102,7 +102,7 @@ docker push <the organisation's registry>/a5s:0.1.0-test
 
 Fills: `image.repository: <the organisation's registry>/a5s` and `image.digest`, from the push's output.
 
-The sample's settings stay signed by its made-up people, whose private keys are in the repository: fine for a test with made-up data, and the reason the team's own scenario, in stage 2, has its own approvers, each with a key of their own (`a5s keygen`).
+The sample's settings stay signed by its made-up people, whose private keys are in the repository: fine for a test with made-up data, and the reason the team's own scenario, in stage 2, has its own approvers, each with a key of their own (`a5s keygen`). A deployment named production or staging won't start on keys a5s publishes with its own scenarios, nor with `A5S_DEVELOPMENT`, and `helm test` says which.
 
 ## 6. Install
 

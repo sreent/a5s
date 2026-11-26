@@ -62,7 +62,7 @@ spec:
         {{- include "a5s.securityContext" . | nindent 8 }}
       env:
         {{- include "a5s.scratch" . | nindent 8 }}
-        {{- include "a5s.env.gateway" . | nindent 8 }}
+        {{- include "a5s.env.core" . | nindent 8 }}
         - name: A5S_GATEWAY_URL  # the core, where the other parts reach it
           value: {{ printf "http://%s-gateway:8700" .Release.Name | quote }}
       resources:
