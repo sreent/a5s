@@ -1249,7 +1249,7 @@ class HealthModel(Shape):
     gated_at: str | None = None  # as a time, or None when it may answer
     canary_passed: int = 0  # its canaries' latest day, for the drift it might hide
     canary_failed: int = 0
-    reaches: str | SkipJsonSchema[None] = None  # once stopped: whom putting it back would reach
+    reaches: str | SkipJsonSchema[None] = None  # once stopped, to whoever may put it back: whom that reaches
 
 
 class HealthNow(Shape):

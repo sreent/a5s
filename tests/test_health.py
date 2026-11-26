@@ -171,6 +171,8 @@ def test_an_operator_puts_a_model_back_with_their_token_as_the_release_approver(
 
 def test_the_health_report_and_page_say_whom_putting_a_stopped_model_back_reaches(
         stack, approving, provider, monkeypatch, capsys):
+    from dataclasses import replace
+
     from a5s import cli
     from test_agent_asks import send
 
@@ -185,6 +187,11 @@ def test_the_health_report_and_page_say_whom_putting_a_stopped_model_back_reache
                        "reaches assistant-finance, which calls it again from its next run.")
     [model] = send(approving, provider, "rosa", "GET", "/health/api").json()["models"]
     assert model["reaches"] == REACHES  # on the page the release approver reads first
+    people = dict(stack.gateway.scenario._people)  # an engineer may read the page, not whom
+    people["tomas"] = replace(people["tomas"], roles=("engineer",))  # putting it back reaches
+    monkeypatch.setattr(stack.gateway.scenario, "_people", people)
+    [seen] = send(approving, provider, "tomas", "GET", "/health/api").json()["models"]
+    assert seen["gated_at"] and "reaches" not in seen
     with db.transaction(stack.admin) as conn:
         health.restore(conn, stack.gateway.scenario.name, "fake")
     models = send(approving, provider, "rosa", "GET", "/health/api").json()["models"]
