@@ -146,7 +146,7 @@ agents/assistant/
   tools.lock     the schema of each tool it uses, pinned by hash
   skills/        Agent Skills, one folder each, whose SKILL.md names it and says what it's for, as
                  text a run reads: Markdown, text, CSV, JSON or YAML, never a script, since no
-                 run can run one
+                 run can run one ([giving an agent a skill](manual/skills.md))
   tests/         its regression cases, run against the model it names before each release
 ```
 

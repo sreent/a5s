@@ -1,0 +1,10 @@
+they say,it's likely,which fits
+my password doesn't work,a forgotten or refused password,reset_password
+I forgot my password,a forgotten or refused password,reset_password
+it says my password has expired,a forgotten or refused password,reset_password
+I got a new phone,"a lost, new or broken phone or key",reset_authenticators
+the code never comes,"a lost, new or broken phone or key",reset_authenticators
+I lost my security key,"a lost, new or broken phone or key",reset_authenticators
+my phone broke,"a lost, new or broken phone or key",reset_authenticators
+it says my account is locked,an account that isn't active,neither: a person on the desk looks at it
+it says my account is disabled,an account that isn't active,neither: a person on the desk looks at it

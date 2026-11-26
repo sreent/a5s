@@ -78,6 +78,10 @@ How far an agent may go in a part: it [reads only](#reads-only), [asks first](#a
 
 A run that read content from outside the organisation, through [a5s's reader](#a5ss-reader). Whatever it asks for goes no further than asking first, and its deciders read that it did. Saying *start afresh* in a conversation stops what came before from holding the agent's changes back.
 
+### MCP server
+
+How a system offers its tools to agents, over the open Model Context Protocol. a5s offers an agent a server's tool only once its scenario declares it, in a5s's words, and checks before each call that the server still offers it as declared ([connecting a system](connecting.md)).
+
 ### Notebook
 
 What an agent has learned from records, checked against them, for its later runs. Each note goes once its records change. Its owners, and those who run its instances, read and look after it on the Notebook page.
@@ -122,6 +126,10 @@ A new version of an agent answering beside an instance, sending and changing not
 
 Signing in again, for one act alone, such as approving a change or a version of the settings, with a second factor where your organisation asks for one. It shows the act was yours, then and there.
 
+### Skill
+
+How an agent does one kind of its work, written down in its release for it to read when the work is that kind: text it can't change, of which nothing runs ([giving an agent a skill](skills.md)).
+
 ### Stand-in
 
 A name such as *person-a2b07a61013d*, the same each time, that the audit trail shows in place of someone an agent acted for, so auditors can follow what happened without reading who it was for.
@@ -133,6 +141,10 @@ a5s's pages in the browser: Home, with your roles and what waits on you, the age
 ### Task
 
 Longer work an agent offers to do in runs of its own, such as going through every invoice that waits. It starts only once you say yes, and you watch or stop it on the Tasks page.
+
+### Tool
+
+One thing an agent can do in a system, such as looking up a ticket or locking a device. An agent reads and changes only what its tools do, as its release pins them, after a5s's checks ([adding a tool](tools.md)).
 
 ### Undo
 
