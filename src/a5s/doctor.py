@@ -24,7 +24,7 @@ import psycopg
 from a5s import build, config, db, definitions
 from a5s.client import Client, Refused
 from a5s.config import Config, load_models
-from a5s.core import anchor, health, releases, status
+from a5s.core import anchor, environment, health, releases, status
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 
 State = Literal["ok", "look", "fix", "skip"]
@@ -56,7 +56,7 @@ def checked() -> list[Found]:
         return [*found, *(Found(name, "skip", "Not checked, as a setting above can't be read.")
                           for name in ("The database", "The release", "The settings in force",
                                        "The core", "Signing in", "The models",
-                                       "The ledger's copies", "Credentials"))]
+                                       "The ledger's copies", "Credentials", "This deployment"))]
     if not problems and not warnings:
         found.append(Found("Settings", "ok", "Every setting a5s reads here can be used: "
                                              "`a5s config --set` shows those set."))
@@ -88,7 +88,27 @@ def checked() -> list[Found]:
         Found("The ledger's copies", "skip", "Not checked, as a5s can't read the database "
                                              "here: see above.")]
     found += _credentials(date.today())
+    found += _deployment(development)
     return found
+
+
+def _deployment(development: bool) -> list[Found]:
+    """Which deployment this is, as the band across the top of every page says it: unnamed
+    outside development, every page says to treat it as production, which is worth naming
+    (core/environment.py)."""
+    try:
+        here = environment.here(development)
+    except config.ConfigError:  # the settings' check names it
+        return [Found("This deployment", "skip", "Not checked, as A5S_ENVIRONMENT can't be read: "
+                                                 "see above.")]
+    if not here["named"]:
+        return [Found("This deployment", "look",
+                      "Nobody has named this deployment, so the band across the top of every "
+                      "page says to treat it as production: set A5S_ENVIRONMENT to production, "
+                      "staging or test, and A5S_ENVIRONMENT_NAME to its name if you like, as the "
+                      "chart's environment.kind and environment.name do.")]
+    return [Found("This deployment", "ok", f"Every page's band says this is {here['name']}, "
+                                           f"a {here['kind']} deployment.")]
 
 
 def _credentials(today: date) -> list[Found]:

@@ -28,9 +28,11 @@ SIGNED_IN = ("/studio/api", "/settings/api", "/notebook/api", "/tasks/api", "/au
              "/admin/api", "/shell/api")
 ACTING = ("/approve/", "/officer/", "/decide/", "/grade/")
 # The routes that check for themselves: the chats', each with its own sign-in or token; the web
-# chat's, which hold nobody's data; where the studio signs someone in, which holds nothing; and
+# chat's, which hold nobody's data; where the studio signs someone in, which holds nothing; which
+# deployment this is, for every page's band, the sign-in's too, which says nothing more; and
 # each act's
-OWN = ("/channels/", "/chat/", "/studio/sign-in/", "/health/api", "/status/api", *ACTING)
+OWN = ("/channels/", "/chat/", "/studio/sign-in/", "/health/api", "/status/api",
+       "/shell/environment", *ACTING)
 DIGEST = "0" * 64
 ACTS = {  # each act, with a body of the shape it takes, so it's refused for want of a sign-in
     ("get", "/approve/settings/{version}"): None,  # what an approver reads before approving

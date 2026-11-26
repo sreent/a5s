@@ -45,6 +45,14 @@ scenario:
 # The directory's team that runs a5s, if not a5s's default (docs/configuration.md).
 team: ""
 
+# Which deployment this is, as a band across the top of every page says it, so nobody does in
+# production what they meant for a test: its kind, production, staging or test, and its name, if
+# not its kind's, such as "Pilot test". Unnamed, every page says to treat it as production, and
+# `helm test`'s doctor says to name it.
+environment:
+  kind: ""
+  name: ""
+
 # How people sign in, through the organisation's identity provider, and where they reach a5s.
 # Each left empty is a5s's default (docs/configuration.md).
 people:

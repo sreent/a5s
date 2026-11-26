@@ -9,6 +9,7 @@
 {{ include "a5s.secretEnv" (dict "root" $ "name" $name "key" $key "optional" true) }}
 {{- end }}
 {{ include "a5s.teamEnv" . }}
+{{ include "a5s.environmentEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
 {{- range .Values.delegation.systems }}
@@ -51,6 +52,7 @@
 
 {{- define "a5s.env.channels" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-channels-url") }}
+{{ include "a5s.environmentEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
 {{ include "a5s.dbConnectEnv" . }}
@@ -140,6 +142,19 @@ role, and the ledger's copies, as the copier reaches them (docs/runbooks.md#rest
 {{- end }}
 
 {{/* The directory's team that runs a5s, if the deployment names one. */}}
+{{/* Which deployment this is, for the band across the top of every page the channels serve,
+and for the doctor, which runs with the core's settings. */}}
+{{- define "a5s.environmentEnv" -}}
+{{- with .Values.environment.kind }}
+- name: A5S_ENVIRONMENT
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.environment.name }}
+- name: A5S_ENVIRONMENT_NAME
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+
 {{- define "a5s.teamEnv" -}}
 {{- with .Values.team }}
 - name: A5S_TEAM

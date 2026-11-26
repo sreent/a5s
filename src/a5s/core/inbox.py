@@ -793,7 +793,9 @@ def create_app(gw: Any) -> FastAPI:
                    health_api, status_api):
         app.include_router(pages.router(gw))
 
-    # Every page's sidebar: who signed in, and the pages they may use (core/shell_api.py)
+    # Every page's sidebar: who signed in, and the pages they may use (core/shell_api.py); and
+    # which deployment this is, for the band across the top of every page, the sign-in's too
     app.include_router(shell_api.router(gw))
+    app.include_router(shell_api.environment_router(gw))
 
     return app

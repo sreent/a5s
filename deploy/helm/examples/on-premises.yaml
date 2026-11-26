@@ -5,6 +5,10 @@
 # deploy/helm/README.md; `python3 deploy/reach-check.py` checks first that the cluster reaches
 # what a5s needs.
 
+environment:  # as a band across the top of every page says it: production once real people use it
+  kind: test
+  name: Pilot test
+
 image:  # the deployment's own image, built on the release's, by its digest (step 5)
   repository: <registry>/a5s
   digest: sha256:<the push's digest>

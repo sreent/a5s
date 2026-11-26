@@ -1355,6 +1355,7 @@ def described() -> dict:
     app.include_router(officer_api.router(SimpleNamespace(cfg=None)))  # and the officer's requests
     app.include_router(approve_api.router(SimpleNamespace(cfg=None)))  # and approving settings
     app.include_router(shell_api.router(SimpleNamespace(cfg=None)))  # and every page's sidebar
+    app.include_router(shell_api.environment_router(SimpleNamespace(cfg=None)))  # and its band
     return app.openapi()
 
 

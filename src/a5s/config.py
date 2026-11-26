@@ -274,6 +274,14 @@ SEAL_KEYS = Var("A5S_SEAL_KEYS", "the core's own keys, sealing what people appro
                 "grade: the first seals, the others are ones it's moving from, until `a5s "
                 "seal-again` retires them (docs/runbooks.md#rotating-the-seal-key)", (), _items,
                 "keys, by commas", secret=True, area=CORE, file=".a5s/seal-key")
+ENVIRONMENT = Var("A5S_ENVIRONMENT", "which kind of deployment this is, as a band across the top "
+                  "of every page says it: production, staging or test. Unset, every page beside "
+                  "`a5s dev` says development, and every other page says to treat it as "
+                  "production (docs/configuration.md)", None, _matching(r"production|staging|test"),
+                  "production, staging or test", area=CORE)
+ENVIRONMENT_NAME = Var("A5S_ENVIRONMENT_NAME", "this deployment's name, as every page's band says "
+                       "it, such as Pilot test, if not its kind's", None, _text, "a short name",
+                       area=CORE)
 EXPIRES = Var("A5S_EXPIRES", "when the credentials a5s holds expire, as whoever made each noted "
               "it, such as a client secret an identity provider gives for two years at most: the "
               "status says so 30 days before each, and once it's past "

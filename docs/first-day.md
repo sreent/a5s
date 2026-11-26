@@ -126,6 +126,8 @@ kubectl -n a5s create secret generic a5s "$@" \
 helm install a5s deploy/helm/a5s -n a5s -f test-values.yaml  # the values from steps 2 to 5
 ```
 
+Name the deployment in the values, `environment: {kind: test, name: Pilot test}`, as a band across the top of every page says it: production in the change's colour, a test or a staging in amber, so nobody does in one what they meant for the other. A deployment nobody named shows as unnamed, to be treated as production, and `helm test` says to name it.
+
 [`deploy/helm/examples`](../deploy/helm/examples) has a values file to start from for each cloud, AKS with Entra ID and Teams, EKS with Okta and Slack, GKE with Google's sign-in, and one for the organisation's own cluster, with Keycloak, Matrix and a store with S3's object lock, each `<...>` to fill as the steps above say. Once it's installed, the chart says what to do next, and the commands for each.
 
 The core opens no run until the release is approved here, as [the chart's README](../deploy/helm/README.md#install) says: `a5s release show` in the gateway prints it, the sample's release approvers sign it (`a5s release sign`), and a ConfigMap of their signatures, named in `release.approval`, is recorded at the next `helm upgrade`. Then `kubectl -n a5s exec deploy/a5s-gateway -- a5s release status` ends "Approved here.", and `a5s status` reports.

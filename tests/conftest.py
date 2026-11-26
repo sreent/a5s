@@ -520,6 +520,9 @@ SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's f
 RUNNING: list[Any] = []  # the systems themselves
 # Where a made-up system whose changes its scenario's code reads, such as SAP's, keeps them
 os.environ["A5S_SYSTEMS_STATE"] = tempfile.mkdtemp(prefix="a5s-systems-")
+# The deployments the tests make are tests, as every page's band says, as a deployment of the
+# sample would name itself (core/environment.py); a test about the band sets its own
+os.environ.setdefault("A5S_ENVIRONMENT", "test")
 SANDBOX_STATE = Path(tempfile.mkdtemp(prefix="a5s-sandbox-systems-"))  # the sandbox's copies'
 SPARE = 100  # how far the sandbox's copy of each system is from it, as each mcp.yaml says
 

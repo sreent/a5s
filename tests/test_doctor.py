@@ -34,7 +34,7 @@ def deployed(monkeypatch, stack, **env: str | None) -> None:
     """The environment the core runs with, as the stack has it, for `a5s doctor` to read:
     with `env` set on top, or, for a value of None, unset."""
     for name in ("A5S_OPERATOR_TOKEN", "A5S_OIDC_ISSUER", "A5S_OIDC_MFA", "A5S_ANCHOR_STORE",
-                 "A5S_EXPIRES"):
+                 "A5S_EXPIRES", "A5S_ENVIRONMENT", "A5S_ENVIRONMENT_NAME"):
         monkeypatch.delenv(name, raising=False)
     given = {"A5S_DATABASE_URL": stack.cfg.database_url, "A5S_GATEWAY_URL": stack.url,
              "A5S_SERVICE_TOKEN": LONG, "A5S_ROOT": str(stack.cfg.root),
@@ -65,7 +65,8 @@ def test_a_working_deployment_has_nothing_to_fix(long_token, stack, monkeypatch,
     states = {f.check: f.state for f in doctor.checked()}
     assert states == {"Settings": "ok", "The database": "ok", "The release": "look",
                       "The settings in force": "ok", "The core": "ok", "Signing in": "look",
-                      "The models": "ok", "The ledger's copies": "look", "Credentials": "ok"}, said
+                      "The models": "ok", "The ledger's copies": "look", "Credentials": "ok",
+                      "This deployment": "ok"}, said
     assert "The database: The database at a5s_gateway@" in said and "as a5s_gateway" in said
     assert "with 1 instance active" in said
     assert "The models: Each model the agents at work use has its key here: fake " \

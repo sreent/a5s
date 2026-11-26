@@ -30,6 +30,8 @@
     people: ["M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M3 20a6 6 0 0 1 12 0"],  // as Ocean's icons/ draw it
     officer: ["M6 10.5h12v9.5H6z", "M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3", "M12 14.5v2"],
     plus: ["M12 5.5v13", "M5.5 12h13"],
+    tool: ["M14.5 5.5a4 4 0 0 0-5 5L4.5 15.5l4 4 5-5a4 4 0 0 0 5-5l-2.5 2.5-2.5-.5-.5-2.5z"],  // as Ocean's icons/
+    code: ["M8.5 7.5L4 12l4.5 4.5", "M15.5 7.5L20 12l-4.5 4.5", "M13.5 5l-3 14"],  // as Ocean's icons/ draw it
     attach: ["M19.5 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.4 8.4a1.6 1.6 0 0 1-2.3-2.3l7.6-7.6"],
     // an agent's mark, as the studio draws it (docs/design.md)
     agent: ["M7 8.5h10a2.5 2.5 0 0 1 2.5 2.5v6A2.5 2.5 0 0 1 17 19.5H7A2.5 2.5 0 0 1 4.5 17v-6A2.5 2.5 0 0 1 7 8.5z",
@@ -78,6 +80,27 @@
     while (document.body.firstChild) page.append(document.body.firstChild);
     document.body.append(side, page);
     document.body.classList.add("app");
+    environment();
+  }
+
+  // Which deployment this is, across the top of every page before anyone signs in, as the
+  // studio's (Ocean's EnvironmentBand; core/environment.py): production in the change's
+  // colour, filled, the rest in amber
+  const BAND_ICON = { production: "people", staging: "tool", test: "tool", development: "code" };
+  async function environment() {
+    try {
+      const answer = await fetch("/shell/environment");
+      if (!answer.ok) return;
+      const deployment = await answer.json();
+      const band = element("section", null, `env-band ${deployment.kind}`);
+      band.id = "environment";
+      band.setAttribute("aria-label", "Which deployment this is");
+      band.append(icon(BAND_ICON[deployment.kind] || "tool"), element("strong", deployment.name),
+                  element("span", deployment.about));
+      document.body.prepend(band);
+    } catch {
+      // the page works without it, as without the sidebar
+    }
   }
 
   function pages(allowed, you, roles) {  // in the order a5s gives them, each under its heading

@@ -510,6 +510,16 @@ export type Ended = {
   runs: number;
 };
 
+// Which deployment this is, as the band across the top of every page says it: its kind,
+// production, staging, test or development, its name, what that means here, and whether
+// anyone named it, as one nobody named is taken as production (core/environment.py).
+export type Environment = {
+  kind: string;
+  name: string;
+  about: string;
+  named: boolean;
+};
+
 // What another system may tell an agent happened, and what it's asked to do each time.
 export type EventTaken = {
   type: string;

@@ -87,6 +87,17 @@ class Shell(Shape):
     pages: list[Place]
 
 
+class Environment(Shape):
+    """Which deployment this is, as the band across the top of every page says it: its kind,
+    production, staging, test or development, its name, what that means here, and whether
+    anyone named it, as one nobody named is taken as production (core/environment.py)."""
+
+    kind: str
+    name: str
+    about: str
+    named: bool
+
+
 class Role(Shape):
     """A role someone holds, what gave it them, and what it lets them do."""
 

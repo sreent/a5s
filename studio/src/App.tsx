@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { onRunOut, runOut, runsOutAt, signedIn } from "./api";
 import { signIn, signInAgain } from "./auth";
 import { Toasts } from "./design/feedback";
+import { EnvironmentBand } from "./design/safety";
 import { t } from "./i18n";
 import { Find } from "./Find";
 import { AdminPage } from "./pages/Admin";
@@ -135,6 +136,7 @@ export function App() {
     return (
       <Toasts>
         <Find ready={ready}>
+          <EnvironmentBand />
           <div className="wb window">
             <Sidebar signedIn rail />
             <main className="wb-main">{content}</main>
@@ -147,6 +149,7 @@ export function App() {
   return (
     <Toasts>
       <Find ready={ready}>
+        <EnvironmentBand />
         <Sidebar signedIn={ready} />
         <div className="page studio">
           <main>{content}</main>

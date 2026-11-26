@@ -8,5 +8,6 @@ export type { Tone } from "./controls";
 export { Avatar, initials, Who } from "./people";
 export { Loading, Shapes, Skeleton, Toasts, useToast } from "./feedback";
 export { Palette } from "./palette";
+export { ActingAs, ActionZone, EnvironmentBand, environmentOf } from "./safety";
 export type { PaletteOption } from "./palette";
 export type { Kind } from "./people";

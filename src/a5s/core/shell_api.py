@@ -22,6 +22,7 @@ from a5s.core import (
     administration,
     audit,
     drafts,
+    environment,
     handover,
     notebook_api,
     registry,
@@ -102,5 +103,18 @@ def router(gw: Any) -> APIRouter:
         return {"you": person.name, "roles": held(person, gw.cfg.team), "pages": [
             {"page": key, "name": name, "icon": icon, "group": group, "at": at}
             for key, name, icon, group, at in PAGES if found[key]]}
+
+    return api
+
+
+def environment_router(gw: Any) -> APIRouter:
+    """Which deployment this is, for the band across the top of every page, the sign-in's too:
+    so it asks no sign-in, and says nothing but the deployment's kind and name, which every
+    page shows whoever's on it (core/environment.py)."""
+    api = APIRouter()
+
+    @api.get("/shell/environment", **shapes.answers(shapes.Environment))
+    def where() -> dict:
+        return environment.here(gw.cfg.development)
 
     return api

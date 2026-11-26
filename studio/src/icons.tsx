@@ -36,6 +36,7 @@ const LINES: Record<string, string[]> = {
           "M7.6 16.4l8.8-8.8"],
   plus: ["M12 5.5v13", "M5.5 12h13"],
   cross: ["M7 7l10 10", "M17 7L7 17"],  // as Ocean's icons/ draw it
+  code: ["M8.5 7.5L4 12l4.5 4.5", "M15.5 7.5L20 12l-4.5 4.5", "M13.5 5l-3 14"],  // as Ocean's icons/ draw it
   find: ["M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13z", "M15.4 15.4L20 20"],  // as Ocean's icons/ draw it
   pause: ["M9 6.5v11", "M15 6.5v11"],
   list: ["M9.5 6.5h10", "M9.5 12h10", "M9.5 17.5h10", "M4.5 6.5h.5", "M4.5 12h.5", "M4.5 17.5h.5"],  // as Ocean's icons/
