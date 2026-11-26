@@ -113,7 +113,7 @@ def test_someone_finds_what_waits_and_what_they_may_do_in_the_studio(stack, appr
     assert "waits for your approval" in waits and "the owner of billing hasn't approved it" in waits
     assert page.get_attribute("#waiting a:has-text('waits for your decision')", "href") == "/studio/decide"
     shot(page, "studio-home")
-    page.click("#next a:has-text('What you may do in a5s')")
+    page.click("#your-roles a")  # what her roles let her do, from the line that names them
     page.wait_for_selector("#roles table", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/you"
     row = page.inner_text("#roles tr:has-text('part-owner:billing')")

@@ -7,18 +7,21 @@ import { get, type HealthNow } from "../api";
 import { t } from "../i18n";
 import { PageHead, To, Waiting } from "../ui";
 
+/** What the page is, said the same as it loads, if it can't, and once it has. */
+const ABOUT = "Each model's day, measured: what its calls did, and what its canaries scored.";
+
 export function HealthPage() {
   const [now, setNow] = useState<HealthNow>();
   const [error, setError] = useState<string>();
   useEffect(() => {
     get<HealthNow>("/health/api").then(setNow).catch((e) => setError(String(e)));
   }, []);
-  if (error) return <><PageHead title={t("Model health")} about={t("Each model's day, measured: what its calls did, and what its canaries scored.")} /><Waiting error={error} /></>;
-  if (!now) return <><PageHead title={t("Model health")} about={t("Each model's day, measured: what its calls did, and what its canaries scored.")} /><Waiting /></>;
+  if (error) return <><PageHead title={t("Model health")} about={t(ABOUT)} /><Waiting error={error} /></>;
+  if (!now) return <><PageHead title={t("Model health")} about={t(ABOUT)} /><Waiting /></>;
   return (
     <div className="page">
       <PageHead title={t("Model health")}
-                 about={t("Each model's day, measured: what its calls did, and what its canaries scored.")} />
+                 about={t(ABOUT)} />
       <table className="health">
         <thead><tr><th>{t("Model")}</th><th>{t("Calls")}</th><th>{t("Failed")}</th>
           <th>{t("Stalls")}</th><th>{t("Mean time")}</th><th>{t("Canaries")}</th></tr></thead>

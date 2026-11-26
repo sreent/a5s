@@ -94,7 +94,8 @@ def test_a_runs_cost_is_its_instances_and_agents_whole_and_no_part_has_a_budget(
     # and a part's owner reads that they watch what its instances cost, never that they approve it
     assert home.may("part-owner:billing") == (
         "approve the instances that work in billing, and how far each may act there; decide the "
-        "changes agents ask for there; and watch those instances' runs, and what they cost")
+        "changes agents ask for there, and undo them once made; watch those instances' runs, "
+        "and what they cost; and suspend them")
 
 
 def test_a_budget_says_the_currency_it_is_in(stack):

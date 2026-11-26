@@ -1,5 +1,6 @@
 // The administrators' page, folded into the studio from its own (core/admin_api.py), for those
-// who hold one of a5s's roles, or run it: who holds each role and what gave it them, the
+// who own, approve, decide or oversee in a5s, and the team that runs it (administration.py's
+// AUDIENCE): who holds each role and what gave it them, the
 // directory or a group of the identity provider's; what waits for whom; what nobody answers for;
 // and the latest administrative acts. It only shows: a change is made in the settings, or with
 // `a5s release` for a release.

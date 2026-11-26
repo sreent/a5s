@@ -246,9 +246,12 @@ def test_graders_compare_its_answers_and_its_judge_does_too_apart(stack, approvi
     [pair] = as_person(stack, approving, provider, "dana", "GET", "/studio/api/shadows").json()["pairs"]
     assert (pair["asked"], pair["sent"], pair["answer"]) == (ASKED, SENT, SHADOWED)
     assert "ben" not in json.dumps(pair).lower()  # never whose it was
-    for nobody in ("chen", "ben", "ana"):  # not graders, or built it, or it answered them
+    for nobody in ("ben", "ana"):  # not graders, though they follow it, or it answered them
         assert as_person(stack, approving, provider, nobody, "GET",
                          "/studio/api/shadows").json()["pairs"] == []
+    # and someone with no shadow to grade or follow is refused, as their sidebar has no page
+    assert as_person(stack, approving, provider, "chen", "GET",
+                     "/studio/api/shadows").status_code == 403  # (round 17, C5)
     [mine] = as_person(stack, approving, provider, "ana", "GET", "/studio/api/shadows").json()["shadows"]
     assert mine["instance"] == "assistant-next-finance" and mine["answered"] == 1  # its owner
     path = f"/studio/api/shadows/{pair['id']}/grade"

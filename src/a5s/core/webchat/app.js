@@ -463,7 +463,7 @@ async function main() {
     if (!agents.length) {  // the studio lists those they may know of, and ask for
       status(listed.at_work === false  // only in development: none is at work here at all
         ? t("No agent is at work here yet: apply the settings first, with `a5s apply`, then reload this page.")
-        : t("No agent serves you here yet. The studio lists the agents you may ask for, at /studio/."));
+        : t("No agent serves you here yet. The studio's Agents page, at /studio/agents, lists those you may ask for; if it lists none, ask your manager, or whoever runs a5s in your organisation, which agent would serve you."));
       return;
     }
     for (const agent of agents) {

@@ -273,9 +273,17 @@ def figures(conn: db.Connection, scenario: Scenario, person: Person, *,
 
 
 def exists(conn: db.Connection) -> bool:
-    """Whether any shadow answers now, so its page is anyone's."""
+    """Whether any shadow answers now."""
     return conn.execute("select 1 from instances where shadows is not null and status <> "
                         "'retired' limit 1").fetchone() is not None
+
+
+def theirs(conn: db.Connection, scenario: Scenario, person: Person) -> bool:
+    """Whether the shadows page is someone's: a shadow answers now, and they grade, or may
+    follow how one does. Their sidebar lists it, and its API lets them in, by this alone (round
+    17, C5)."""
+    return exists(conn) and (samples.GRADER in person.roles
+                             or bool(figures(conn, scenario, person)))
 
 
 # The judge, in the core

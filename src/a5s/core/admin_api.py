@@ -25,12 +25,11 @@ def router(gw: Any) -> APIRouter:
         web.approving(gw)
 
     def administering(authorization: str | None = Header(default=None)) -> Person:
-        """Who signed in to the administrators' page: someone with one of a5s's roles, or
-        from the team that runs it."""
+        """Who signed in to the administrators' page: one of its audience, whom its refusal
+        names."""
         person = web.known(gw, authorization)
         if not administration.administers(person, gw.cfg.team):
-            raise HTTPException(403, "the administrators' page is for people who hold one of "
-                                     "a5s's roles, or run it")
+            raise HTTPException(403, f"the administrators' page is for {administration.AUDIENCE}")
         return person
 
     pages = APIRouter(dependencies=[Depends(available)])  # the page alone, which holds no data

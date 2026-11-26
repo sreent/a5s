@@ -67,7 +67,11 @@ def router(gw: Any) -> APIRouter:
         changed since."""
         who, _ = web.sender(gw, authorization, None)
         person = gw.scenario.person(who)
-        roles = person.roles if person else ()
+        with db.transaction(gw.url) as conn:  # theirs as their sidebar has it (round 17, C5)
+            if person is None or not proposals.decides_here(conn, person):
+                raise HTTPException(403, "deciding changes is for those who decide them in a "
+                                         "part, or in none, and the managers they're escalated to")
+        roles = person.roles
         mine = sorted({r.split(":", 1)[1] for r in roles
                        if r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:"))})
         with db.transaction(gw.url) as conn:
@@ -82,7 +86,7 @@ def router(gw: Any) -> APIRouter:
                 {"who": who, "scenario": gw.scenario.name, "parts": mine,
                  "approver": INSTANCE_APPROVER in roles,
                  "week": gw.clock() - timedelta(days=7)}).fetchall()
-            spoken = languages.of(person) if person else languages.ENGLISH  # (B6)
+            spoken = languages.of(person)  # (B6)
             two = unknown(gw.four_eyes(conn))  # what they approved that waits for another
             waits_another = {r["digest"] for r in rows if r["status"] == "waiting"
                              and r["yours"] == "approve" and not proposals.settled(
@@ -123,8 +127,8 @@ def router(gw: Any) -> APIRouter:
                                       if r and r.get("link")],
                           "changed": [words.say(spoken, proposals.CHANGED, key=k)
                                       for k in changed]})
-        return {"you": person.name if person else who, "proposals": shown,
-                **acting.shown(acting.deciding(person, deciding, spoken) if person else None)}
+        return {"you": person.name, "proposals": shown,
+                **acting.shown(acting.deciding(person, deciding, spoken))}
 
     @pages.post("/decide/proposals", **shapes.answers(shapes.Decided))
     def decide_proposals(body: Deciding, authorization: str | None = Header(default=None)

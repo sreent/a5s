@@ -94,7 +94,8 @@ def test_the_agent_hands_the_conversation_to_a_team_which_answers_until_it_hands
     shell = as_person(approving, provider, "chen", "GET", "/shell/api").json()["pages"]
     assert any(p["page"] == "handovers" for p in shell)
     # Nobody outside the team reads it, nor Ben's own team
-    assert as_person(approving, provider, "ana", "GET", "/studio/api/handovers").json() == {"handovers": []}
+    refused = as_person(approving, provider, "ana", "GET", "/studio/api/handovers")
+    assert refused.status_code == 403  # as her sidebar leaves the page out (round 17, C5)
     assert as_person(approving, provider, "ana", "GET",
                      f"/studio/api/handovers/{row['id']}").status_code == 404
     assert not any(p["page"] == "handovers" for p in

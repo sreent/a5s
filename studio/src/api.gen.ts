@@ -460,6 +460,7 @@ export type Draft = {
   publishing: boolean;
   released: boolean;
   at_work: boolean;
+  changes: boolean;
 };
 
 // A draft's agent's folder: each file's text, by its path in it, and, if it changes, its

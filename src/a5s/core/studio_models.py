@@ -1001,6 +1001,7 @@ class Draft(Shape):
     # an instance of its agent is at work, or paused
     released: bool
     at_work: bool
+    changes: bool  # an agent the release here has, rather than a new one
 
 
 class Named(Shape):

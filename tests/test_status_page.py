@@ -64,7 +64,7 @@ def test_the_status_page_in_the_sidebar_of_the_team_reads_well(stack, approving,
     assert "set A5S_OIDC_MFA" in browsed.inner_text("#verdict .needs")  # as nobody's asked for one
     assert "As the core said it" in browsed.inner_text("#seen")
     assert "Runs: 0" in browsed.inner_text("#day")
-    reads_well(browsed, broken)
+    reads_well(browsed, broken, marked="Status")
     accessible(browsed)
 
 

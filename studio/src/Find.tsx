@@ -26,8 +26,6 @@ async function everything(): Promise<Found[]> {
     found.push({ id: `page-${place.page}`, name: place.name, where: t("a page"), group: t("Pages"), icon: place.icon,
                  to: inside(place.at) ?? place.at });
   }
-  if (catalogue) found.push({ id: "page-agents", name: t("All agents"), where: t("a page"), group: t("Pages"), icon: "agent", to: { page: "agents" } });
-  if (home?.authoring) found.push({ id: "page-new", name: t("Start a new agent"), where: t("in the studio"), group: t("Pages"), icon: "plus", to: { page: "new" } });
   found.push({ id: "page-you", name: t("What you may do"), where: t("a page"), group: t("Pages"), icon: "people", to: { page: "you" } });
   for (const agent of catalogue?.agents ?? []) {
     found.push({ id: `agent-${agent.id}`, name: agent.id, where: t("an agent"), group: t("Agents"), icon: "agent", to: { page: "agent", agent: agent.id } });
@@ -42,7 +40,10 @@ async function everything(): Promise<Found[]> {
     found.push({ id: `draft-${draft.id}`, name: `The draft of ${draft.agent}`, where: draft.published ? "a draft, published" : "a draft",
                  group: t("Drafts"), icon: "studio", to: { page: "draft", draft: draft.id } });
   }
-  return found;
+  // each once, as the palette keys its rows by id: two of one id left rows behind as it
+  // narrowed, and marked two chosen (round 17, C1)
+  const seen = new Set<string>();
+  return found.filter((f) => !seen.has(f.id) && Boolean(seen.add(f.id)));
 }
 
 /** What it found for the words typed: those whose name and what it is hold every word. */

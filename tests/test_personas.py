@@ -21,6 +21,7 @@ import re
 import httpx
 import pytest
 
+from a5s.core import shell_api
 from conftest import accessible, listed_runs
 from test_journeys import Journey
 from test_proposals import asked, held
@@ -61,13 +62,17 @@ def sidebar(page) -> dict[str, list[str]]:
             for group in page.locator("#pages .nav-group").all()}
 
 
-def reads_well(page, broken: list[str]) -> None:
-    """The page as a person reads it: what it is, where they are, and nothing of the code's."""
+def reads_well(page, broken: list[str], *, marked: str | None) -> None:
+    """The page as a person reads it: what it is, where they are, the sidebar marking the page
+    it is, or is one of, and none for a page in no sidebar, such as What you may do (round 17,
+    C5, C8), and nothing of the code's."""
     assert page.locator("main h1").count() == 1 and page.inner_text("main h1").strip()
     head = page.locator("main .page-head")
     assert head.locator(".about").count() + head.locator(".meta").count() > 0, (
         f"{page.url} doesn't say what it's for")
-    assert page.locator("#pages a[aria-current=page]").count() == 1, f"{page.url} marks no page"
+    current = page.locator("#pages a[aria-current=page]")
+    assert [a.strip() for a in current.all_inner_texts()] == ([marked] if marked else []), (
+        f"{page.url} marks {current.all_inner_texts()}, not {marked}")
     words = page.evaluate("""() => {
         const main = document.querySelector("main").cloneNode(true);
         main.querySelectorAll(".mono, code, pre, .role-id").forEach((e) => e.remove());
@@ -89,19 +94,23 @@ def test_a_newcomer_learns_what_they_are_and_who_builds_agents(stack, approving,
     assert sidebar(page) == {"Work": ["Home", "Chat", "Tasks"], "Build": ["Agents", "Map"]}
     assert "Nothing waits on you now." in page.inner_text("#waiting")
     # How an agent gets built, where they look first: who may, and how to become one of them
-    assert "an agent's owner or an engineer, and you're neither" in page.inner_text("#build")
+    assert ("an agent's owner or someone in the team that runs a5s, and you're neither"
+            in page.inner_text("#build"))
     assert page.locator("#start-agent").count() == 0
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Home")
     accessible(page)
 
     walk.click("#your-roles a")  # what their roles let them do, from the line that names them
     page.wait_for_selector("h1:text-is('What you may do')", timeout=30000)
     assert "no administrator's mode" in page.inner_text(".page-head")
     assert "You hold none of a5s's roles" in page.inner_text("#roles")
-    reads_well(page, broken)
+    reads_well(page, broken, marked=None)
     walk.click("#pages a:has-text('Agents')")  # the agents anyone may know of
     page.wait_for_selector("#who-builds", timeout=30000)
-    reads_well(page, broken)
+    # none they may know of yet, and whom to ask, where a newcomer lands (round 17, C4)
+    assert "ask your manager, or whoever runs a5s in your organisation" in page.inner_text(
+        "#none-yet")
+    reads_well(page, broken, marked="Agents")
     walk.click("#who-builds a")  # and back to how one is built
     page.wait_for_selector("#build", timeout=30000)
     assert (walk.clicks, walk.loads) == (3, 0)
@@ -109,7 +118,8 @@ def test_a_newcomer_learns_what_they_are_and_who_builds_agents(stack, approving,
     # A page that's an administrator's, by its address, says plainly whom it's for
     page.goto(f"{approving}/studio/admin")
     said = page.wait_for_selector("main .problem", timeout=30000).inner_text()  # once it's loaded
-    assert "for people who hold one of a5s's roles, or run it" in said
+    assert "for those who own, approve, decide or oversee in a5s, and the team that runs it" in said
+    assert "Grader" not in said and "authors" not in said  # whom it's for, never all who hold a role
 
 
 def test_a_newcomer_on_a_phone_still_knows_who_they_are(stack, approving, provider, browser):
@@ -118,7 +128,7 @@ def test_a_newcomer_on_a_phone_still_knows_who_they_are(stack, approving, provid
     assert me.is_visible() and me.get_attribute("href") == "/studio/you"
     assert "No roles: you work with agents" in me.inner_text()  # what a screen reader says
     assert "You hold none of a5s's roles" in page.inner_text("#your-roles")
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Home")
 
 
 def test_a_builder_goes_from_home_to_a_new_agents_draft(stack, approving, provider, browser):
@@ -129,25 +139,27 @@ def test_a_builder_goes_from_home_to_a_new_agents_draft(stack, approving, provid
     assert sidebar(page)["Build"] == ["Agents", "New agent", "Map"]
     stages = page.locator("#build .journey li")  # the way from a new agent to one at work
     assert stages.count() == 6 and "Start it" in stages.nth(0).inner_text()
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Home")
     accessible(page)
 
     walk.click("#start-agent")
     page.wait_for_selector(".template >> text=assistant", timeout=30000)
     assert page.inner_text("#pages a[aria-current=page]").strip() == "New agent"
-    reads_well(page, broken)
+    reads_well(page, broken, marked="New agent")
     page.fill("#agent-name", "expenses-helper")  # typing counts as no click
     walk.click(".template:has-text('assistant') >> nth=0")
     walk.click("#make")
     page.wait_for_selector("#journey [aria-current=step]", timeout=30000)
     assert page.evaluate("location.pathname").startswith("/studio/drafts/")
-    # on its workbench, the sidebar shrunk to its icons, each named, still marks where they are
+    # on its workbench, the sidebar shrunk to its icons, each named, still marks where they are:
+    # a new agent's draft, New agent
+    page.wait_for_selector(".wb-rail nav a[aria-current=page]", timeout=30000)
     assert page.get_attribute(".wb-rail nav a[aria-current=page]", "aria-label") == "New agent"
     assert (walk.clicks, walk.loads) == (3, 0)
 
     walk.click(".wb-rail nav a[aria-label='Home']")  # and Home keeps the draft, to come back to
     page.wait_for_selector("#my-drafts >> text=expenses-helper", timeout=30000)
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Home")
 
 
 def test_an_administrator_finds_what_waits_on_them_and_who_holds_what(stack, approving,
@@ -156,23 +168,24 @@ def test_an_administrator_finds_what_waits_on_them_and_who_holds_what(stack, app
     assert len(held(stack)) == 1
     page, broken = arrive(browser, approving, provider, "ana")  # an instance approver
     walk = Journey(page, "administrator")
-    assert "Your roles: Instance approver · Owner of billing." in page.inner_text("#your-roles")
+    assert ("Your roles: Instance approver · Owner of billing · Owner of "
+            "assistant-finance.") in page.inner_text("#your-roles")  # what she runs (C2)
     assert sidebar(page) == {"Work": ["Home", "Chat", "Tasks", "Notebook"], "Build": ["Agents", "Map"],
                              "Decide": ["Decisions", "Settings"], "Oversee": ["Administration", "Spending"]}
     page.wait_for_selector("#waiting a:has-text('waits for your decision')", timeout=30000)
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Home")
     accessible(page)
 
     walk.click("#pages a:has-text('Administration')")  # who holds each role, and by what
     page.wait_for_selector("#shown", timeout=30000)
     assert "Ana Ortiz (the directory)" in page.inner_text("#roles tr:has-text('Instance approver')")
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Administration")
     walk.click("#pages a:has-text('Settings')")
     page.wait_for_selector("main h1:text-is('Settings')", timeout=30000)
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Settings")
     walk.click("#pages a:has-text('Home')")  # building agents is someone else's, and Home says whose
     page.wait_for_selector("#build", timeout=30000)
-    assert "an agent's owner or an engineer, and you're neither" in page.inner_text("#build")
+    assert "an agent's owner or someone in the team that runs a5s, and you're neither" in page.inner_text("#build")
     assert "New agent" not in sidebar(page)["Build"]
     assert (walk.clicks, walk.loads) == (3, 0)
 
@@ -189,29 +202,39 @@ def test_an_administrator_reads_an_instance_and_one_of_its_runs(stack, approving
     walk.click("table.grid-table a:has-text('assistant-finance')")  # the agent at work
     page.wait_for_selector(".runs-chart .day", timeout=30000)
     assert "One agent at work" in page.inner_text(".page-head .about")
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Agents")
     walk.click("table.runs-table a:has-text('Open') >> nth=0")  # its latest run
     page.wait_for_selector(".agent-map .flow-state", timeout=30000)
     assert "One run of an agent, from what started it to how it ended" in page.inner_text(
         ".page-head .about")
-    reads_well(page, broken)
+    reads_well(page, broken, marked="Agents")
     accessible(page)
     assert (walk.clicks, walk.loads) == (4, 0)
 
-# Everyone in the sample: the roles the sidebar's foot names, and the pages their work needs,
-# offered in their sidebar, none of them an administrator's mode
+# Everyone in the sample: the roles the sidebar's foot names, with the instances they run, and
+# every page their sidebar offers, in its order: no more, so nothing in it turns them away, and
+# no less, so nothing they may use is hidden, as no administrator's mode would show more (round
+# 17, C5). The team that runs a5s may start new agents and read the models' health, as a release
+# counts its engineers (C3); running an instance is named beside the roles (C2).
+EVERYDAY = ["home", "chat", "tasks"]
 EVERYONE = [
-    ("chen", [], {"home", "agents"}),
-    ("ben", [], {"home", "agents"}),
+    ("chen", [], EVERYDAY + ["agents", "map"]),
+    ("ben", ["Deputy for assistant-finance"], EVERYDAY + ["notebook", "agents", "map",
+                                                        "spending"]),
     ("priya", ["The team that runs a5s", "Owner of the assistant", "Owner of the watcher"],
-     {"new", "admin"}),
-    ("tomas", ["The team that runs a5s"], {"admin"}),
-    ("ana", ["Instance approver", "Owner of billing"], {"decide", "settings", "admin"}),
-    ("omar", ["Owner of orders"], {"decide", "settings"}),
-    ("dana", ["Grader"], {"grade"}),
-    ("rosa", ["Release approver"], {"health"}),
-    ("kofi", ["Assurance"], {"audit"}),
-    ("noor", ["Data protection officer"], {"officer"}),
+     EVERYDAY + ["notebook", "agents", "new", "map", "settings", "status", "admin", "spending",
+                 "health"]),
+    ("tomas", ["The team that runs a5s"],
+     EVERYDAY + ["agents", "new", "map", "status", "admin", "health"]),
+    ("ana", ["Instance approver", "Owner of billing", "Owner of assistant-finance"],
+     EVERYDAY + ["notebook", "agents", "map", "decide", "settings", "admin", "spending"]),
+    ("omar", ["Owner of orders"], EVERYDAY + ["agents", "map", "decide", "settings", "admin",
+                                              "spending"]),
+    ("dana", ["Grader"], EVERYDAY + ["agents", "map", "grade"]),
+    ("rosa", ["Release approver"], EVERYDAY + ["agents", "map", "admin", "health"]),
+    ("kofi", ["Assurance"], EVERYDAY + ["agents", "map", "settings", "audit", "admin"]),
+    ("noor", ["Data protection officer"], EVERYDAY + ["agents", "map", "settings", "admin",
+                                                      "officer"]),
 ]
 
 
@@ -222,6 +245,5 @@ def test_everyone_is_told_their_roles_and_offered_their_pages(stack, approving, 
     shell = httpx.get(f"{approving}/shell/api", timeout=30,
                       headers={"Authorization": f"Bearer {token}"}).json()
     assert shell["roles"] == roles
-    offered = {place["page"] for place in shell["pages"]}
-    assert theirs <= offered, theirs - offered
-    assert ("new" in offered) == (person == "priya")  # only an agent's owner, or an engineer
+    assert [place["page"] for place in shell["pages"]] == sorted(
+        theirs, key=[key for key, *_ in shell_api.PAGES].index)

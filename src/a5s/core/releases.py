@@ -474,6 +474,14 @@ def _inside(scenario: Scenario, team: str) -> set[str]:
         boss for member in scenario.team(team) for boss in _line(scenario, member)}
 
 
+def engineer(person: Person, team: str) -> bool:
+    """Whether someone is an engineer: anyone in the team that runs a5s, as a release counts
+    the engineers who sign it (`Signer.can`). It's no role a directory or a group gives, so the
+    studio asks the same of whoever starts a new agent or reads the models' health (round 17,
+    C3)."""
+    return person.team == team
+
+
 @dataclass(frozen=True)
 class Signer:
     """Someone the directory gives a key, as a release records them."""

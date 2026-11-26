@@ -46,10 +46,18 @@ ACTS = {  # each act, with a body of the shape it takes, so it's refused for wan
     ("post", "/grade/samples"): {"grades": {"1": "right"}, "salt": "s"},
 }
 PEOPLE = ("ana", "ben", "chen", "omar", "dana", "priya", "tomas", "lena", "rosa", "kofi", "noor")
-PAGES = {"home": "/studio/api/home", "agents": "/studio/api", "settings": "/settings/api",
-         "notebook": "/notebook/api",
-         "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api",
-         "status": "/status/api", "officer": "/officer/api"}
+# Each page of the sidebars, by the API its page reads first, and how: every one of them, so a
+# page whose sidebar entry and own check disagree fails here (round 17, C5); the chat is the
+# web chat's, which anyone signed in may open
+PAGES = {"home": ("get", "/studio/api/home"), "handovers": ("get", "/studio/api/handovers"),
+         "tasks": ("get", "/tasks/api"), "notebook": ("get", "/notebook/api"),
+         "agents": ("get", "/studio/api"), "new": ("get", "/studio/api/templates"),
+         "map": ("get", "/studio/api/map"), "decide": ("post", "/decide/review"),
+         "grade": ("post", "/grade/review"), "shadows": ("get", "/studio/api/shadows"),
+         "settings": ("get", "/settings/api"), "status": ("get", "/status/api"),
+         "audit": ("get", "/audit/api"), "admin": ("get", "/admin/api"),
+         "spending": ("get", "/studio/api/spending"), "health": ("get", "/health/api"),
+         "officer": ("get", "/officer/api")}
 
 
 def described(url: str) -> dict[str, dict]:
@@ -89,10 +97,13 @@ def test_the_sidebar_lists_exactly_the_pages_whose_api_lets_each_person_in(appro
         headers = {"Authorization": f"Bearer {provider.id_token(person=person)}"}
         listed = [place["page"] for place in httpx.get(
             f"{approving}/shell/api", headers=headers, timeout=30).json()["pages"]]
-        for page, api in PAGES.items():
-            answer = httpx.get(f"{approving}{api}", headers=headers, timeout=30)
+        for page, (method, api) in PAGES.items():
+            answer = httpx.request(method.upper(), f"{approving}{api}", headers=headers,
+                                   timeout=30)
             assert answer.status_code in (200, 403), (person, api, answer.text)
             assert (answer.status_code == 200) == (page in listed), (person, page, listed)
+    from a5s.core.shell_api import PAGES as SIDEBAR
+    assert set(PAGES) == {key for key, *_ in SIDEBAR} - {"chat"}  # each of them, chat aside
 
 
 def test_every_route_of_the_cores_api_refuses_a_call_without_its_token(stack):

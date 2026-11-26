@@ -45,10 +45,13 @@ MOST = 20  # samples counted to grade, beyond which the home says "20 or more"
 
 # What each role lets someone do, by its kind; {scope} is its part or agent
 MAY = {
+    # as core/suspension.py, core/undoing.py and core/studio.py's `watches` let each (round 17,
+    # C7)
     PART_OWNER: "approve the instances that work in {scope}, and how far each may act there; "
-                "decide the changes agents ask for there; and watch those instances' runs, and "
-                "what they cost",
-    PART_DELEGATE: "decide the changes agents ask for in {scope}, beside its owner",
+                "decide the changes agents ask for there, and undo them once made; watch those "
+                "instances' runs, and what they cost; and suspend them",
+    PART_DELEGATE: "decide the changes agents ask for in {scope}, beside its owner, and undo "
+                   "them once made; watch the instances that work there; and suspend them",
     "agent-owner": "own the {scope}: its definition and releases, drafts of it, and its "
                    "instances' runs; start new agents; suspend it; give a group its authors' "
                    "or viewers' role; and approve what its models may cost a month, and see "
@@ -56,8 +59,9 @@ MAY = {
     "agent-author": "draft changes to the {scope}, try them in the sandbox, and publish them for "
                     "its owners to sign",
     "agent-viewer": "see how the {scope} is built, read only: its instructions and skills",
-    releases.ENGINEER: "start new agents, and draft them",
-    INSTANCE_APPROVER: "approve the instances that work in no part, and say what each may do",
+    INSTANCE_APPROVER: "approve the instances that work in no part, and say what each may do; "
+                       "decide the changes agents ask for in no part, and undo them once made; "
+                       "and watch every instance",
     RELEASE_APPROVER: "approve releases, from outside the team that runs a5s",
     samples.GRADER: "grade agents' work, never your own team's",
     audit.AUDITOR: "read the ledger: find what was done and decided, and export it once the "
@@ -69,9 +73,17 @@ MAY = {
                      "data: how long a5s keeps it, and whom it names; and give a group "
                      "your role",
 }
+# Running an instance, as its settings name its owner and deputy: no role, but what lets them
+# watch it, keep its notebook, end a change it stopped making and suspend it, so it's named
+# beside the roles, as the pages that act on it name it (core/acting.py's `keeping`; round 17,
+# C2)
+RUNS = {"owner": "Owner of {instance}", "deputy": "Deputy for {instance}"}
+RUNS_MAY = ("watch {instance} at work, its runs and what it costs; take notes out of its "
+            "notebook; end a change it stopped part way through making; and suspend it")
 TEAM = "the team that runs a5s"
 TEAM_MAY = ("run it, and make it safer alone: suspend an instance, never loosen it; sign its "
-            "releases as an engineer")
+            "releases as an engineer; start new agents, and draft them; and read the models' "
+            "health")  # as each of those checks it: an engineer is anyone in the team (C3)
 
 
 def may(role: str, language: str = languages.ENGLISH) -> str:
@@ -95,7 +107,18 @@ def roles(conn: db.Connection, gw: Any, person: Person,
         found.insert(0, {"role": TEAM, "name": words.say(language, "The team that runs a5s"),
                          "by": [words.say(language, "the directory")],
                          "may": words.say(language, TEAM_MAY)})
+    for inst, kind in runs(conn, person):
+        name = words.say(language, RUNS[kind], instance=inst)
+        found.append({"role": name, "name": name, "by": [words.say(language, "the settings")],
+                      "may": words.say(language, RUNS_MAY, instance=inst)})
     return found
+
+
+def runs(conn: db.Connection, person: Person) -> list[tuple[str, str]]:
+    """The instances someone runs, each with whether as its owner or its deputy, as the
+    settings in force name them."""
+    return [(inst["id"], kind) for inst in studio.instances(conn) for kind in ("owner", "deputy")
+            if inst[kind] == person.id]
 
 
 def waiting(conn: db.Connection, gw: Any, person: Person,

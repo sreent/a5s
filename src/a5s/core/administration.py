@@ -45,8 +45,15 @@ def named(role: str, language: str = "en") -> str:
     return words.say(language, role.replace("-", " ").capitalize())
 
 
+# Whom the administrators' page is for, as its refusal says it (round 17, C6): not graders,
+# authors or viewers alone, though they hold a role (docs/administration.md)
+AUDIENCE = ("those who own, approve, decide or oversee in a5s, and the team that runs it: part "
+            "owners and their delegates, agents' owners, instance and release approvers, "
+            "assurance, auditors and the data protection officer")
+
+
 def administers(person: Person | None, team: str) -> bool:
-    """Whether someone may see the page: they hold one of a5s's roles, or run a5s."""
+    """Whether someone may see the page: they're of its `AUDIENCE`."""
     return person is not None and (person.team == team or any(
         r in _ADMINISTERS or r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:", "agent-owner:"))
         for r in person.roles))

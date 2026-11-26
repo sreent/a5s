@@ -98,7 +98,7 @@ export function AgentsPage() {
                 about={t("The agents you may know of: those you have a role on, those that serve you, and those their owners list for everyone. Each shows as much as your roles let you see: what it does and who owns it, what it may do, and where it runs. Changes to an instance go through the settings; the changes agents ask for are decided on the decisions page.")}>
         {data?.authoring.new && <div className="actions"><Link to={{ page: "new" }} className="button primary">{t("New agent")}</Link></div>}
         {data && !data.authoring.new && (  /* where the button would be: who may start one */
-          <p className="meta" id="who-builds"><span>{t("A new agent is started by an agent's owner or an engineer.")}</span>
+          <p className="meta" id="who-builds"><span>{t("A new agent is started by an agent's owner or someone in the team that runs a5s.")}</span>
             <Link to={{ page: "home" }}>{t("How to build one")}</Link></p>
         )}
       </PageHead>
@@ -110,7 +110,9 @@ export function AgentsPage() {
         </Waiting>
       )}
       {authors && <Drafts />}
-      {data && data.agents.length === 0 && <p className="note">{t("There are no agents you may know of yet.")}</p>}
+      {data && data.agents.length === 0 && (  /* whom to ask, where a newcomer lands (round 17, C4) */
+        <p className="note" id="none-yet">{t("There are no agents you may know of yet. An agent's owners list it here, for anyone to ask for; until one does, ask your manager, or whoever runs a5s in your organisation, which agent would serve you.")}</p>
+      )}
       {data && <div className="agent-grid">{data.agents.map((a) => <AgentCard key={a.id} agent={a} />)}</div>}
     </>
   );
