@@ -10,7 +10,7 @@
 - the studio, where people build, try, publish, run and watch agents ([studio](docs/studio.md#progress));
 - three scenarios built again through the studio, each walked through every night on a real model ([phase 5](docs/phase-5.md#progress)).
 
-Sixteen rounds of adversarial review have read it, and the [critique](docs/critique.md) records what each found and what became of it.
+Round after round of adversarial review has read it, and the [critique](docs/critique.md) records what each found and what became of it.
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 
