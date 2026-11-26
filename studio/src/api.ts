@@ -139,6 +139,7 @@ export type SampleLine = gen.SampleLine;
 export type Graded = gen.Graded;
 export type OfficerAsked = gen.OfficerAsked;  // the officer's request, recorded
 export type OfficerNow = gen.OfficerNow;  // the officer, before they ask
+export type OfficerWhom = gen.OfficerWhom;  // whose an id is, for the officer before they ask
 export type VersionReview = gen.VersionReview;  // a version of the settings, as its approvers read it
 export type Approved = gen.Approved;
 export type Standing = gen.Standing;  // how an instance stands, for its viewer: what waits, and what they may do

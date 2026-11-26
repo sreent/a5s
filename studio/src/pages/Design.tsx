@@ -189,15 +189,15 @@ export function DesignPage() {
 
       <section className="card wide" data-piece="zones">
         <h2>Friction by risk</h2>
-        <p className="note">An everyday act is a button where the work is. One that reaches beyond you sits in a zone that says first whom and what it reaches; what can't be undone, in a zone of its own, asks for the name typed, which the server checks too.</p>
+        <p className="note">An everyday act is a button where the work is. One that reaches beyond you sits in a zone that says first whom and what it reaches; what can't be undone, in a zone of its own, names whose it is and asks for the name typed again, unseen, which the server checks too.</p>
         <ActionZone title="Suspend or resume it" level={3}
                     reach="Suspending assistant-finance stops it at its next step, so it answers none of the 2 people it serves until it's resumed. Nothing it keeps is lost.">
           <button type="button" className="primary">Sign in and suspend it</button>
         </ActionZone>
         <ActionZone title="Erase all a5s keeps about them" level={3} cantUndo
-                    reach="Everything a5s keeps about ben goes, everywhere a5s keeps it, and nobody can bring it back.">
-          <Confirm label="Erase it" danger typed="ben" ask="Type ben to erase it" title="Erase all a5s keeps about ben?"
-                   about="It goes everywhere a5s keeps it, and nobody can bring it back." confirm="Erase it" onConfirm={() => {}} />
+                    reach="What's Ben Okafor (ben)'s goes, everywhere a5s keeps it, and nobody can bring it back. What's evidence of what agents did stays.">
+          <Confirm label="Erase it" danger typed="ben" ask="Type their id again" title="Erase all a5s keeps about Ben Okafor?"
+                   about="Ben Okafor, of the finance team, in the directory. It goes everywhere a5s keeps it, and nobody can bring it back." confirm="Erase it" onConfirm={() => {}} />
         </ActionZone>
       </section>
 

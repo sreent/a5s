@@ -2657,7 +2657,7 @@ def create_app(gw: Gateway) -> FastAPI:
         records it, in counts."""
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
-        if body.confirm != person:
+        if not officer.typed_again(body.confirm, person):
             raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
                                      "nobody")
         here = gw.scenario.person(person) is not None

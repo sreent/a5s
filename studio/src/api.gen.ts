@@ -139,7 +139,8 @@ export type Asked = {
 
 // What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
 // its nonce was made with; and, to erase, their id typed again, as the page asks for it, since
-// an erasure can't be undone: checked here too, so no script skips it (docs/design.md).
+// an erasure can't be undone: checked here before the request is taken, exactly as the core
+// checks the id the team sends again when it carries it out (docs/design.md).
 export type Asking = {
   action: string;
   person: string;
@@ -958,6 +959,14 @@ export type OfficerAsked = {
 export type OfficerNow = {
   you: string;
   acting: Acting;
+};
+
+// Whose an id is, for the officer before they ask about it: someone in the directory, by
+// name and team, an archive, an address, a group chat, or nobody it knows by it now.
+export type OfficerWhom = {
+  kind: string;
+  said: string;
+  name?: string;
 };
 
 // The agents, instances and parts nobody answers for.

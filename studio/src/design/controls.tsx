@@ -15,10 +15,13 @@ export function Badge({ tone, dot = false, children }: { tone?: Tone; dot?: bool
 }
 
 /** A button that asks first, for what can't be undone. With `typed`, the dialog asks for that
- * word typed, as `ask` says, such as "Type ben to erase it", its field taking the focus, and
- * its confirming answer stays off until the word matches, letter case aside: in the danger
- * colour, for what can't be undone and reaches someone else, whose server checks the word too,
- * so `onConfirm` hears what was typed (Ocean's Confirm). `small` is for a row's own actions. */
+ * word typed again, as `ask` says, such as "Type their id again", its field taking the focus,
+ * and its confirming answer stays off until the word matches, letter case aside, as the server
+ * checks it too: in the danger colour,
+ * for what can't be undone and reaches someone else, so `onConfirm` hears what was typed
+ * (Ocean's Confirm). A page that names whose the word is
+ * first, as the officer's does, asks for it without showing it, so a mistyped word that names
+ * someone else isn't copied from the dialog (round 17, B1). `small` is for a row's own actions. */
 export function Confirm({ label, title, about, confirm, danger = false, small = false, typed, ask,
                           onConfirm }: {
   label: string; title: string; about: string; confirm: string; danger?: boolean; small?: boolean;

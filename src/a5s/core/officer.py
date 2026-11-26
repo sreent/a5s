@@ -30,6 +30,13 @@ LASTS = "10 minutes"  # how long a request waits for the team to carry it out
 PAGE = "/studio/officer"
 
 
+def typed_again(typed: str | None, person: str) -> bool:
+    """Whether an erasure's id, typed again, is the one named, letter case aside: the one rule
+    the officer's page, the channels app and the core each check it by (docs/design.md), so a
+    mistyped id erases nobody."""
+    return bool(typed and typed.strip()) and typed.strip().casefold() == person.strip().casefold()
+
+
 def nonce(action: str, person: str, salt: str) -> str:
     """What a sign-in to ask for this carries, so the provider's signature covers the request.
     The page picks the salt, so each sign-in is different."""

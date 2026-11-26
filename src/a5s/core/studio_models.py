@@ -1700,6 +1700,15 @@ class OfficerNow(Shape):
     acting: Acting
 
 
+class OfficerWhom(Shape):
+    """Whose an id is, for the officer before they ask about it: someone in the directory, by
+    name and team, an archive, an address, a group chat, or nobody it knows by it now."""
+
+    kind: str  # person, archive, address, group or nobody
+    said: str
+    name: str | SkipJsonSchema[None] = None  # theirs in the directory, for a person
+
+
 class OfficerAsked(Shape):
     """The officer's request, recorded for the team that runs a5s to carry out, once, with the
     command it's carried out with."""

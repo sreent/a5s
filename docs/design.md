@@ -105,7 +105,7 @@ A page makes it as hard to do something as it is to undo it, and no harder, as [
 | Undo a change | Its page | **Consequential**: in a zone saying what goes back, and who hears of it; a fresh sign-in |
 | Export someone's data | Data protection | **Consequential**: in a zone saying what an export holds; a fresh sign-in |
 | Put a stopped model back | `a5s health --restore` | **Consequential**: `a5s health` and the health page name the instances it reaches first, and the command says so again once it's back; the release approver's own sign-in |
-| Erase someone's data | Data protection | **Can't be undone**: in a zone of its own, marked so; their id typed again, which the channels app checks too; a fresh sign-in |
+| Erase someone's data | Data protection | **Can't be undone**: in a zone of its own, marked so, which says what goes and what stays; whose the id is, named first; their id typed again, never shown, which the channels app checks too; a fresh sign-in |
 
 A consequential act asks no dialog besides its sign-in, so a dialog, met only where nothing brings it back, keeps meaning that; and a zone holds nothing everyday, so its edge always means the press reaches beyond you. The browser tests check that each consequential act sits in its zone, saying whom it reaches, that the pages that only show, or whose acts are everyday, have none, and that an erasure without the id typed again erases nobody ([`tests/test_safety.py`](../tests/test_safety.py), [`tests/test_officer.py`](../tests/test_officer.py)).
 
