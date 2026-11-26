@@ -4728,9 +4728,16 @@ def create_app(gw: Gateway) -> FastAPI:
                 return "failed"
             undoing.end(conn, row["id"], "undone", "undone", by=row["asked_by"])
             graded = samples.undone(conn, gw.cfg.seal_keys, gw.scenario.name, row, gw.clock())
+            # its words are a held change's: marked where a run that read content from outside
+            # chose what they say, as the notice that it was made was, or where a5s can no
+            # longer tell, its held change gone (round 17, D2)
+            held = conn.execute("select * from proposals where id = %s",
+                                (row["proposal_id"],)).fetchone() if row["proposal_id"] else None
+            marked = (held is None or proposals.carries(held, gw.scenario)) if row[
+                "proposal_id"] else False
             for person in row["acts_for"]:  # their conversation: the agent's next run knows
                 noted(conn, person, row["definition"], f"{name} undid the change a5s made: "
-                      f"{row['said']}", row["record"])
+                      f"{row['said']}", row["record"], marked=marked)
             inst = conn.execute("select owner, deputy from instances where id = %s",
                                 (row["instance_id"],)).fetchone()
             told = [p for p in (*row["acts_for"], *((inst["owner"], inst["deputy"]) if inst else ()))
