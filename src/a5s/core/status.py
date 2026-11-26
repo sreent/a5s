@@ -91,7 +91,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "select (select count(*) from recent where at > now() - interval '1 hour') as last, "
         "(select count(*) from recent, generate_series(1, 7) as d where at > now() - "
         "make_interval(days => d) - interval '1 hour' and at <= now() - make_interval(days => d)"
-        ") / 7.0 as usual").fetchone()  # what an attack looks like (round 17, A5)
+        ") / 7.0 as usual").fetchone() or {"last": 0, "usual": 0}  # how an attack looks (A5)
     asked = conn.execute(  # questions agents asked each other (core/asking.py)
         "select count(*) filter (where answered_at is not null) as answered, "
         "count(*) filter (where problem is not null) as unanswered, "
