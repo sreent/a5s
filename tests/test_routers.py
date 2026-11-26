@@ -37,6 +37,7 @@ DIGEST = "0" * 64
 ACTS = {  # each act, with a body of the shape it takes, so it's refused for want of a sign-in
     ("get", "/approve/settings/{version}"): None,  # what an approver reads before approving
     ("post", "/approve/settings/{version}"): {"salt": "s"},
+    ("get", "/officer/api"): None,
     ("post", "/officer/requests"): {"action": "export", "person": "ben", "salt": "s"},
     ("post", "/decide/review"): None,
     ("post", "/decide/proposals"): {"proposals": [DIGEST], "decision": "approve", "salt": "s"},
@@ -47,7 +48,7 @@ PEOPLE = ("ana", "ben", "chen", "omar", "dana", "priya", "tomas", "lena", "rosa"
 PAGES = {"home": "/studio/api/home", "agents": "/studio/api", "settings": "/settings/api",
          "notebook": "/notebook/api",
          "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api",
-         "status": "/status/api"}
+         "status": "/status/api", "officer": "/officer/api"}
 
 
 def described(url: str) -> dict[str, dict]:

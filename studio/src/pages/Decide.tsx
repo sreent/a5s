@@ -9,7 +9,7 @@ import { type DecideNow, type Decided, type HeldChange, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { locale, t } from "../i18n";
 import { Icon } from "../icons";
-import { useToast } from "../design";
+import { ActingAs, useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 type Decision = "approve" | "reject";
@@ -134,6 +134,7 @@ export function DecidePage() {
   const together = waiting.filter((p) => p.may_decide && !p.sensitive).length >= 2;
   return (
     <>
+      <ActingAs acting={found?.acting} />
       <PageHead title={t("Changes to decide")}
                 about={t("An agent asked for each of these, and it waits for you. Decide only what you mean: deciding signs you in again, and your sign-in decides once.")} />
       <p id="status" role="status" className="note">{status ?? (found && waiting.length === 0 ? t("Nothing waits for your decision.") : "")}</p>

@@ -28,6 +28,7 @@ from a5s import authoring, cases, db, definitions, describing
 from a5s.connectors import libraries
 from a5s.contract import Person
 from a5s.core import (
+    acting,
     admin_api,
     administration,
     approvals,
@@ -343,7 +344,8 @@ def router(gw: Any) -> APIRouter:
                                "asked": r["asked"], "sent": r["sent"], "answer": r["answer"],
                                "at": r["at"].isoformat()} for r in pairs],
                     "shadows": shadows.figures(conn, gw.scenario, person, known=known,
-                                               offered={r["instance_id"] for r in pairs})}
+                                               offered={r["instance_id"] for r in pairs}),
+                    **acting.shown(acting.grading(person, shadows=True) if pairs else None)}
 
     @api.post("/studio/api/shadows/{pair}/grade", **shapes.answers(shapes.ShadowGraded))
     def studio_shadow_grade(pair: int, body: ShadowGrade,
@@ -377,7 +379,9 @@ def router(gw: Any) -> APIRouter:
             found = handover.one(conn, gw.scenario, person, handover_id)
         if found is None:
             raise HTTPException(404, "there's no such conversation handed to your teams")
-        return found
+        answers = not found["ended"] and (found["taken_by"] is None or found["mine"])
+        return {**found, **acting.shown(acting.answering(found["team"], found["person"])
+                                        if answers else None)}
 
     def handing(handover_id: int, person: Person, act: Any) -> dict:
         try:
@@ -738,7 +742,8 @@ def router(gw: Any) -> APIRouter:
              if suspension.may(gw.scenario, person, inst, a, gw.cfg.team) is None), None)
         return {"waiting": waiting, "may": may, "asked": asked_line(pending),
                 "suspended_by": (by.name if by else inst["suspended_by"])
-                if inst["status"] == "suspended" else None}
+                if inst["status"] == "suspended" else None,
+                **acting.shown(acting.suspending(person, inst, may, gw.cfg.team) if may else None)}
 
     @api.post("/studio/api/instances/{instance}/status", **shapes.answers(shapes.StatusAsked))
     def instance_status(instance: str, body: StatusAct,

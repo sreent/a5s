@@ -3,8 +3,8 @@
 // browser tests open it in light and dark and check it with axe.
 
 import { useEffect, useState } from "react";
-import { AgentFacts, ApprovalCard, AutonomyLadder, Badge, Confirm, Hint, JourneyPath, RunTimeline, Skeleton,
-  Traced, useToast, Who } from "../design";
+import { ActingAs, AgentFacts, ApprovalCard, AutonomyLadder, Badge, Confirm, Hint, JourneyPath, RunTimeline,
+  Skeleton, Traced, useToast, Who } from "../design";
 import { FindButton } from "../Find";
 import { PageHead } from "../ui";
 
@@ -179,6 +179,12 @@ export function DesignPage() {
             about="Its folder and its test cases go with it, and nobody can bring them back." confirm="Delete it"
             danger onConfirm={() => setRemoved(true)} />
         )}
+      </section>
+
+      <section className="card wide" data-piece="acting">
+        <h2>Whose power a page uses</h2>
+        <p className="note">First on a page that changes things, while it holds an act one of your roles gives you: the role its acts count as, and what that lets you do there. A page that only shows has none. The band above every page says which deployment this is.</p>
+        <ActingAs acting={{ role: "Owner of billing", lets: "what you approve here, the agent that asked for it does in its records" }} />
       </section>
 
       <section className="card wide" data-piece="find">

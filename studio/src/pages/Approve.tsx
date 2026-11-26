@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { type Approved, get, send, type VersionReview } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { useToast } from "../design";
+import { ActingAs, useToast } from "../design";
 import { locale, t } from "../i18n";
 import { ImpactPreview } from "../Impact";
 import { initials, PageHead, useLoad, Waiting } from "../ui";
@@ -74,6 +74,7 @@ export function ApprovePage({ version }: { version: string }) {
   const proposed = found ? new Date(found.proposed_at).toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" }) : "";
   return (
     <>
+      <ActingAs acting={found?.acting} />
       <PageHead title={t("Settings to approve")}
                 about={t("A version of the settings waits for your approval. Read what it changes, and all of it; approving signs you in again, for this version alone.")} />
       <p id="status" role="status" className="note">

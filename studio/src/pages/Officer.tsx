@@ -5,11 +5,11 @@
 // minutes, with the command the page gives them.
 
 import { type FormEvent, useEffect, useState } from "react";
-import { type OfficerAsked, send } from "../api";
+import { get, type OfficerAsked, type OfficerNow, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { useToast } from "../design";
+import { ActingAs, useToast } from "../design";
 import { t } from "../i18n";
-import { PageHead } from "../ui";
+import { PageHead, useLoad, Waiting } from "../ui";
 
 type Action = "export" | "erase";
 
@@ -23,6 +23,7 @@ export function OfficerPage() {
   const [again, setAgain] = useState("");
   const [status, setStatus] = useState<string>();
   const [asked, setAsked] = useState(false);  // asked, its one job done, until they ask another
+  const now = useLoad(() => get<OfficerNow>("/officer/api"), []);  // the officer, and nobody else
   useEffect(() => {
     const act = takeAct();
     if (act?.kind !== "officer") return;
@@ -73,11 +74,13 @@ export function OfficerPage() {
 
   return (
     <>
+      <ActingAs acting={now.data?.acting} />
       <PageHead title={t("A request for someone's data")}
                 about={t("Ask to export, or erase, all a5s keeps about someone, at their request. You sign in afresh for that request alone, and someone from the team that runs a5s carries it out.")} />
       <p id="status" role="status" className="note">{status}</p>
+      {now.error && <Waiting error={now.error} />}
       {asked && <p><button type="button" id="another" onClick={another}>{t("Ask about someone else")}</button></p>}
-      {!asked && (
+      {!asked && !now.error && (
         <form id="ask" className="card" onSubmit={ask}>
           <p>
             <label htmlFor="action">{t("Ask to")}</label>{" "}

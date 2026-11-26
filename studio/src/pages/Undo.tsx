@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { get, send } from "../api";
 import type * as gen from "../api.gen";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { Badge, Confirm, useToast } from "../design";
+import { ActingAs, Badge, Confirm, useToast } from "../design";
 import { t } from "../i18n";
 import { PageHead, useLoad, Waiting, when } from "../ui";
 
@@ -56,6 +56,7 @@ export function UndoPage({ change }: { change: string }) {
   const c = found.data;
   return (
     <>
+      <ActingAs acting={c?.acting} />
       <PageHead crumbs={[{ label: t("Home"), to: { page: "home" } }]}
                 title={c ? t("A change the {agent} made", { agent: c.agent }) : t("A change an agent made")}
                 about={t("Whoever it was for, and whoever decides changes like it in its record's part, may undo it for a while after it's made. Undoing it counts against the agent's accuracy, as a wrong grade of its work.")} />

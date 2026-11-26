@@ -4,9 +4,10 @@
 // consequential acts are, apart from what only shows, saying first whom and what they reach.
 
 import { type ReactNode, useEffect, useId, useState } from "react";
-import type { Environment } from "../api";
+import type { Acting, Environment } from "../api";
 import { t } from "../i18n";
 import { Icon } from "../icons";
+import { shellOf } from "../Sidebar";
 import { initials } from "./people";
 
 let asked: Promise<Environment | null> | null = null;
@@ -39,13 +40,22 @@ export function EnvironmentBand() {
   );
 }
 
-/** Whose power a page uses, first in its main, on a page that changes things alone: the role
- * its acts count as, as its API says, and what that lets them do there. */
-export function ActingAs({ who, role, lets }: { who: string; role: string; lets: string }) {
+/** Whose power a page uses, first in its main, before its head, on a page that changes things
+ * alone: the role its acts count as, and what that lets them do there, as the page's API says
+ * while it holds an act a role gives them (core/acting.py), beside the initials of whoever
+ * signed in. Where the API says none, there's none, so the line means a role's power is in use. */
+export function ActingAs({ acting }: { acting?: Acting | null }) {
+  const [who, setWho] = useState("");
+  useEffect(() => {
+    let on = true;
+    shellOf().then((found) => { if (on) setWho(found.you); }).catch(() => {});
+    return () => { on = false; };
+  }, []);
+  if (!acting) return null;
   return (
     <p className="acting-as" id="acting-as">
       <span className="avatar" aria-hidden="true">{initials(who)}</span>
-      <span>{t("Acting as")} <strong>{role}</strong>: {lets}</span>
+      <span>{t("Acting as")} <strong>{acting.role}</strong>: {acting.lets}</span>
     </p>
   );
 }

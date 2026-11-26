@@ -74,6 +74,8 @@ The pieces pages are made of live in [`studio/src/design`](../studio/src/design)
 | `Skeleton`, `Loading` | What's loading, in the shape it will have, which screen readers hear as loading |
 | `Toasts` | What was just done, said once at the foot of the window as well as in the page's status line |
 | `Palette` | Going anywhere someone may, by name, from any page, with Ctrl-K |
+| `EnvironmentBand` | Which deployment this is, across the top of every page, the sign-in's too, as `/shell/environment` says it: production in the change's colour, filled, a staging, a test or a developer's own machine in amber |
+| `ActingAs` | Whose power a page uses, first in its main, before its head, while the page holds an act a role gives someone: the role its acts count as, by the rules that let them, and what it lets them do there, as the page's own API says ([`core/acting.py`](../src/a5s/core/acting.py)). A page that only shows has none, so the line means a role's power is in use |
 
 The popover a traced value opens and the hint are Radix's, which keyboards and screen readers reach as they do the mouse. The dialog is the browser's own: it keeps focus in it and the page behind it out of reach without injecting styles of its own, which the pages' policy wouldn't allow.
 

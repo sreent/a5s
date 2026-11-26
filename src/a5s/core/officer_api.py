@@ -12,7 +12,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.core import approvals, customers, ledger, officer, web
+from a5s.core import acting, approvals, customers, languages, ledger, officer, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -28,6 +28,17 @@ class Asking(BaseModel):
 def router(gw: Any) -> APIRouter:
     """The officer's page's API, and its old address, for the channels app to include."""
     pages = web.acting(gw, "officer")
+
+    @pages.get("/officer/api", **shapes.answers(shapes.OfficerNow))
+    def officer_now(authorization: str | None = Header(default=None)) -> dict:
+        """The officer's page, before they ask: who they are, and that they act there as the
+        data protection officer, as nobody else may ask."""
+        person = web.known(gw, authorization)
+        found = acting.officer(person, languages.of(person))
+        if found is None:
+            raise HTTPException(403, f"only the data protection officer asks for someone's data, "
+                                     f"and {person.name} isn't the officer")
+        return {"you": person.name, "acting": found}
 
     @pages.post("/officer/requests", **shapes.answers(shapes.OfficerAsked))
     def officer_request(body: Asking, authorization: str | None = Header(default=None)) -> dict:

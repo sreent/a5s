@@ -10,7 +10,7 @@ import { type GradeNow, type Graded, type SampleLine, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { locale, t } from "../i18n";
 import { Icon } from "../icons";
-import { useToast } from "../design";
+import { ActingAs, useToast } from "../design";
 import { PageHead, plural, useLoad, Waiting } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
 
@@ -173,6 +173,7 @@ export function GradePage() {
     ? (status ? t("Nothing else waits for you to grade.") : t("Nothing waits for you to grade.")) : "";
   return (
     <>
+      <ActingAs acting={found?.acting} />
       <PageHead title={t("Agents' work to grade")}
                 about={t("Each is a change an agent asked for or made. Grade it right if it's what a careful colleague would have done with what they knew, wrong if not, and critical if it could have done real harm. Your grades are the evidence a5s goes on before an agent may act on its own, where its part's settings let it.")} />
       <p id="status" role="status" className="note">{[status, none].filter(Boolean).join(" ")}</p>

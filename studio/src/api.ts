@@ -106,6 +106,7 @@ export type Catalogue = gen.Catalogue;
 // Every sidebar's pages, and who signed in (core/shell_api.py)
 export type Shell = gen.Shell;
 export type Environment = gen.Environment;  // which deployment this is, for every page's band
+export type Acting = gen.Acting;  // whose power a page that changes things uses, for its line
 export type Impact = gen.Impact;  // what a version of the settings would have done differently
 export type Place = gen.Place;
 
@@ -137,6 +138,7 @@ export type GradeNow = gen.GradeNow;  // the samples someone may grade now
 export type SampleLine = gen.SampleLine;
 export type Graded = gen.Graded;
 export type OfficerAsked = gen.OfficerAsked;  // the officer's request, recorded
+export type OfficerNow = gen.OfficerNow;  // the officer, before they ask
 export type VersionReview = gen.VersionReview;  // a version of the settings, as its approvers read it
 export type Approved = gen.Approved;
 export type Standing = gen.Standing;  // how an instance stands, for its viewer: what waits, and what they may do

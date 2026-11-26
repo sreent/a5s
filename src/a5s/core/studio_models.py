@@ -98,6 +98,15 @@ class Environment(Shape):
     named: bool
 
 
+class Acting(Shape):
+    """Whose power a page that changes things uses, for the line across its top: the roles its
+    acts count as, in words, and what that lets someone do there (core/acting.py). A page that
+    only shows, or whose acts are someone's own, has none."""
+
+    role: str
+    lets: str
+
+
 class Role(Shape):
     """A role someone holds, what gave it them, and what it lets them do."""
 
@@ -159,6 +168,7 @@ class Handover(HandoverLine):
     since: list[HandoverSince]  # what they've written since
     answers: list[HandoverAnswer]
     ended: bool
+    acting: Acting | SkipJsonSchema[None] = None  # while it holds an act a role gives them
 
 
 class HandoverDone(Shape):
@@ -203,6 +213,7 @@ class ShadowFigures(Shape):
 class Shadows(Shape):
     pairs: list[ShadowPair]
     shadows: list[ShadowFigures]
+    acting: Acting | SkipJsonSchema[None] = None  # while it holds an act a role gives them
 
 
 class ShadowGraded(Shape):
@@ -229,6 +240,7 @@ class ChangeMade(Shape):
     state: str  # kept, asked, undoing, undone, refused or failed
     by: str | SkipJsonSchema[None] = None  # who asked to undo it, or did
     outcome: str | SkipJsonSchema[None] = None
+    acting: Acting | SkipJsonSchema[None] = None  # as a decider of its record's part, not whoever it was for
 
 
 class UndoAsked(Shape):
@@ -327,6 +339,7 @@ class Standing(Shape):
     suspended_by: str | None
     may: str | None  # suspend or resume, which they may do now, signed in afresh
     asked: StatusAsked | None
+    acting: Acting | SkipJsonSchema[None] = None  # while it holds an act a role gives them
 
 
 class Autonomy(Shape):
@@ -1317,6 +1330,7 @@ class NotebookNow(Shape):
     entries: list[Note]
     hidden: int
     others: list[str]
+    acting: Acting | SkipJsonSchema[None] = None  # while it holds an act a role gives them
 
 
 class NoteRemoved(Shape):
@@ -1591,6 +1605,7 @@ class DecideNow(Shape):
 
     you: str
     proposals: list[HeldChange]
+    acting: Acting | SkipJsonSchema[None] = None  # while it holds an act a role gives them
 
 
 class Decided(Shape):
@@ -1629,6 +1644,7 @@ class GradeNow(Shape):
 
     you: str
     samples: list[SampleLine]
+    acting: Acting | SkipJsonSchema[None] = None  # while it holds an act a role gives them
 
 
 class Graded(Shape):
@@ -1659,6 +1675,7 @@ class VersionReview(Shape):
     you_approved: bool
     status: str  # waiting, applied, superseded, or why a5s couldn't apply it
     impact: Impact | SkipJsonSchema[None] = None  # while it waits: what it would do differently
+    acting: Acting | SkipJsonSchema[None] = None  # while it waits for their approval
 
 
 class Approved(Shape):
@@ -1671,6 +1688,14 @@ class Approved(Shape):
 
 
 # The data protection officer's requests, folded into the studio (core/officer_api.py)
+
+
+class OfficerNow(Shape):
+    """The officer's page, before they ask: who they are, and the line that says they act as
+    the data protection officer there."""
+
+    you: str
+    acting: Acting
 
 
 class OfficerAsked(Shape):

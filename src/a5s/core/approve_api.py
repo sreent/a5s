@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import parse_settings
-from a5s.core import approvals, impact, languages, ledger, memberships, registry, web
+from a5s.core import acting, approvals, impact, languages, ledger, memberships, registry, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -83,6 +83,13 @@ def router(gw: Any) -> APIRouter:
                  ) if asked else None  # who asked for it in the settings app, if anyone did
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         preview = impact.shown(gw, before, settings, person) if status == "waiting" else None
+        approves = status == "waiting" and person.id not in approved
+        rooted = memberships.rooted(gw.scenario).person
+        own = rooted(person.id)  # a role only the directory's giving counts as, for some needs
+        theirs = [role for role, _, only in registry.needed(
+                      settings, gw.scenario.person, [v for v in valid if v != person.id], before,
+                      rooted, spoken)
+                  if not only or (own is not None and role in own.roles)] if approves else []
         return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
                 **({"impact": preview} if preview is not None else {}),
                 "in_force": last["serial"] if last else None, "changes": found,
@@ -92,7 +99,8 @@ def router(gw: Any) -> APIRouter:
                 if status == "waiting" else [],
                 "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
                 "asked_by": asker, "you": person.name, "you_approved": person.id in approved,
-                "status": status}
+                "status": status,
+                **acting.shown(acting.approving(person, theirs, spoken) if approves else None)}
 
     @pages.post("/approve/settings/{version}", **shapes.answers(shapes.Approved))
     def approve(version: str, body: Approval, authorization: str | None = Header(default=None)

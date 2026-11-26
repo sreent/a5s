@@ -5,6 +5,14 @@ export type ActedFor = {
   name: string | null;
 };
 
+// Whose power a page that changes things uses, for the line across its top: the roles its
+// acts count as, in words, and what that lets someone do there (core/acting.py). A page that
+// only shows, or whose acts are someone's own, has none.
+export type Acting = {
+  role: string;
+  lets: string;
+};
+
 // An administrative act, as the ledger records it: who did it, when, and to what, with whom
 // it was about as a stand-in until the officer agrees to names.
 export type AdminAct = {
@@ -282,6 +290,7 @@ export type ChangeMade = {
   state: string;
   by?: string;
   outcome?: string;
+  acting?: Acting;
 };
 
 export type CoAuthors = {
@@ -345,6 +354,7 @@ export type Day = {
 export type DecideNow = {
   you: string;
   proposals: HeldChange[];
+  acting?: Acting;
 };
 
 // A decision recorded, for the core to check again, seal and act on: and the changes an
@@ -554,6 +564,7 @@ export type Figures = {
 export type GradeNow = {
   you: string;
   samples: SampleLine[];
+  acting?: Acting;
 };
 
 // Grades recorded, for the core to check again and seal.
@@ -612,6 +623,7 @@ export type Handover = {
   since: HandoverSince[];
   answers: HandoverAnswer[];
   ended: boolean;
+  acting?: Acting;
 };
 
 export type HandoverAnswer = {
@@ -885,6 +897,7 @@ export type NotebookNow = {
   entries: Note[];
   hidden: number;
   others: string[];
+  acting?: Acting;
 };
 
 export type Obligations = {
@@ -935,6 +948,13 @@ export type OfficerAsked = {
   by: string;
   lasts: string;
   command: string;
+};
+
+// The officer's page, before they ask: who they are, and the line that says they act as
+// the data protection officer there.
+export type OfficerNow = {
+  you: string;
+  acting: Acting;
 };
 
 // The agents, instances and parts nobody answers for.
@@ -1346,6 +1366,7 @@ export type ShadowPair = {
 export type Shadows = {
   pairs: ShadowPair[];
   shadows: ShadowFigures[];
+  acting?: Acting;
 };
 
 // Who signed in, the roles they hold, in words, the team that runs a5s first, and the pages
@@ -1421,6 +1442,7 @@ export type Standing = {
   suspended_by: string | null;
   may: string | null;
   asked: StatusAsked | null;
+  acting?: Acting;
 };
 
 // Suspending or resuming an instance from its page: which, and the salt the page made its
@@ -1595,6 +1617,7 @@ export type VersionReview = {
   you_approved: boolean;
   status: string;
   impact?: Impact;
+  acting?: Acting;
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still

@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { type Catalogue, type Figures, get, type Instance, type RunLine, type RunsPage, send,
          type Standing, type StatusAsked } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { Confirm, Skeleton, useToast } from "../design";
+import { ActingAs, Confirm, Skeleton, useToast } from "../design";
 import { locale, t } from "../i18n";
 import { levelName } from "../levels";
 import { Link } from "../router";
@@ -268,6 +268,7 @@ export function InstancePage({ id }: { id: string }) {
   }
   return (
     <>
+      <ActingAs acting={standing.data?.acting} />
       <PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } },
                          ...(inst ? [{ label: inst.agent, to: { page: "agent" as const, agent: inst.agent } }] : [])]}
                 title={inst?.id ?? t("An instance")} badges={inst && <StatusBadge status={inst.status} />}

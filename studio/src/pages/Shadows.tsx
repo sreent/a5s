@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { get, send } from "../api";
 import type * as gen from "../api.gen";
-import { Badge, useToast } from "../design";
+import { ActingAs, Badge, useToast } from "../design";
 import { t } from "../i18n";
 import { focusNext, PageHead, plural, StatusBadge, useLoad, Waiting, when } from "../ui";
 
@@ -77,6 +77,7 @@ export function ShadowsPage() {
   const { data, error } = useLoad(() => get<gen.Shadows>("/studio/api/shadows"), [again]);
   return (
     <>
+      <ActingAs acting={data?.acting} />
       <PageHead crumbs={[{ label: t("Home"), to: { page: "home" } }]} title={t("New versions, answering beside")}
                 about={t("A new version of an agent answers what people ask an instance, beside it, sending and changing nothing. Compare its answer with the one sent, never knowing whose it was, and say which is better: its owners decide from your grades whether to put it to work.")} />
       {!data && <Waiting error={error} />}
