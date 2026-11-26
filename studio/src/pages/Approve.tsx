@@ -120,7 +120,7 @@ export function ApprovePage({ version }: { version: string }) {
             {found.impact && <ImpactPreview impact={found.impact} />}
             {found.status === "waiting" && !found.you_approved && (  /* what agents may do, for everyone they serve */
               <ActionZone title={t("Approve it")} level={3} reach={[
-                t("Your approval counts towards version {serial}: once every approval it needs is in, a5s puts it in force within a minute, and each instance it names works as it says from its next message.", { serial: found.serial }),
+                t("Your approval counts towards version {serial}: once every approval it needs is in, a5s puts it in force, and each instance it names works as it says from its next message.", { serial: found.serial }),
                 (found.retires ?? []).length > 0 && t("It retires {instances}, which stop answering the people they serve at once, until a later version puts them back.", { instances: (found.retires ?? []).join(", ") }),
                 t("Approve only if you mean these changes: approving signs you in again, for this version alone, and only once."),
               ].filter(Boolean).join(" ")}>
