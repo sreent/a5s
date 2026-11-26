@@ -83,3 +83,17 @@ def test_each_migration_says_what_it_does_in_its_first_lines():
     for _, name, statements in db.migrations():
         assert statements.startswith("--"), name
         assert db.described(statements) != "it says nothing of itself", name
+
+
+def test_the_next_release_follows_the_one_recorded_last_after_a_rollback(database):
+    """After a rollback, the release a deployment runs is the one whose signatures its approval
+    job recorded last, so the next release follows that one, not the newer it went back from
+    (round 17, A3)."""
+    from a5s.core import ledger, releases
+
+    with db.transaction(database) as conn:
+        for release in ("older", "newer", "older"):  # deployed, upgraded, rolled back
+            ledger.append(conn, {"kind": "admin", "action": "approve-release", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"release": release}})
+        assert releases.following(conn) == "older"

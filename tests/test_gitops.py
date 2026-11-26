@@ -315,3 +315,63 @@ def test_the_chart_runs_the_environments_release_and_its_job_records_its_signatu
     images = {c["image"] for d in docs if d["kind"] == "Deployment"
               for c in d["spec"]["template"]["spec"]["containers"]}
     assert images == {IMAGE}  # every part runs the release, by its digest
+
+
+def test_reverting_the_merge_that_deployed_a_release_rolls_back_to_the_one_before(env, capsys,
+                                                                                tmp_path):
+    """Rolling back is reverting the merge that deployed a release: the folder is as it was,
+    and the check takes the release the one the environment runs followed, which it approved
+    and ran before, with no signature, as the runbooks say (round 17, A3)."""
+    manifest = released(capsys)
+    promote(env, manifest, capsys)
+    sign(env, *EVERYONE)
+    kept = tmp_path / "kept"  # the folder as the release before has it
+    shutil.copytree(env, kept)
+    promote(env, next_release(manifest), capsys)  # the upgrade
+    sign(env, "priya", "tomas")  # its agent's owner and an engineer
+    capsys.readouterr()
+    upgraded = as_it_runs(env, tmp_path)  # the branch it merges into, once it's deployed
+    shutil.rmtree(env)
+    shutil.copytree(kept, env)  # git revert of that merge
+    said = verify(env, capsys, upgraded)
+    assert "Ready to deploy: it's the release the one the environment runs followed" in said
+    assert "rolling back to it needs no signature" in said
+
+
+def test_a_rollback_past_a_migration_says_to_restore_the_database_first(env, capsys, tmp_path):
+    """Going back past a migration, the check says the release won't start on the database it
+    migrated, never that it adds no migration (round 17, A3)."""
+    manifest = released(capsys)
+    earlier, newest = earlier_release(manifest)
+    promote(env, earlier, capsys)
+    sign(env, *EVERYONE)
+    kept = tmp_path / "kept"
+    shutil.copytree(env, kept)
+    promote(env, manifest, capsys)  # the upgrade, which migrates
+    sign(env, *EVERYONE)
+    capsys.readouterr()
+    upgraded = as_it_runs(env, tmp_path)
+    shutil.rmtree(env)
+    shutil.copytree(kept, env)
+    said = verify(env, capsys, upgraded)
+    assert (f"It goes back past {newest}, which the release it replaces migrated the database "
+            "with: it won't start on that database, so restore the database from a backup "
+            "taken before them first") in said
+    assert "It adds no migration" not in said and "Ready to deploy" in said
+
+
+def test_a_rollback_past_a_security_fix_or_a_baseline_is_signed_again():
+    """Rolling back to the release before one that fixes an advisory brings the vulnerability
+    back, and past a baseline, who signed before it: those are signed again (round 17, A3)."""
+    before, now = b"version: before\n", b"version: now\n"
+    import hashlib
+
+    follows = hashlib.sha256(before).hexdigest()
+    for ran, kept in ((releases.Approval.of(now, follows=follows), True),
+                      (releases.Approval.of(now, follows=follows, advisory="GHSA-1"), False),
+                      (releases.Approval.of(now, follows=follows, baseline=True), False)):
+        verdict = releases.verify(before, [], None, "platform", now,  # type: ignore[arg-type]
+                                  releases.Approval.of(before), ran=ran)
+        assert (verdict.ok, verdict.back) == (kept, kept), verdict
+        if not kept:
+            assert "promote it again, as following the release it runs" in verdict.missing[0]

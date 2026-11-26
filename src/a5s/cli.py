@@ -677,6 +677,10 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
         return
     if problems or not verdict.ok:
         sys.exit("Not ready to deploy: " + "; ".join([*problems, *verdict.missing]))
+    if verdict.back:  # reverting the merge that deployed the release it runs (round 17, A3)
+        print("Ready to deploy: it's the release the one the environment runs followed, which "
+              "it approved and ran before, so rolling back to it needs no signature.")
+        return
     print("Ready to deploy: its signatures meet what it needs.")
 
 
