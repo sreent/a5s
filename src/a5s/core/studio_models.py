@@ -1592,6 +1592,7 @@ class HeldChange(Shape):
     status: str
     yours: str | None  # the viewer's decision, if they made one that counts
     may_decide: bool
+    undoable: bool  # whether a5s can reverse it once it's made, as its tool says
     outcome: str | None
     proposed_at: str
     lapses_at: str
@@ -1678,6 +1679,7 @@ class VersionReview(Shape):
     impact: Impact | SkipJsonSchema[None] = None  # while it waits: what it would do differently
     acting: Acting | SkipJsonSchema[None] = None  # while it waits for their approval
     retires: list[str] = []  # the instances in force that it leaves out, which it retires
+    needs_you: bool = False  # whether it waits for their approval, which counts towards it
 
 
 class Approved(Shape):

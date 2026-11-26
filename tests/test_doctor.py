@@ -245,3 +245,21 @@ def test_production_on_keys_a5s_publishes_is_to_fix(long_token, stack, monkeypat
     deployed(monkeypatch, stack, A5S_ENVIRONMENT="production", A5S_DEVELOPMENT=None)
     [deployment] = found("This deployment")
     assert deployment.state == "fix" and "keys a5s publishes" in deployment.said
+
+
+def test_a_test_deployment_whose_data_isnt_made_up_is_worth_a_look(long_token, stack,
+                                                                  monkeypatch):
+    """A deployment named a test keeps its band amber once the team's own data is in it: where
+    the settings in force class its data as anything but made-up, the doctor says to name it
+    production (round 17, B3)."""
+    deployed(monkeypatch, stack, A5S_ENVIRONMENT="test")
+    [made_up] = found("This deployment")
+    assert made_up.state == "ok"  # the sample's records are made up
+    with db.transaction(stack.admin) as conn:
+        raw = conn.execute("select serial, raw from settings_versions order by serial desc "
+                           "limit 1").fetchone()
+        conn.execute("update settings_versions set raw = %s where serial = %s",
+                     (bytes(raw["raw"]).replace(b"data_class: synthetic", b"data_class: personal"),
+                      raw["serial"]))
+    [real] = found("This deployment")
+    assert real.state == "look" and "class its data as personal" in real.said

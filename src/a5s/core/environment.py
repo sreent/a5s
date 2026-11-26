@@ -23,9 +23,8 @@ REAL = ("production", "staging")
 # What each kind of deployment means for whoever's on its pages, as its band says it
 ABOUT = {
     "production": "Real people and records: what you do here reaches them.",
-    "staging": "Before production: what you do here reaches the people and records it's set up "
-               "with alone.",
-    "test": "A test: what you do here reaches its test accounts and made-up records alone.",
+    "staging": "Before production, for the people and records it's set up with.",
+    "test": "A test, for test accounts and made-up records.",
     "development": "On this machine, for development: a5s takes people's word for who they are.",
 }
 UNNAMED = "Unnamed deployment"

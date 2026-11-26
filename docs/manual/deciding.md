@@ -43,7 +43,7 @@ A change that read content from outside always waits for a person, however far t
 
 1. Read its card, and open its records if you need to.
 2. To reject it, say why in *Why, if you reject it (optional)*. Whoever asked reads what you write.
-3. Choose **Approve** or **Reject**, in *Decide it* at the card's foot, which says first what each does: approved, the agent makes the change for whoever it was for within a minute, once every part it touches has approved it; rejected, a5s tells whoever asked.
+3. Choose **Approve** or **Reject**, in *Decide P-12* (the change's own name) at the card's foot, which says first what each does: approved, the agent makes the change for whoever it was for within a minute, once every part it touches has approved it; rejected, a5s tells whoever asked. Where a5s can't undo the change once it's made, as its tool says no way to, the zone is marked *Can't be undone* and says so; so is the list's, while one you ticked is such a change.
 4. Sign in again, for this decision alone, with your second factor where your organisation asks for one. a5s takes only a fresh sign-in, from the last ten minutes, and it decides this one change and nothing else.
 
 To decide several unflagged changes together, tick *Decide it with the others ticked* on each, then choose **Approve the ticked ones** or **Reject the ticked ones**, in *Decide the ticked ones together* at the list's foot. One sign-in decides up to 20, and a rejection of several carries no reason. A flagged change is always decided on its own.

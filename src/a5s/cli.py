@@ -738,6 +738,30 @@ def _unmigrated(command: str, exc: psycopg.errors.UndefinedTable) -> str | None:
             "and applies the settings.")
 
 
+def _status_said(done: dict) -> str:
+    """What suspending or resuming an instance did, and whom it reaches, as its page in the
+    studio says before it's done (round 17, B9)."""
+    n = done.get("serves", 0)
+    whom = "the one person it serves" if n == 1 else f"the {n} people it serves"
+    if "suspended" in done:
+        return (f"{done['suspended']} is suspended: it starts no runs, and {whom} "
+                f"{'hears' if n == 1 else 'hear'} nothing from it but that it's suspended, until "
+                "whoever suspended it, or the release approver, resumes it." if n else
+                f"{done['suspended']} is suspended: it starts no runs, and serves no one.")
+    return (f"{done['resumed']} is resumed: it answers {whom} again, and works on its own as its "
+            "settings say, from its next message." if n else
+            f"{done['resumed']} is resumed, though it serves no one.")
+
+
+def _ended_said(done: dict) -> str:
+    """What ending a change a5s stopped making did, and whom it reaches (round 17, B9)."""
+    told = done.get("told") or []
+    whom = (" and ".join(told) if len(told) < 3 else ", ".join(told[:-1]) + " and " + told[-1])
+    return (f"{done['ended']} is ended, as a change a5s stopped part way through making: "
+            + (f"{whom} {'is' if len(told) == 1 else 'are'} told." if told else
+               "it was for nobody, so nobody is told."))
+
+
 def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30) -> dict:
     return _core(cfg, lambda core: core.post(path, body) if body is not None else core.get(path),
                  timeout)
@@ -1135,14 +1159,12 @@ def _main(argv: list[str] | None = None) -> None:
                 state = "stopped" if row["gated_at"] else "answering"
                 print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
                       f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
-                if row["gated_at"]:  # whom putting it back reaches, said before it's done
-                    with db.connect(url) as conn:
-                        on = [r["id"] for r in health_mod.running_on(conn, row["model"])]
-                    reaches = ("no instance at work" if not on else
-                               f"{on[0]}, which calls it again from its next run" if len(on) == 1
-                               else f"{', '.join(on)}: each calls it again from its next run")
+                if row["gated_at"]:  # whom putting it back reaches, said before it's done,
+                    with db.connect(url) as conn:  # in the words the health page says it in
+                        reaches = health_mod.reached(*health_mod.reach(
+                            conn, build.scenario(cfg), row["model"]))
                     print(f"  Putting it back, as the release approver, with a5s health --restore "
-                          f"{row['model']}, reaches {reaches}.")
+                          f"{row['model']}: {reaches}")
 
     if args.command == "config":
         return _config(args)
@@ -1193,8 +1215,8 @@ def _main(argv: list[str] | None = None) -> None:
     elif args.command == "summaries":
         _summaries(cfg, args.person, args.agent)
     elif args.command in ("suspend", "resume"):
-        print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
-                     {"by": args.by, "identity": config.TOKEN.read()}))
+        print(_status_said(_admin(cfg, f"/instances/{args.instance}/{args.command}",
+                                  {"by": args.by, "identity": config.TOKEN.read()})))
     elif args.command == "export":
         found = _admin(cfg, f"/people/{quote(args.person, safe='')}/export",  # as the officer
                        {"by": args.by}, timeout=300)  # asked: it counts across the whole ledger
@@ -1258,8 +1280,8 @@ def _main(argv: list[str] | None = None) -> None:
     elif args.command == "proposals" and args.end:
         if not args.key:
             sys.exit("name the change to end, such as P-12")
-        print(_admin(cfg, f"/proposals/{args.key}/end",
-                     {"by": args.by, "identity": config.TOKEN.read()}))
+        print(_ended_said(_admin(cfg, f"/proposals/{args.key}/end",
+                                 {"by": args.by, "identity": config.TOKEN.read()})))
     elif args.command == "proposals":
         for p in _admin(cfg, "/proposals")["proposals"]:
             print(f"{p['key']} {p['status']} since {p['decided_at'] or p['proposed_at']}, "

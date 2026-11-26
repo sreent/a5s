@@ -104,12 +104,15 @@ def router(gw: Any) -> APIRouter:
                 log.exception("couldn't read the records of %s", proposals.key(row))
                 changed = list(row["records"])
             standing = row["standing"] or {}
+            tool = gw.scenario.tools().get(row["tool"] or "")
             shown.append({"key": proposals.key(row), "digest": row["digest"], "said": row["said"],
                           "agent": row["definition"],  # who asked, and for whom, as recorded
                           "for": [p.name if (p := gw.scenario.person(i)) else i
                                   for i in row["acts_for"]],
                           "flags": words.flags(row, spoken), "sensitive": row["sensitive"],
                           "status": row["status"], "yours": row["yours"], "may_decide": decides,
+                          # whether a5s can reverse it once it's made, as its tool says (round 17, B4)
+                          "undoable": bool(tool and tool.undo),
                           "outcome": row["outcome"] or (words.say(
                               spoken, proposals.WAITS_ANOTHER, key=proposals.key(row))
                               if row["digest"] in waits_another else None),

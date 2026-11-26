@@ -101,7 +101,7 @@ def router(gw: Any) -> APIRouter:
                 if status == "waiting" else [],
                 "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
                 "asked_by": asker, "you": person.name, "you_approved": person.id in approved,
-                "status": status, "retires": retires,
+                "status": status, "retires": retires, "needs_you": bool(set(theirs) & set(person.roles)),
                 **acting.shown(acting.approving(person, theirs, spoken) if approves else None)}
 
     @pages.post("/approve/settings/{version}", **shapes.answers(shapes.Approved))

@@ -294,10 +294,12 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
         two = {who for who in valid if (p := directory(who)) and {
             f"{PART_OWNER}:{part}", INSTANCE_APPROVER} & set(p.roles)}
         if len(two) < 2:
-            needs.append((INSTANCE_APPROVER, say(
-                language, "taking away or loosening the four eyes in {part} needs two people's "
-                "approval, its owner's and an instance approver's or another owner's, and it "
-                "has {count}", part=part, count=len(two)), False))
+            why = say(language, "taking away or loosening the four eyes in {part} needs two "
+                      "people's approval, its owner's and an instance approver's or another "
+                      "owner's, and it has {count}", part=part, count=len(two))
+            needs.append((INSTANCE_APPROVER, why, False))
+            needs.append((f"{PART_OWNER}:{part}", why, False))  # another of its owners counts
+            # too, so a page tells them it waits for them (round 17, B2)
     needs += [(f"{AGENT_OWNER}:{agent}", say(language, "the owner of the {agent} hasn't approved "
                                              "its budget", agent=agent), False)
               for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]

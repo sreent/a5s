@@ -24,6 +24,7 @@ import psycopg
 from a5s import build, config, db, definitions
 from a5s.client import Client, Refused
 from a5s.config import Config, load_models
+from a5s.contract import parse_settings
 from a5s.core import anchor, environment, health, releases, status
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 
@@ -97,9 +98,9 @@ def checked() -> list[Found]:
 
 
 def _deployment(development: bool, cfg: Config | None = None) -> list[Found]:
-    """Which deployment this is, as the band across the top of every page says it: unnamed
-    outside development, every page says to treat it as production, which is worth naming
-    (core/environment.py)."""
+    """Which deployment this is, as the core's settings here name it, which the band across the
+    top of every page says from the channels' own: unnamed outside development, every page says
+    to treat it as production, which is worth naming (core/environment.py)."""
     try:
         here = environment.here(development)
     except config.ConfigError:  # the settings' check names it
@@ -107,15 +108,37 @@ def _deployment(development: bool, cfg: Config | None = None) -> list[Found]:
                                                  "see above.")]
     if cfg is not None and (why := environment.published_refused(cfg.scenario_dir, cfg.root)):
         return [Found("This deployment", "fix", _sentence(f"The core won't start: {why}"))]
+    if here["named"] and here["kind"] in ("test", "staging") and cfg is not None and (
+            held := _classed(cfg)) not in (None, "synthetic"):  # real data, on a test's band (B3)
+        return [Found("This deployment", "look",
+                      f"The core's settings here name this {here['name']}, a {here['kind']} "
+                      f"deployment, and the settings in force class its data as {held}, not "
+                      "made-up: once real people's data is in it, name it production "
+                      "(A5S_ENVIRONMENT, or the chart's environment.kind), so every page says "
+                      "so.")]
     if not here["named"]:  # as the core's settings here have it, as the channels' should
         return [Found("This deployment", "look",
                       "Nobody has named this deployment, so the band across the top of every "
                       "page says to treat it as production: set A5S_ENVIRONMENT to production, "
                       "staging or test, and A5S_ENVIRONMENT_NAME to its name if you like, as the "
                       "chart's environment.kind and environment.name do.")]
-    return [Found("This deployment", "ok", f"As the core's settings here have it, every page's "
-                                           f"band says this is {here['name']}, a {here['kind']} "
-                                           "deployment: the channels' settings name it too.")]
+    return [Found("This deployment", "ok", f"The core's settings here name this {here['name']}, "
+                                           f"a {here['kind']} deployment. The band across every "
+                                           "page says what the channels' own settings name it, "
+                                           "which the chart and deploy/compose.yaml set from the "
+                                           "same values (round 17, B10).")]
+
+
+def _classed(cfg: Config) -> str | None:
+    """The class of data the settings in force give the scenario's records, if a5s can read
+    them here."""
+    try:
+        with db.transaction(cfg.database_url) as conn:
+            row = conn.execute("select raw from settings_versions order by serial desc "
+                               "limit 1").fetchone()
+        return parse_settings(bytes(row["raw"])).data_class if row else None
+    except (psycopg.Error, ValueError):  # the database's, or the settings', own check says why
+        return None
 
 
 def _credentials(today: date) -> list[Found]:

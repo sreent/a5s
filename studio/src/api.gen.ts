@@ -139,8 +139,8 @@ export type Asked = {
 
 // What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
 // its nonce was made with; and, to erase, their id typed again, as the page asks for it, since
-// an erasure can't be undone: checked here before the request is taken, exactly as the core
-// checks the id the team sends again when it carries it out (docs/design.md).
+// an erasure can't be undone: checked here before the request is taken, by the one rule the
+// core checks the id the team sends again by, letter case aside (docs/design.md).
 export type Asking = {
   action: string;
   person: string;
@@ -717,6 +717,7 @@ export type HeldChange = {
   status: string;
   yours: string | null;
   may_decide: boolean;
+  undoable: boolean;
   outcome: string | null;
   proposed_at: string;
   lapses_at: string;
@@ -1631,6 +1632,7 @@ export type VersionReview = {
   impact?: Impact;
   acting?: Acting;
   retires?: string[];
+  needs_you?: boolean;
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still

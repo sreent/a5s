@@ -10,12 +10,22 @@ import { Icon } from "../icons";
 import { shellOf } from "../Sidebar";
 import { initials } from "./people";
 
-let asked: Promise<Environment | null> | null = null;
+let asked: Promise<Environment> | null = null;
+
+/** Where a5s couldn't learn which deployment this is: production's band, as an unnamed one has
+ * it, since the band missing would read as somewhere safe (round 17, B7). */
+const UNKNOWN: Environment = {
+  kind: "production", name: "This deployment", named: false,
+  about: "a5s can't say just now which deployment this is: treat what you do here as real.",
+};
 
 /** Which deployment this is, as the channels say it, asked once for the page: it needs no
- * sign-in, so the sign-in's page says it too (core/environment.py). */
-export function environmentOf(): Promise<Environment | null> {
-  asked ??= fetch("/shell/environment").then((found) => (found.ok ? found.json() : null)).catch(() => null);
+ * sign-in, so the sign-in's page says it too (core/environment.py). Where the channels don't
+ * answer, production's band, and it's asked again the next time a page draws it. */
+export function environmentOf(): Promise<Environment> {
+  asked ??= fetch("/shell/environment")
+    .then((found) => (found.ok ? found.json() as Promise<Environment> : Promise.reject(new Error(String(found.status)))))
+    .catch(() => { asked = null; return UNKNOWN; });
   return asked;
 }
 

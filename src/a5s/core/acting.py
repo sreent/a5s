@@ -20,9 +20,7 @@ from typing import Any
 
 from a5s.contract import (
     AGENT_OWNER,
-    ASSURANCE,
     DATA_PROTECTION,
-    INSTANCE_APPROVER,
     PART_DELEGATE,
     PART_OWNER,
     RELEASE_APPROVER,
@@ -47,7 +45,6 @@ KEEPS = "a note you take out here, its agent no longer reads"
 TEAM = "one of the team that runs a5s"
 OWNS_IT = "Owner of this instance"
 DEPUTY_IT = "Deputy for this instance"
-SUSPENDED_IT = "the one who suspended it"
 
 
 def line(roles: Iterable[str], lets: str, language: str = languages.ENGLISH,
@@ -91,28 +88,24 @@ def grading(person: Person, shadows: bool = False,
     return line(named([samples.GRADER], language), SHADOWS if shadows else GRADES, language)
 
 
-APPROVING = (INSTANCE_APPROVER, DATA_PROTECTION, ASSURANCE)
-
-
 def approving(person: Person, needed: Iterable[str],
               language: str = languages.ENGLISH) -> dict | None:
     """Approving a version of the settings: the roles of theirs it needs, as core/registry.py's
-    `needed` says, or, where it needs none of theirs in particular, those they approve
-    versions by (registry.approves)."""
-    held = list(person.roles)
-    roles = [role for role in dict.fromkeys(needed) if role in held] or [
-        role for role in held
-        if role in APPROVING or role.startswith((f"{PART_OWNER}:", f"{AGENT_OWNER}:"))]
-    return line(named(roles, language), APPROVES, language)
+    `needed` says; none, where it needs nothing of theirs, whose approval would count towards
+    nothing (round 17, B2)."""
+    held = set(person.roles)
+    return line(named([role for role in dict.fromkeys(needed) if role in held], language),
+                APPROVES, language)
 
 
 def suspending(person: Person, inst: dict, action: str, team: str | None,
                language: str = languages.ENGLISH) -> dict | None:
     """Suspending or resuming an instance, which core/suspension.py's `may` lets them: why it's
-    theirs to do, by the same rules."""
+    theirs to do, by the same rules. Lifting their own suspension is their own act, which no
+    role lets them, so it says none (round 17)."""
     if action == "resume":
         if inst.get("suspended_by") == person.id:
-            return line([words.say(language, SUSPENDED_IT)], RESUMES, language)
+            return None
         if RELEASE_APPROVER in person.roles:
             return line(named([RELEASE_APPROVER], language), RESUMES, language)
         return None

@@ -105,3 +105,12 @@ def test_an_amount_changed_in_the_database_after_its_hold_still_needs_two():
     # B5: where the page can't read the settings in force, every part needs two there
     assert proposals.twice(decide_api.unknown(None), P2P, small) == {
         "payables": ("INV-9002", float("-inf"))}
+
+
+def test_another_owner_of_the_part_is_told_loosening_four_eyes_waits_for_them():
+    """Loosening four eyes in a part needs two people, its owner and an instance approver or
+    another of its owners: either one's role is named as what it needs, so each is told it
+    waits for them (round 17, B2)."""
+    before, after = otherwise(stricter_and_without_four_eyes)
+    roles = {role for role, _, _ in registry.needed(after, P2P.person, ["jules"], before)}
+    assert {INSTANCE_APPROVER, "part-owner:payables"} <= roles

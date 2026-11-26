@@ -2814,23 +2814,31 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(400, "say who you are, as someone in the directory")
         return body.by, "unverified (development)"
 
+    def serving(conn: db.Connection, instance: str) -> int:
+        """How many people an instance serves, as the directory says now: whom suspending or
+        resuming it reaches, which `a5s suspend` and `a5s resume` say (round 17, B9)."""
+        row = conn.execute("select serves from instances where id = %s", (instance,)).fetchone()
+        return len(registry.served(gw.scenario, (row and row["serves"]) or []))
+
     @services.post("/instances/{instance}/suspend")
     def suspend(instance: str, body: StatusChange) -> dict:
         by, identity = who_asks(body)
         with db.transaction(gw.url) as conn:
             problem = registry.set_status(conn, instance, by=by, suspend=True, identity=identity)
+            serves = serving(conn, instance)
         if problem:
             raise HTTPException(404, problem)
-        return {"suspended": instance, "by": by}
+        return {"suspended": instance, "by": by, "serves": serves}
 
     @services.post("/instances/{instance}/resume")
     def resume(instance: str, body: StatusChange) -> dict:
         by, identity = who_asks(body, loosens=True)
         with db.transaction(gw.url) as conn:
             problem = registry.set_status(conn, instance, by=by, suspend=False, identity=identity)
+            serves = serving(conn, instance)
         if problem:
             raise HTTPException(403, problem)
-        return {"resumed": instance, "by": by}
+        return {"resumed": instance, "by": by, "serves": serves}
 
     @services.post("/models/{alias}/restore")
     def restore_model(alias: str, body: StatusChange) -> dict:
@@ -4971,7 +4979,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "decision": "record", "args": {"proposal": key, "by": by,
                                                                 "identity": identity}})
         push(going["sends"])
-        return {"ended": key, "by": by}
+        return {"ended": key, "by": by,  # and whom it reaches, which the command says (B9)
+                "told": [q.name if (q := gw.scenario.person(i)) else i for i in p["acts_for"]]}
 
     @services.post("/caps/lower")
     def lower_cap(body: CapChange) -> dict:

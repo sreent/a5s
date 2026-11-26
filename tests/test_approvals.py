@@ -312,3 +312,14 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     stack.scheduler().apply_approved()
     assert serves(stack) == CHEN_TOO
     assert provider.asked[-1]["max_age"] == "0"
+
+
+def test_an_approver_the_version_needs_nothing_of_is_told_so(stack, approving, provider):
+    """A version that widens an instance in billing needs billing's owner: the owner of
+    orders, who approves versions too, is told it needs nothing of theirs, with no zone to
+    approve it in and no line saying their approval counts, as it would count for nothing
+    (round 17, B2)."""
+    asked = proposed(stack, serves=["ana", "ben", "chen"])  # widens assistant-finance, in billing
+    owner, other = (look(approving, provider, asked["digest"], who) for who in ("ana", "omar"))
+    assert owner["needs_you"] and owner["acting"]["role"] == "Owner of billing"
+    assert not other["needs_you"] and "acting" not in other
