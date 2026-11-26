@@ -272,6 +272,10 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     right.click()
     assert right.get_attribute("aria-pressed") == "false"
     right.click()
+    zone = page.locator(".action-zone")  # what the grades reach, said first, in their zone
+    assert zone.locator("#send").count() == 1
+    assert zone.locator(".action-zone-reach").inner_text().startswith(
+        "Your grades count towards whether the assistant may act on its own")
     page.click("#send")
     page.wait_for_selector("#status >> text=Graded right", timeout=30000)
     assert drawn(stack)[0]["grade"] == "right"

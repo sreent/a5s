@@ -1,0 +1,46 @@
+# a5s on the organisation's own cluster: its own Postgres, Keycloak, Matrix, a store with S3's
+# object lock such as MinIO, and a model it hosts itself (docs/first-day.md has each provider's
+# settings side by side). Fill each <...>, and install with
+# `helm install a5s deploy/helm/a5s -n a5s -f on-premises.yaml`. The Secret's keys are in
+# deploy/helm/README.md; `python3 deploy/reach-check.py` checks first that the cluster reaches
+# what a5s needs.
+
+environment:  # as a band across the top of every page says it: production once real people use it
+  kind: test
+  name: Pilot test
+
+image:  # the deployment's own image, built on the release's, by its digest (step 5)
+  repository: <registry>/a5s
+  digest: sha256:<the push's digest>
+
+people:  # Keycloak (step 2)
+  oidcIssuer: https://<keycloak host>/realms/<realm>
+  webchatClientId: <the a5s client's id>
+  oidcPersonClaim: preferred_username
+  oidcMfa: acr:<level>  # with a step-up flow that gives the level what counts needs
+  oidcGroupsClaim: groups
+  publicUrl: https://<host>
+
+matrix:  # a5s's application service on the homeserver, with its tokens in the Secret (step 3)
+  homeserver: https://<homeserver>
+  serverName: <server name>
+
+models:  # the approved models.yaml, with the hosted model's base_url, mounted from a ConfigMap
+  configMap: <a ConfigMap with models.yaml>
+
+anchor:  # a bucket with Object Lock on the store, its keys in the Secret (step 4)
+  store: s3://<bucket>/a5s
+  s3Endpoint: https://<the store's host>
+  s3Region: <its region, such as us-east-1>
+
+networkPolicies:
+  database:
+    podSelector:
+      matchLabels: {app: postgres}  # Postgres in the cluster, by its pods' labels
+  outside: ["<the networks a5s may reach outside the cluster, such as 10.0.0.0/8>"]
+
+ingress:
+  enabled: true
+  className: nginx  # or the cluster's ingress controller's class
+  host: <host>
+  tlsSecret: <the certificate's Secret>

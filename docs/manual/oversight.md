@@ -1,6 +1,16 @@
 # Auditing and administering
 
-For assurance, auditors, and everyone who looks after who holds which role. The team that runs a5s has its own [runbooks](../runbooks.md).
+For assurance, auditors, and everyone who looks after who holds which role. The team that runs a5s has its own [runbooks](../runbooks.md), and its own page, below.
+
+## How a5s is doing
+
+The Status page, `/studio/status`, is for the team that runs a5s, and says what `a5s status` says, as the core last recorded it, each minute:
+
+- **What needs someone,** first: *Now*, for what can't wait, out of hours too, such as the ledger's copies stopping or a change stopped part way through being made; then *In working hours*, such as a model that isn't answering, an instance someone suspended or a release this deployment hasn't approved. Each names the [runbook](../runbooks.md)'s section that says what to do. *Nothing needs anyone* when that's so.
+- **The release** a5s is, and whether this deployment approved it.
+- **The last day,** line by line: the queue, runs, denials, budgets, objectives, the ledger's copies, and the rest.
+
+The page says how long ago the core last said it. If that's more than a few minutes, the page says so first: the scheduler, which asks the core each minute, or the core itself may be away.
 
 ## Read the audit trail
 

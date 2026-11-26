@@ -7,6 +7,9 @@ import pytest
 from a5s import db
 from a5s.core import audit, health
 
+REACHES = ("assistant-finance calls it again from its next run, for the 2 people it "
+           "serves.")  # whom putting the sample's model back reaches: the watcher runs on another
+
 
 def fill(conn, scenario, alias, calls, stalls, failed=0):
     for i in range(calls):
@@ -85,7 +88,8 @@ def test_only_the_release_approver_puts_a_stopped_model_back_and_the_ledger_says
         assert refused.status_code == 403 and "release approver" in refused.json()["detail"]
         assert c.post("/models/elsewhere/restore", json={"by": "rosa"}).status_code == 404
         put = c.post("/models/fake/restore", json={"by": "rosa"})
-        assert put.status_code == 200 and put.json() == {"restored": "fake", "by": "rosa"}
+        assert put.status_code == 200 and put.json() == {"restored": "fake", "by": "rosa",
+                                                          "reaches": REACHES}
         again = c.post("/models/fake/restore", json={"by": "rosa"})
         assert again.status_code == 409  # it isn't stopped now
     with db.transaction(stack.admin) as conn:
@@ -134,7 +138,7 @@ def test_a5s_health_puts_a_model_back_through_the_core_as_the_release_approver(
     with pytest.raises(SystemExit, match="403"):
         cli.main(["health", "--restore", "fake", "--by", "ana"])
     cli.main(["health", "--restore", "fake", "--by", "rosa"])
-    assert capsys.readouterr().out == "fake is back, put there by rosa.\n"
+    assert capsys.readouterr().out == f"fake is back, put there by rosa. {REACHES}\n"
     assert [e["args"]["by"] for e in stack.ledger() if e.get("action") == "restore-model"] == [
         "rosa"]
 
@@ -160,4 +164,43 @@ def test_an_operator_puts_a_model_back_with_their_token_as_the_release_approver(
         cli.main(["health", "--restore", "fake", "--by", "rosa"])
     stack.gateway.cfg = replace(stack.gateway.cfg, team="platform")
     cli.main(["health", "--restore", "fake", "--by", "rosa"])
-    assert capsys.readouterr().out.endswith("fake is back, put there by rosa.\n")
+    assert capsys.readouterr().out.endswith(f"fake is back, put there by rosa. {REACHES}\n")
+
+
+# Whom putting it back reaches, said before it's done and once it is (docs/design.md)
+
+def test_the_health_report_and_page_say_whom_putting_a_stopped_model_back_reaches(
+        stack, approving, provider, monkeypatch, capsys):
+    from dataclasses import replace
+
+    from a5s import cli
+    from test_agent_asks import send
+
+    with db.transaction(stack.admin) as conn:
+        stopped(conn, stack.gateway.scenario.name)
+    monkeypatch.setenv("A5S_ROOT", str(stack.cfg.root))
+    monkeypatch.setenv("A5S_DATABASE_URL", stack.admin)
+    cli.main(["health"])
+    said = capsys.readouterr().out.splitlines()
+    assert said[0].startswith("fake ") and said[0].endswith(": stopped")
+    assert said[1] == ("  Putting it back, as the release approver, with a5s health --restore fake, "
+                       "reaches assistant-finance, which calls it again from its next run.")
+    [model] = send(approving, provider, "rosa", "GET", "/health/api").json()["models"]
+    assert model["reaches"] == REACHES  # on the page the release approver reads first
+    people = dict(stack.gateway.scenario._people)  # an engineer may read the page, not whom
+    people["tomas"] = replace(people["tomas"], roles=("engineer",))  # putting it back reaches
+    monkeypatch.setattr(stack.gateway.scenario, "_people", people)
+    [seen] = send(approving, provider, "tomas", "GET", "/health/api").json()["models"]
+    assert seen["gated_at"] and "reaches" not in seen
+    with db.transaction(stack.admin) as conn:
+        health.restore(conn, stack.gateway.scenario.name, "fake")
+    models = send(approving, provider, "rosa", "GET", "/health/api").json()["models"]
+    assert all("reaches" not in m for m in models)  # answering again: nothing to put back
+
+
+def test_whom_putting_a_model_back_reaches_reads_as_a_sentence():
+    assert health.reached([], 0).startswith("No instance at work runs on it")
+    assert health.reached(["assistant-finance"], 1) == (
+        "assistant-finance calls it again from its next run, for the one person it serves.")
+    assert health.reached(["a", "b", "c"], 12) == (
+        "a, b and c call it again from their next run, for the 12 people they serve.")

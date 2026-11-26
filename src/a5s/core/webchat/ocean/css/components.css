@@ -549,6 +549,7 @@ dialog.dialog::backdrop { background: rgba(10, 23, 36, 0.45); }
 body:has(dialog.dialog[open]) { overflow: hidden; }
 .dialog h2 { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
 .dialog p { margin: 0 0 var(--space-4); color: var(--muted); }
+.dialog > .form-field { margin: 0 0 var(--space-4); }  /* a word typed to confirm, apart from the answers */
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
 button.danger { color: var(--bad); border-color: var(--bad); }
 button.danger.primary { background: var(--bad); border-color: var(--bad); color: var(--surface); }
@@ -2742,3 +2743,56 @@ button.palette-open kbd { font-size: 0.75em; }
 @media (prefers-reduced-motion: no-preference) {
   .toast { animation: rise 120ms ease-out; }
 }
+
+/* Which deployment this is, on every page of every product (EnvironmentBand): across the top of the
+   window, over the sidebar and the page, and still there as the page scrolls. Production's is the
+   change's own colour, filled, as what's done there reaches people and the records others rely on; a
+   test's, a staging's or one on a person's own machine is the amber of what's written but not yet
+   relied on, at its well. Each says its name, and what that means, in words after its icon's shape,
+   so colour is never the only sign */
+.env-band { position: sticky; top: 0; z-index: 3; grid-column: 1 / -1; display: flex; align-items: center;
+            gap: var(--space-2); height: 2rem; margin: 0; padding: 0 1.5rem; overflow: hidden;
+            border-bottom: 2px solid var(--writes); background: var(--writes-bg); color: var(--text);
+            font-size: var(--text-sm); white-space: nowrap; }
+.env-band > .icon { flex: none; width: 1rem; height: 1rem; color: var(--writes); }
+.env-band > strong { flex: none; font-weight: 600; }
+.env-band > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.env-band.production { border-bottom-color: var(--changes); background: var(--changes); color: var(--surface); }
+.env-band.production > .icon { color: var(--surface); }
+body.app:has(.env-band) .sidebar { top: 2rem; height: calc(100vh - 2rem); }  /* below it, as the page scrolls */
+body.app.workbench:has(.env-band) .wb.window { height: calc(100vh - 2rem); }
+body.lone .env-band { position: fixed; inset: 0 0 auto; }
+body.lone:has(.env-band) { padding-top: calc(2rem + var(--space-6)); }
+@media (max-width: 760px) {
+  .env-band { padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right)); }
+  body.app:has(.env-band) .sidebar { top: auto; height: auto; }
+  body.app.workbench:has(.env-band) .wb.window { height: auto; }
+}
+
+/* Whose power a page uses, on a page that changes things (ActingAs): first in its main, before its head.
+   Their round initials, as a person is drawn everywhere, and in words the role their acts here count
+   as, with what it lets them do. In the person's own colour, never a warning's: it says who's acting,
+   not that something's wrong. A page that only shows has none, so its presence still means something */
+.acting-as { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4);
+             padding: var(--space-2) var(--space-3); border-inline-start: 4px solid var(--accent);
+             border-radius: var(--radius); background: var(--you); color: var(--text); font-size: var(--text-sm); }
+.acting-as > .avatar { width: 1.6rem; height: 1.6rem; font-size: 0.7rem; }
+.acting-as strong { font-weight: 600; }
+
+/* Where a page's consequential acts are (ActionZone): apart from what only shows, filters or saves a
+   draft, a section of their own at the end of the page or of the card they act on, its edge in the
+   change's colour. It says, before its buttons, whom and what they reach (.action-zone-reach), such as
+   who an instance stops answering. What can't be undone is in a zone of its own (.cant-undo), on the
+   failure's well, marked so in words beside a cross, its button the danger one; its Confirm asks for
+   the thing's name, typed. Friction follows the risk: an everyday act has no zone at all */
+.action-zone { display: grid; gap: var(--space-3); margin-block: var(--space-6) 0; padding: var(--space-4) var(--space-5);
+               border: 1px solid var(--line); border-inline-start: 4px solid var(--changes);
+               border-radius: var(--radius); background: var(--surface); }
+.action-zone > h2, .action-zone > h3 { margin: 0; font-size: var(--text-base); }
+.action-zone-reach { margin: 0; color: var(--text); }
+.action-zone .cluster { margin: 0; }
+.action-zone > :is(input, textarea) { width: 100%; }  /* a card's own actions, stacked: a reason before its yes and no */
+.action-zone.cant-undo { border-color: var(--bad); background: var(--bad-bg); }
+.action-zone-mark { display: inline-flex; align-items: center; gap: var(--space-1); margin: 0;
+                    color: var(--bad); font-size: var(--text-sm); font-weight: 600; }
+.action-zone-mark > .icon { width: 1rem; height: 1rem; }

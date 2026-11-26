@@ -18,7 +18,7 @@ export type Act =
   | { kind: "status"; action: "suspend" | "resume"; instance: string; salt: string }
   | { kind: "decide"; proposals: string[]; decision: "approve" | "reject"; salt: string; reason: string | null }
   | { kind: "grade"; grades: Record<string, string>; salt: string }
-  | { kind: "officer"; action: "export" | "erase"; person: string; salt: string }
+  | { kind: "officer"; action: "export" | "erase"; person: string; salt: string; confirm?: string }
   | { kind: "approve"; version: string; salt: string }
   | { kind: "undo"; change: string; salt: string };
 type Pending = { verifier: string; state: string; nonce: string; path: string; search?: string; act?: Act };

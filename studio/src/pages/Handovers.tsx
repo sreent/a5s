@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { get, send } from "../api";
 import type * as gen from "../api.gen";
-import { Badge, Confirm, useToast } from "../design";
+import { ActingAs, Badge, Confirm, useToast } from "../design";
 import { t } from "../i18n";
 import { Link } from "../router";
 import { focusNext, PageHead, plural, useLoad, Waiting, when } from "../ui";
@@ -56,6 +56,7 @@ export function HandoverPage({ id }: { id: string }) {
   };
   return (
     <>
+      <ActingAs acting={data?.acting} />
       <PageHead crumbs={[{ label: t("Home"), to: { page: "home" } }, { label: t("Handed over"), to: { page: "handovers" } }]}
                 title={data ? t("{person}, with the {agent}", { person: data.person, agent: data.agent }) : t("A conversation handed over")} />
       {!data && <Waiting error={error} />}

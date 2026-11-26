@@ -105,6 +105,8 @@ export type Catalogue = gen.Catalogue;
 
 // Every sidebar's pages, and who signed in (core/shell_api.py)
 export type Shell = gen.Shell;
+export type Environment = gen.Environment;  // which deployment this is, for every page's band
+export type Acting = gen.Acting;  // whose power a page that changes things uses, for its line
 export type Impact = gen.Impact;  // what a version of the settings would have done differently
 export type Place = gen.Place;
 
@@ -113,6 +115,7 @@ export type Home = gen.Home;
 export type Waiting = gen.Waiting;
 export type SettingsNow = gen.SettingsNow;
 export type HealthNow = gen.HealthNow;  // each model's day, measured (core/health_api.py)  // the settings, for someone who approves versions of them
+export type StatusNow = gen.StatusNow;  // how a5s is doing, as the core last said (core/status_api.py)
 export type SettingsReview = gen.SettingsReview;
 export type SettingsAsked = gen.SettingsAsked;
 export type Change = gen.Change;  // a change a version makes, in words, and whether it widens what agents do
@@ -135,6 +138,7 @@ export type GradeNow = gen.GradeNow;  // the samples someone may grade now
 export type SampleLine = gen.SampleLine;
 export type Graded = gen.Graded;
 export type OfficerAsked = gen.OfficerAsked;  // the officer's request, recorded
+export type OfficerNow = gen.OfficerNow;  // the officer, before they ask
 export type VersionReview = gen.VersionReview;  // a version of the settings, as its approvers read it
 export type Approved = gen.Approved;
 export type Standing = gen.Standing;  // how an instance stands, for its viewer: what waits, and what they may do

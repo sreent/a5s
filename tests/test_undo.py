@@ -217,11 +217,13 @@ def test_someone_undoes_a_change_on_its_page(stack, approving, provider, browser
     provider.person = "ben"
     tab = browser.new_page(viewport={"width": 1280, "height": 900})
     tab.goto(f"{approving}/studio/undo?change={change}")
-    tab.wait_for_selector("#change button.danger", timeout=30000)
+    tab.wait_for_selector("#change .action-zone #undo", timeout=30000)
     assert "Q-1002" in tab.inner_text("#change") and "Ben Okafor" in tab.inner_text("#change")
+    reach = tab.inner_text("#change .action-zone-reach")  # whom and what it reaches, first
+    assert "puts Q-1002 back as it was before the assistant changed it" in reach
+    assert "a5s tells Ben Okafor and those who run the assistant" in reach
     accessible(tab)
-    tab.click("#change button.danger")  # it asks first
-    tab.click("dialog[open] button.primary")  # then signs in afresh for this alone, and back
+    tab.click("#undo")  # signs in afresh for this alone, and back: no dialog besides
     tab.wait_for_selector("#change >> text=a5s is undoing it", timeout=30000)
     assert swept(stack)["undone"] == 1
     tab.wait_for_selector("#change .badge.good", timeout=30000)  # undone, by whom

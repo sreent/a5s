@@ -761,6 +761,15 @@ class Scheduler:
         except httpx.HTTPError:
             log.exception("couldn't ask the core to send the digests")
 
+    def seen(self) -> None:
+        """Ask the core to record how a5s is doing, for the studio's Status page, which can't
+        ask it: a record gone stale says the scheduler, which asks each minute, or the core is
+        away (core/status.py)."""
+        try:
+            self.gw.post("/status/seen", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core to record how a5s is doing")
+
     def apply_approved(self) -> None:
         """Ask the core to apply a version of the settings its instance approvers approved
         where they work, if one is waiting."""
@@ -882,7 +891,7 @@ class Scheduler:
                         if not slots.take(each, keep=slots.spare(each)):
                             continue  # its pool is full: it's due again at the next sweep
                         handed(each, lambda item=item: self._take(item))
-                    for then in (self.digest, self.decided, self.deliveries):
+                    for then in (self.digest, self.decided, self.deliveries, self.seen):
                         if not stop.is_set():  # those whose work is done: the rest next time
                             then()
                     if not stop.is_set() and time.monotonic() - kept > retain_every:

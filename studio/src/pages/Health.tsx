@@ -25,7 +25,8 @@ export function HealthPage() {
         <tbody>{now.models.map((m) => (
           <tr key={m.model} className={m.gated_at ? "gated" : ""}>
             <td><strong>{m.model}</strong>{m.gated_at ?
-                <span className="badge">{t("stopped until the release approver puts it back")}</span> : null}</td>
+                <span className="badge">{t("stopped until the release approver puts it back")}</span> : null}
+              {m.reaches && <p className="note reaches">{t("Putting it back: {reaches}", { reaches: m.reaches })}</p>}</td>
             <td>{m.calls}</td><td>{m.failed}</td><td>{m.stalls}</td>
             <td>{m.mean_seconds == null ? "—" : m.mean_seconds + "s"}</td>
             <td>{m.canary_passed} {t("passed")} · {m.canary_failed} {t("failed")}</td>

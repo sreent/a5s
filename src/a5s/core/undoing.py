@@ -39,7 +39,7 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.contract import Person, Scenario, Tool
-from a5s.core import languages, ledger, proposals, words
+from a5s.core import acting, languages, ledger, proposals, words
 from a5s.core.approvals import HASHED, Refused, afresh
 
 PAGE = "/studio/undo"  # its page, as ?change=<id>, on the channels' address
@@ -265,7 +265,9 @@ def shown(conn: db.Connection, scenario: Scenario, person: Person, change: int) 
             "until": row["until"].isoformat(), "whom": named, "may": why is None,
             "why_not": words.say(spoken, why) if why else None, "state": row["state"] or "kept",
             "by": by.name if by else (row["undone_by"] or row["asked_by"]),
-            "outcome": words.say(spoken, row["outcome"]) if row["outcome"] else None}
+            "outcome": words.say(spoken, row["outcome"]) if row["outcome"] else None,
+            **acting.shown(acting.undoing(person, scenario.part_of(row["record"]), spoken)
+                           if why is None and person.id not in row["acts_for"] else None)}
 
 
 def check(verifier: Any, scenario: Scenario, client_id: str, token: str, change: int, salt: str,

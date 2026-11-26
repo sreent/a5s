@@ -39,13 +39,16 @@ Most people do more than one of these: a part's owner decides changes, approves 
 | | Grading, `/studio/grade` | Graders |
 | | Shadows, `/studio/shadows` | Graders, and the people who follow a new version answering beside an instance |
 | | Settings, `/studio/settings` | Part owners, instance approvers, agents' owners, the data protection officer and assurance |
-| Oversee | Audit trail, `/studio/audit` | Auditors and assurance |
+| Oversee | Status, `/studio/status` | The team that runs a5s |
+| | Audit trail, `/studio/audit` | Auditors and assurance |
 | | Administration, `/studio/admin` | Those who own, approve, decide or oversee: owners, delegates, approvers, assurance, auditors, the data protection officer and the team that runs a5s |
 | | Spending, `/studio/spending` | Owners of agents, instances and parts, delegates, and instance approvers |
 | | Model health, `/studio/health` | The release approver and the team that runs a5s |
 | | Data protection, `/studio/officer` | The data protection officer |
 
 **Who you are, and what you may do.** a5s has no administrator's mode to switch into, or user mode to leave: what you see, and what you may do, follows from the roles you hold, and nothing else. The foot of every sidebar says who you're signed in as, and your roles, or *No roles: you work with agents*, and leads to `/studio/you`, *What you may do*, which lists each role you hold, what it lets you do, and what gave it you: your organisation's directory, or one of its groups. Roles come from there, never from a5s, and a role you lose stops working the next time you sign in.
+
+**Which deployment, and which of your roles.** A band across the top of every page, the sign-in's too, says which deployment you're on: production in a strong colour, filled, and a test, a staging or a developer's own machine in amber, so nobody does in one what they meant for the other. A page where you're about to use one of your roles' powers says so first, above its title: *Acting as Owner of billing: what you approve here, the agent that asked for it does in its records*. It's there only while the page holds something one of your roles lets you do, and names the role it counts as: changes to decide, samples or a new version's answers to grade, a version of the settings to approve, an instance you may suspend or resume, a change you may undo as a decider in its part, a conversation handed to your team, notes you may take out of a notebook, and the data protection officer's requests. A page that only shows has none, nor has one where what you do is your own, such as your tasks, or only asks, such as for a version of the settings, which its approvers approve on its own page, with the line.
 
 **Finding anything.** The palette opens with Ctrl+K, ⌘K on a Mac, or *Find anything* at the top of the sidebar, and finds any page, agent, instance or draft you may open, as you type, and what waits on you.
 

@@ -491,6 +491,17 @@ class Gateway:
             return []
         return self.releases.problems(conn, self.scenario, self.cfg.team)
 
+    def release_status(self, conn: db.Connection) -> dict | None:
+        """The release a5s is, for the status: its version and digest, and whether this
+        deployment approved it, with why not, or None in development, which runs any."""
+        current = self.releases.current if self.releases else None
+        if current is None:
+            return None
+        problems = self.release_problems(conn)
+        return {"version": current.version, "digest": current.digest,
+                "approved": None if self.cfg.development else not problems,
+                "problems": problems}
+
     @staticmethod
     def take_message(conn: db.Connection, inbound: str,
                      keep: bool = False) -> tuple[dict | None, str | None]:
@@ -1507,6 +1518,10 @@ def create_app(gw: Gateway) -> FastAPI:
     app = FastAPI(title="a5s gateway", docs_url="/docs" if explorer else None,
                   redoc_url="/redoc" if explorer else None)
 
+    @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
+    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+        return {"ok": True}
+
     @app.exception_handler(psycopg.OperationalError)
     def database_down(_request, exc: psycopg.OperationalError) -> JSONResponse:
         return JSONResponse(
@@ -2417,9 +2432,27 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             found = status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
                                   gw.data_protection(conn).flag_rubber_stamps,
-                                  gw.identity.cfg.mfa if gw.identity else False)
+                                  gw.identity.cfg.mfa if gw.identity else False,
+                                  scenario=gw.scenario.name)
+            found["release"] = gw.release_status(conn)
+        found["expiring"] = status.expiring(config.EXPIRES.read(),  # credentials, as noted
+                                            datetime.now(UTC).date())
         here = config.set_here()  # what the core runs with, as its environment gives it
-        return {**found, "configuration": {"set": here, "defaults": len(config.VARS) - len(here)}}
+        found["configuration"] = {"set": here, "defaults": len(config.VARS) - len(here),
+                                  # as `a5s dev` runs it, taking people's word and running
+                                  # any release (`a5s doctor` says so)
+                                  "development": gw.cfg.development}
+        return {**found, "needs": status.needs(found)}  # what needs someone, first
+
+    @services.post("/status/seen")
+    def status_recorded() -> dict:
+        """Record the status, as /status gives it, for the studio's Status page, which the
+        channels app serves and which can't ask the core: the scheduler asks each minute, so
+        a record gone stale says one of them is away."""
+        found = status_now()
+        with db.transaction(gw.url) as conn:
+            status.seen(conn, found)
+        return {"needs": len(found["needs"])}
 
     # The audit trail, for auditors and assurance (core/audit.py), behind the service token
 
@@ -2809,11 +2842,12 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             if not health.stopped(conn, gw.scenario.name, alias):
                 raise HTTPException(409, f"{alias} isn't stopped, so there's nothing to put back")
+            reaches = health.reached(*health.reach(conn, gw.scenario, alias))  # whom it reaches
             health.restore(conn, gw.scenario.name, alias)
             ledger.append(conn, {"kind": "admin", "action": "restore-model", "instance": None,
                                  "decision": "record", "args": {"by": by, "identity": identity,
                                                                 "model": alias}})
-        return {"restored": alias, "by": by}
+        return {"restored": alias, "by": by, "reaches": reaches}
 
     # What a worker may ask, with its run token.
 

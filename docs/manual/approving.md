@@ -26,7 +26,7 @@ A part's delegates decide agents' changes there, but approve no settings.
 The version's page, *Settings to approve*, says where it stands: *waiting for you*, *you approved it*, *in force*, *superseded* or *refused*. It lists who has approved it so far, what's still missing, and the whole version as it would be.
 
 1. Read what it changes, in words, and its [impact preview](#read-the-impact-preview).
-2. Choose **Approve version {n}**, only if you mean these changes.
+2. Choose **Approve version {n}**, only if you mean these changes. It's in *Approve it*, at the card's foot, which says first what approving does: once every approval the version needs is in, a5s puts it in force within a minute, and the instances it retires, if any, stop answering at once, until a later version puts them back.
 3. Sign in again, for this version alone, with your second factor where your organisation asks for one. Each sign-in approves once.
 
 a5s puts it in force within a minute once nothing more is missing; until then, the page says what still is.
@@ -77,6 +77,6 @@ The release approver counts only from outside the team that runs a5s. When a rel
 
 ## Put a stopped model back
 
-a5s stops a model that stalls on more than half of at least 20 calls in a day, and the Model health page, `/studio/health`, marks it *stopped until the release approver puts it back*. It stays stopped until the release approver, from outside the team that runs a5s, puts it back: `a5s health --restore <model>`, signed in as themselves, with their second factor where the organisation asks for one. The ledger records who did.
+a5s stops a model that stalls on more than half of at least 20 calls in a day, and the Model health page, `/studio/health`, marks it *stopped until the release approver puts it back*. It stays stopped until the release approver, from outside the team that runs a5s, puts it back: `a5s health --restore <model>`, signed in as themselves, with their second factor where the organisation asks for one. The ledger records who did. Before you do, the health page, and `a5s health`, say whom putting it back reaches: the instances at work on it, which call it again from their next run, and how many people they serve; and the command says it again once it's back.
 
 For how a5s works this out, see [policy](../architecture.md#policy) and [independence](../architecture.md#independence).

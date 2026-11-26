@@ -74,17 +74,16 @@ def test_a_sign_in_for_an_act_refused_at_the_provider_has_a_way_back(stack, appr
     provider.person = "ana"
     page = browser.new_page()
     page.goto(f"{approving}/studio/instances/assistant-finance")
-    page.wait_for_selector("button:has-text('Suspend it')", timeout=30000)
-    page.click("button:has-text('Suspend it')")
+    page.wait_for_selector("#suspend", timeout=30000)
     provider.refusing = ("access_denied", "The user cancelled the second factor.")
-    page.click("dialog[open] button:has-text('Sign in and suspend it')")
+    page.click("#suspend")
     card = page.wait_for_selector("#sign-in-failed", timeout=30000)
     assert "cancelled the second factor" in card.inner_text() and "Nothing was done" in card.inner_text()
     provider.refusing = None
     page.click("#sign-in-failed button:text-is('Sign in again')")
     page.wait_for_selector(".page-head h1 >> text=assistant-finance", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/instances/assistant-finance"
-    page.wait_for_selector("button:has-text('Suspend it')", timeout=30000)  # still theirs to do
+    page.wait_for_selector("#suspend", timeout=30000)  # still theirs to do
 
 
 def test_the_officers_refused_request_can_be_asked_again(stack, approving, provider, browser):
@@ -97,7 +96,7 @@ def test_the_officers_refused_request_can_be_asked_again(stack, approving, provi
     page.fill("#person", "ben")
     page.click("button:has-text('Sign in and ask')")
     page.wait_for_selector("#status:has-text(\"didn't take your request\")", timeout=30000)
-    assert page.locator("form#ask").count() == 1 and page.input_value("#person") == "ben"
+    assert page.locator("#whom").count() == 1 and page.input_value("#person") == "ben"
 
 
 def test_dropping_a_draft_asks_first_and_says_its_gone(stack, approving, provider, browser):

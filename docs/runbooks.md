@@ -2,11 +2,15 @@
 
 **Status:** Draft v0.1 · **Under:** [Architecture](architecture.md#operations)
 
-For the team that runs a5s. `a5s status` shows how a5s did over the last day, and the gateway's `/status` gives the same to a dashboard. Each section below says what to do when one of its lines goes wrong. Who's on call, and for what, is [below](#on-call).
+For the team that runs a5s. `a5s status` starts with what needs someone: *now*, for what pages out of hours ([on call](#on-call)), or *in working hours*, each naming the section below that says what to do, and the release a5s is and whether it's approved here; then it shows how a5s did over the last day. The gateway's `/status` gives the same to a dashboard, its `needs` the list, and the studio's Status page, `/studio/status`, shows it to the team as the core last recorded it, each minute. Each section below says what to do when one of its lines goes wrong.
 
 To follow one run, find its spans by `a5s.run.id`, where the deployment sends traces (`OTEL_EXPORTER_OTLP_ENDPOINT`), and its entries with `a5s ledger tail`, or `a5s runs show <run>`. Traces are for debugging. The ledger is the evidence.
 
-The gateway sends the status's figures to the same endpoint as OpenTelemetry metrics, each minute, named `a5s.*` ([`core/metrics.py`](../src/a5s/core/metrics.py)), so the organisation's monitoring can alert on them: `a5s.status.readable` at 0 when the gateway can't read its status, which is the database ([below](#connections-to-the-database-run-out)); `a5s.queue.oldest` when [messages are waiting](#messages-are-waiting); `a5s.breakers.open` when [a model isn't answering](#runs-fail-or-a-model-isnt-answering); `a5s.changes.stuck` and `a5s.unsealed` when [changes stop part way, or aren't sealed](#changes-wait-or-stop-part-way); `a5s.instances.not_active` when [an instance isn't active](#an-instance-isnt-active); and `a5s.ledger.copies.stopped` or `a5s.ledger.copies.failing` at 1, `a5s.ledger.copies.age` past half an hour, `a5s.ledger.check.problems` above 0, or `a5s.ledger.check.age` past two days, when [the ledger's copies stop](#the-ledgers-copies-stop), as the copier records them each minute it looks, or can't, and each day it checks the whole ledger. `a5s agents`, `a5s runs <instance>` and `a5s measures --instance <instance>` show one agent's or instance's part in it.
+The gateway sends the status's figures to the same endpoint as OpenTelemetry metrics, each minute, named `a5s.*` ([`core/metrics.py`](../src/a5s/core/metrics.py)), so the organisation's monitoring can alert on them: `a5s.status.readable` at 0 when the gateway can't read its status, which is the database ([below](#connections-to-the-database-run-out)); `a5s.queue.oldest` when [messages are waiting](#messages-are-waiting), and `a5s.scheduler.seen.age` past three minutes when the scheduler, which asks the core to record its status each minute, stops asking; `a5s.breakers.open` when [a model isn't answering](#runs-fail-or-a-model-isnt-answering); `a5s.changes.stuck` and `a5s.unsealed` when [changes stop part way, or aren't sealed](#changes-wait-or-stop-part-way); `a5s.instances.not_active` when [an instance isn't active](#an-instance-isnt-active); and `a5s.ledger.copies.stopped` or `a5s.ledger.copies.failing` at 1, `a5s.ledger.copies.age` past half an hour, `a5s.ledger.check.problems` above 0, or `a5s.ledger.check.age` past two days, when [the ledger's copies stop](#the-ledgers-copies-stop), as the copier records them each minute it looks, or can't, and each day it checks the whole ledger. `a5s agents`, `a5s runs <instance>` and `a5s measures --instance <instance>` show one agent's or instance's part in it. [`deploy/monitoring`](../deploy/monitoring/README.md) has these as Prometheus alert rules, the ones that page apart from the rest, and a Grafana dashboard.
+
+## Start with `a5s doctor`
+
+When something's wrong and it isn't yet clear what, or after installing or upgrading, run `a5s doctor` where the core runs, with its settings: `kubectl -n a5s exec deploy/a5s-gateway -- a5s doctor`, or `helm test a5s -n a5s`, which runs it in a pod of its own (`kubectl -n a5s logs pod/a5s-doctor`). It checks, in order, the settings, the database and its schema, the release and whether this deployment approved it, the settings in force, the core and its token, how people sign in, each model's key, the ledger's copies, and the credentials noted to expire. Each line says `ok`, `look at`, `fix` or `not checked`, what it found, and what fixes it: fix them in the order listed, as a later one may follow from an earlier, such as everything that reads the database from its being away. It reads, changes nothing, exits 1 while anything needs fixing, and with `--json` says the same for a script. Beside `a5s dev`, `uv run a5s doctor` checks the same: the core tells it that it runs for development, where a release nobody approved, nobody signing in and no locked copies of the ledger are only worth a look.
 
 ## On call
 
@@ -24,7 +28,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** the queue has messages waiting, the oldest for more than a few minutes.
 
-1. Check that the scheduler is running, and read its log. It has no port, so its log is the only way to see it.
+1. Check that the scheduler is running, and read its log. It has no port, but it asks the core to record its status each minute, so `a5s status` and the studio's Status page say when it last did, and that it may be away past three minutes.
 2. Check that it can reach the gateway, and the gateway the database.
 3. Restart the scheduler if it's stuck. A message outlives a scheduler that stops: the next one takes it again once the lease runs out, so nothing is lost or answered twice. A message whose run had begun isn't run again, since the run may have done something already: once the stopped scheduler's lease on it has lapsed two minutes, the core's next sweep closes the run as abandoned, and its person is told to send it again, unless they had their answer. A task's slice ends the same way, and the task goes on from what it kept.
 
@@ -33,10 +37,10 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 **Shows as:** runs ending `failed` or `model unavailable`, a breaker open, or a model stopped on the studio's health page.
 
 1. A breaker opens after three failures in a row, and a5s tries the model again every five minutes on its own. Where an agent's release names `fallbacks`, other approved models, a5s tries a failed call again on the next of them, and then the message, and people hear that the model isn't answering only once every one was tried; without fallbacks, they hear at once ([model fallbacks](model-fallbacks.md)).
-2. Check the provider's own status, and that its key is set where the gateway runs.
+2. Check the provider's own status, and that its key is set where the gateway runs. A key that isn't set fails every call to its models, and the core's log says so, at most once an hour for each key, naming it: `DEEPSEEK_API_KEY isn't set, so a5s can't call deepseek's deepseek-chat`. Set it where the core runs, and the sandbox, and start them again: [`config/models.yaml`](../config/models.yaml) names each model's key.
 3. A model that answers with another model's name is refused (`model_mismatch`). That's the provider changing its model, not a5s failing: tell the agent owner.
 4. a5s falls back only to the approved models a release names, never to one that isn't approved. Naming fallbacks, or moving an agent to another approved model, is a new release, which the release approver signs; a version of the settings may also put one instance on another approved model.
-5. a5s stops calling a model that stalls on more than half its calls in a day, once it has had 20, and the stop lasts, past midnight too, until a person puts it back. `a5s health` shows each model's day, and each stopped model, as the studio's health page, `/studio/health`, does. It reads the database and the scenario of wherever it runs, so run it where the core runs: `kubectl exec deploy/a5s-gateway -- a5s health`. Putting a model back loosens a5s, so only the release approver does it, once the provider answers again: `a5s health --restore <model>`, with their own sign-in in `A5S_TOKEN` and its second factor where the deployment asks for one, through the core, which records who did in the ledger. Only where nobody signs in, as in development, does `--by` name them.
+5. a5s stops calling a model that stalls on more than half its calls in a day, once it has had 20, and the stop lasts, past midnight too, until a person puts it back. `a5s health` shows each model's day, and each stopped model, as the studio's health page, `/studio/health`, does. It reads the database and the scenario of wherever it runs, so run it where the core runs: `kubectl exec deploy/a5s-gateway -- a5s health`. Putting a model back loosens a5s, so only the release approver does it, once the provider answers again: `a5s health --restore <model>`, with their own sign-in in `A5S_TOKEN` and its second factor where the deployment asks for one, through the core, which records who did in the ledger. Only where nobody signs in, as in development, does `--by` name them. Under each stopped model, `a5s health` names the instances putting it back reaches, and `--restore` says so again once it's back, with how many people they serve.
 6. For slow providers, the provider timeout is `A5S_PROVIDER_TIMEOUT` (180 seconds by default), the worker's calls to the core use `A5S_WORKER_TIMEOUT` (240), and the scheduler waits `A5S_WORKER_WAIT` (600) for a run: each must stay longer than the one before, or no part starts. The database's connection timeout is `A5S_DB_CONNECT_TIMEOUT` (2). Change them deliberately and record why, rather than letting calls wait forever.
 
 ## Budgets run out
@@ -132,12 +136,26 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 2. A note goes by itself once its records change, checked each day apart from the retention sweep, so a records system that's down holds up no other sweep: its notes wait to be checked. The notebook keeps its newest 50.
 3. A note can't carry anyone's words, nor anything from outside: only a run on a schedule writes one, from records it read, and it reaches only people who may see every record that run read. If one seems to, tell assurance, with the note's number.
 
+## Upgrading, and rolling back
+
+**When:** a new release of a5s is to be deployed, or one just deployed misbehaves.
+
+Migrations only go forward. A release won't start on a database a later release migrated, as it doesn't know what those migrations mean, so rolling back is redeploying the release before only while no migration has run. Past one, it means restoring the database. So know, before you upgrade, whether the release migrates.
+
+1. Before: run `helm test <release>`, or `a5s doctor` where a5s isn't on a cluster, and fix what it names, so whatever breaks next is the upgrade's.
+2. See what the release does to the database. Where Flux deploys a5s, `a5s release promote` says so, and so does the check on the pull request that deploys it: "It adds no migration", or "It migrates the database, with 0124_status_seen". Elsewhere, run `a5s migrate --pending` from the release you're upgrading to, its image or a5s installed at its version, with the database's address as its administrator: it names each migration it would run and what each does, and runs none.
+3. If it migrates, take a backup of the database first, and note which release runs now. A backup taken before the upgrade is the only way back past it.
+4. Upgrade as you deploy: merge the pull request that promotes it, where Flux deploys a5s; `helm upgrade` with its image, whose setup job migrates the database before the parts start; or, on the container stack, pull its images and `docker compose up -d`, whose `setup` migrates first. Migrations wait for a table's lock 15 seconds at most, and are tried three times, so one that can't get it fails the release rather than holding up a5s.
+5. After: `helm test <release>` or `a5s doctor` again, and `a5s status`, whose first line says whether anything needs someone now.
+
+To roll back a release that added no migration, revert the merge that deployed it, or `helm rollback <release>`, or deploy the image before. To roll back one that migrated the database, roll forward if you can, to a release that fixes what went wrong. If you can't: stop every part of a5s, restore the database from the backup taken before the upgrade, and deploy the release before as [restoring from a backup](#restoring-from-a-backup) says, `a5s restore` included, so what a5s did since the backup is back in its ledger.
+
 ## a5s won't start: the database is from a later release
 
 **Shows as:** a service exiting with "the database is at migration N, from a later release of a5s than this one".
 
 1. Someone rolled a5s back after a release migrated its database. The older release doesn't know what the newer migrations mean, such as messages from group chats, so it won't serve.
-2. Roll forward to the release that migrated it, or restore the database from before it, and roll back then. Migrations wait for a table's lock 15 seconds at most, and are tried three times, so one that can't get it fails the release rather than holding up a5s.
+2. Roll forward to the release that migrated it, or restore the database from the backup taken before it, and roll back then, as [upgrading, and rolling back](#upgrading-and-rolling-back) says.
 
 ## a5s won't start: the database is older than the release
 
@@ -161,10 +179,10 @@ The core seals what people approve, decide and grade, the caps it raises, the ch
 
 1. Make a new key of at least 32 characters, at random, and put it first in `A5S_SEAL_KEYS`, keeping the old one after it: `new,old`. Only the core holds the keys.
 2. Restart the core. Everything counts as before, and the status says how much is sealed with the old key: "Sealed with a key A5S_SEAL_KEYS is moving away from".
-3. Run `a5s seal-again` where the core runs, with its settings, such as `kubectl exec deploy/a5s-gateway -- a5s seal-again`. It seals again with the new key everything the old one sealed that still checks out, and retires the old key. What checks out under no key stays as it is, and counts for nothing, as before. It refuses until the core at work seals with the new key.
+3. Run `a5s seal-again` where the core runs, with its settings, such as `kubectl exec deploy/a5s-gateway -- a5s seal-again`, after `a5s seal-again --dry-run`, which does all of it, rolls it back, and says what it would seal again. It seals again with the new key everything the old one sealed that still checks out, and retires the old key. What checks out under no key stays as it is, and counts for nothing, as before. It refuses until the core at work seals with the new key.
 4. Take the old key out of `A5S_SEAL_KEYS` and restart the core. Keep it somewhere safe, apart from the core, for as long as you keep backups of the database it sealed: a restore from one of them needs it until `a5s seal-again` retires it again.
 
-If the key may have leaked, sealing again would make anything its holder sealed count. Run `a5s seal-again --leaked` instead at step 3: it retires the old key without sealing anything again, and says what stops counting with it. Then the settings must be approved again, graded samples must raise the caps again before an agent acts on its own, decisions still waiting are decided again, changes kept to undo can't be undone (whoever asks is told why), and people connect their accounts again: a5s lets go of their tokens at once, but a backup of the database still holds them, sealed with the leaked key, so revoke a5s's access at each system people connected. Take the leaked key out and restart the core straight away: until then, what it sealed still counts, the status says so, and a plain `a5s seal-again` refuses. A key retired as leaked never comes back: the core won't start with it.
+If the key may have leaked, sealing again would make anything its holder sealed count. Run `a5s seal-again --leaked` instead at step 3: it retires the old key without sealing anything again, and says what stops counting with it. `a5s seal-again --leaked --dry-run` says that first, and changes nothing, so whoever decides can weigh what's lost before it is. Then the settings must be approved again, graded samples must raise the caps again before an agent acts on its own, decisions still waiting are decided again, changes kept to undo can't be undone (whoever asks is told why), and people connect their accounts again: a5s lets go of their tokens at once, but a backup of the database still holds them, sealed with the leaked key, so revoke a5s's access at each system people connected. Take the leaked key out and restart the core straight away: until then, what it sealed still counts, the status says so, and a plain `a5s seal-again` refuses. A key retired as leaked never comes back: the core won't start with it.
 
 Each retirement is in the ledger, so `a5s restore` retires the key again after a restore from a backup taken before it.
 
@@ -177,6 +195,16 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 1. Make the operators' token at random, at least 32 characters, apart from the service token, and set it on the core, the chart's `operator-token` secret, and for whoever runs operators' commands. The scheduler never holds it.
 2. Reading the audit trail through the core needs the reader's own sign-in wherever people sign in: `a5s audit` sends it from `A5S_TOKEN`.
 3. To change either token, set the new one on the core and on what holds it, and restart both. Each run's opening in the ledger names the token behind it by a fingerprint, so the runs a leaked token opened show.
+
+## Credentials that expire
+
+**When:** you make a credential a5s holds that expires, such as a client secret an identity provider gives for two years at most, a repository's token, or an MCP server's; and when the status says one will.
+
+a5s can't see when most credentials expire, so whoever makes one notes the day: in `A5S_EXPIRES` on the core, such as `registry-secret=2027-05-01,mcp-token-tickets=2027-01-31`, or in the chart's `expires`, each named as you keep it, such as its key in the Secret. From 30 days before each, `a5s status`, the studio's Status page and `a5s doctor` say it expires, and once it's past, that whatever a5s reaches with it refuses it.
+
+1. Make a new one where the credential comes from, before the old one expires: most providers let both be good for a while.
+2. Set it where a5s takes it, such as its key in the Secret, and restart the parts that read it, which roll one pod at a time: `kubectl -n a5s rollout restart deploy`.
+3. Note when the new one expires in place of the old, and let the old one lapse, or revoke it.
 
 ## a5s won't start: a seal key is missing
 
@@ -192,6 +220,29 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 
 1. Each part keeps a pool of `A5S_DB_POOL_SIZE` connections, 10 by default, and connects afresh only as many again while they're all in use. Past that, work waits ten seconds for the pool and then fails, to be tried again. So each part uses at most twice its pool: size Postgres's limit to that, for every replica of each part.
 2. Work that waits behind the ledger's lock for 30 seconds fails, and is tried again: look for what held it, such as a slow records system read inside a transaction.
+
+## Nobody can sign in, or one person can't
+
+**Shows as:** a page or the web chat saying someone's sign-in doesn't check out, or that a5s doesn't know who they are.
+
+Each refusal names what the sign-in said against what a5s takes, and the setting that decides it, so read it out to whoever runs a5s ([the first day](first-day.md#2-peoples-sign-in)):
+
+1. **It's from another issuer**, or the identity provider names its issuer otherwise than `A5S_OIDC_ISSUER`: set it to exactly what the provider's tokens name, to the last slash. Entra ID's v1 tokens name `https://sts.windows.net/<tenant>/`, with the slash, and its v2 tokens `https://login.microsoftonline.com/<tenant>/v2.0`, without.
+2. **It's for another client:** `A5S_OIDC_AUDIENCE`, with the web chat's `A5S_WEBCHAT_CLIENT_ID`, names the client ids a5s takes tokens for. Add the one the refusal names, if it's a5s's.
+3. **It names nobody in the claim:** `A5S_OIDC_PERSON_CLAIM` names the claim that holds people's ids in the directory, and the refusal lists the claims the sign-in holds. Set it to the one people can't change: `oid` for Entra ID, or `sub`.
+4. **a5s doesn't know who they are:** the refusal says the id the sign-in names, and the one a5s looked for in the directory. For one person, the directory doesn't name them: add them where the scenario's directory comes from. For everyone, the claim is wrong, or `A5S_OIDC_DIRECTORY_PREFIX`, which a directory that knows people's accounts as `entra:<object id>` needs.
+5. **The identity provider couldn't be reached:** the core can't reach it, or its metadata isn't where a5s looks, at the issuer's `/.well-known/openid-configuration`: check the core's network, or set `A5S_OIDC_METADATA_URL`.
+6. **It has expired, or isn't valid yet:** the first, signing in again fixes. The second is the clocks of the provider and of the machines a5s runs on disagreeing by more than 30 seconds: set both by a time server.
+
+## A command stops, saying what to fix
+
+**Shows as:** a line from `a5s` naming what's wrong and what fixes it, where a traceback once was ([`tests/test_mistakes.py`](../tests/test_mistakes.py)).
+
+1. **It can't reach the database:** the line says where it looked, never with the password, and what Postgres said. Nothing answering there means Postgres isn't started, which `a5s up` does for development, or `A5S_DATABASE_URL` points elsewhere. A password Postgres won't take is `A5S_DATABASE_URL`'s, or, for a part's own role, the one `a5s migrate` gave it from `A5S_DB_<PART>_PASSWORD`.
+2. **It found none of a5s's tables:** the database isn't migrated: run `a5s migrate` as its administrator, or `a5s setup`, which migrates it and applies the settings.
+3. **It can't reach the core:** start it, as `a5s dev` does for development, or set `A5S_GATEWAY_URL` to where it is.
+4. **401 from the core:** the token isn't the core's: set `A5S_SERVICE_TOKEN`, or `A5S_OPERATOR_TOKEN` where the deployment sets one ([below](#the-operators-token)).
+5. **`a5s up` can't find Postgres:** install Postgres 16, or Docker Desktop on Windows; or run Postgres yourself, set `A5S_DATABASE_URL` to it, and run `a5s migrate` rather than `a5s up`.
 
 ## The database is away
 
@@ -230,7 +281,7 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 1. Settings: the reason names whose approval is missing, such as the owner of a part. They sign the version again, with their key, or approve it on a card. If an approver left, whoever holds the role now does.
 2. If the core's seal key was retired as leaked (`a5s seal-again --leaked`), approvals made on cards need making again ([rotating the seal key](#rotating-the-seal-key)).
 3. The release: `a5s release status` says what it still needs, and who must sign. Where Flux deploys a5s ([deploy/gitops](../deploy/gitops/README.md)), the check on the pull request that deploys it says the same, and nothing deploys until it passes; each person it still needs signs it in the environment's folder, `a5s release sign --environment`.
-4. To roll a release back where Flux deploys a5s, revert the pull request that deployed it: Flux deploys the release before, whose approval the core has recorded already.
+4. To roll a release back where Flux deploys a5s, revert the pull request that deployed it: Flux deploys the release before, whose approval the core has recorded already. A release that migrated the database needs the database restored too ([upgrading, and rolling back](#upgrading-and-rolling-back)).
 
 ## The ledger's copies stop
 
@@ -240,6 +291,24 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 2. Run `a5s ledger verify`, and tell assurance what it says.
 3. If the copier says the ledger's copies hold entries the database lacks, the database was restored from a backup: see below. If nobody restored it, someone wrote to the store with the copier's own credentials, its database role's and the store's, since only the copier marks a copy as its own: don't run `a5s restore`; change those credentials, and tell assurance.
 
+## Backing up, and a restore drill
+
+**When:** setting a5s up; then a drill each quarter, after any change to how the database is backed up, and in the pilot's shadow week.
+
+What a backup must hold, and what it needn't:
+
+- **The database**, which holds all a5s does: back it up as your Postgres does best, such as a managed service's automated backups with point-in-time recovery, or `pg_dump --format=custom` each night at least. Keep the backups encrypted and away from the cluster, for as long as [data protection](data-protection.md) says, and take one before each upgrade that migrates ([upgrading, and rolling back](#upgrading-and-rolling-back)).
+- **The seal keys**, `A5S_SEAL_KEYS`, in your secrets store, apart from the backups: a restore needs the keys that sealed what a backup holds, and a key that's retired, for as long as you keep backups it sealed ([rotating the seal key](#rotating-the-seal-key)). Keep them apart, as a backup holds people's tokens for the systems they connected, sealed with those keys.
+- **The ledger's locked copies** need no backup of their own: the store locks each, and `a5s restore` reads them to put back what the database lost since its backup. Keep each locked for longer than you keep backups: `A5S_ANCHOR_RETAIN_DAYS`, a year unless it's set longer.
+- The release and the settings are in git, people's keys are theirs, and the models' keys and the channels' credentials are in your secrets store: none of them is in the database.
+
+A drill shows a backup can bring a5s back, and how long that takes, without touching what runs:
+
+1. Restore the latest backup into a database of its own on the same server, such as `a5s_drill`, as you would restore it for real: `createdb a5s_drill`, then `pg_restore --dbname=a5s_drill <the backup>`, or the managed service's restore to a new database.
+2. With its address as the database's administrator in `A5S_DATABASE_URL`, run `a5s migrate --pending`: it says whether this release can serve it as it is. If it would migrate it, as when the backup is older than the release, run `a5s migrate` on the drill's database, which is the drill's own.
+3. With its address as the core's role, `a5s_gateway`, and the copier's store in `A5S_ANCHOR_STORE`, run `a5s restore --dry-run` where the copier's store can be read, such as in the copier's container. It does all a restore would, then rolls it back, and says what it would have done: how many of the ledger's entries since the backup it would put back from the copies, which messages it would take as answered, whom it would erase again. It reads the copies and writes to them never. If the backup's ledger doesn't match its copies, it says so, which is what the drill is for.
+4. Drop the drill's database, `dropdb a5s_drill`, and note the date, how long the restore took, and how old the backup was: what a real restore would lose beyond the ledger's copies.
+
 ## Restoring from a backup
 
 **When:** the database is lost or damaged, and you restore it from a backup.
@@ -247,7 +316,7 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 A database restored from a backup lacks what a5s did since the backup was taken: the ledger stops there, though its locked copies go on, and what a5s sent since looks unsent.
 
 1. Stop every part of a5s, and restore the database from the backup.
-2. Before any part starts, setup included, run `a5s restore` with the core's database address, as its role, and the copier's store: in the copier's container, which reaches the store, with the core's address in its place. On the container stack, `docker compose run --rm --no-deps -e A5S_DATABASE_URL=postgresql://a5s_gateway:<the core's password>@postgres:5432/postgres anchor restore`. On a cluster, install or upgrade the chart with `restore.id` set to the backup's name, such as `--set restore.id=<the backup's name>`, or in the environment's values where Flux deploys it: a job runs `a5s restore --id <the backup's name>` first, before setup, as `<release>-restore`, an account with the copier's annotations and labels, and the parts start once it's done. It runs once for each name, so the value can stay until the next restore: a later upgrade, one that brings a migration too, finds it done and goes on. While `restore.id` is set, a job migrates the schema first, `<release>-migrate`, which writes nothing to the ledger, as the restore needs the schema of the image it runs. Setup applies the settings, which writes to the ledger, so it runs only after. Elsewhere, if `a5s restore` says the database needs migrating, as when the image is newer than the backup, run `a5s migrate` first, as the administrator. Then `a5s restore`:
+2. Before any part starts, setup included, run `a5s restore` with the core's database address, as its role, and the copier's store: in the copier's container, which reaches the store, with the core's address in its place. On the container stack, `docker compose run --rm --no-deps -e A5S_DATABASE_URL=postgresql://a5s_gateway:<the core's password>@postgres:5432/postgres anchor restore`. On a cluster, install or upgrade the chart with `restore.id` set to the backup's name, such as `--set restore.id=<the backup's name>`, or in the environment's values where Flux deploys it: a job runs `a5s restore --id <the backup's name>` first, before setup, as `<release>-restore`, an account with the copier's annotations and labels, and the parts start once it's done. It runs once for each name, so the value can stay until the next restore: a later upgrade, one that brings a migration too, finds it done and goes on. While `restore.id` is set, a job migrates the schema first, `<release>-migrate`, which writes nothing to the ledger, as the restore needs the schema of the image it runs. Setup applies the settings, which writes to the ledger, so it runs only after. Elsewhere, if `a5s restore` says the database needs migrating, as when the image is newer than the backup, run `a5s migrate` first, as the administrator. `a5s restore --dry-run` says first what it would do, and does none of it. Then `a5s restore`:
    - puts back into the ledger the entries its copies hold beyond it, each as its copy has it, from the copies the copier marked as its own alone;
    - takes as answered each message, as worked on each event, and as fired each schedule, whose run opened since the backup, as those entries say, so no agent answers or acts on one again, nor makes again a change it made;
    - erases again each person an erasure since the backup erased, whom the backup brings back, keeping nothing of theirs, not even where a5s writes to them first, which comes back once they write; and names any it can't, such as an archive erased by its name, or a customer erased by their address, which the ledger keeps only by its digest, for the data protection officer to ask again;
@@ -278,7 +347,7 @@ Until `a5s restore` runs, the copier copies nothing, saying "the ledger's copies
 **Shows as:** the data protection officer asking a5s to erase what it keeps about someone, at their request.
 
 1. Export it first, if the officer wants a copy of what goes (above): erasure can't be undone.
-2. The officer asks on their page in the studio, as for an export: erase, with the id twice. The team runs `a5s erase --person <id> --confirm <id>` within ten minutes, with the id twice again, so that a mistyped one erases nobody.
+2. The officer asks on their page in the studio, as for an export: erase, typing the id again when it asks, which the channels app checks before it takes the request. The team runs `a5s erase --person <id> --confirm <id>` within ten minutes, with the id twice again, so that a mistyped one erases nobody.
 3. By an id, it erases what its holder now has said since the id's last archive, and lists the archives, which it leaves: if the person asking has left, the officer asks to erase their archive by its name instead, and the team erases that the same way. Check the page's name for the id against the person asking.
 4. If a5s is at work for them just then, it says so and erases nothing: try again in a minute or two, while the request lasts. For an address, it waits too while a change that names them waits for a decision, naming it: its deciders decide it first, and the request lasts through the refusal.
 5. It says how much of each kind went. What's evidence of what agents did stays: the ledger, runs, the changes asked for them with their decisions and samples, and what they owe while the records owe it. If they're still here, a5s still writes to them where it did, without a word they said.

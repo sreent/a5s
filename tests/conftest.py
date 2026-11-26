@@ -520,6 +520,9 @@ SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's f
 RUNNING: list[Any] = []  # the systems themselves
 # Where a made-up system whose changes its scenario's code reads, such as SAP's, keeps them
 os.environ["A5S_SYSTEMS_STATE"] = tempfile.mkdtemp(prefix="a5s-systems-")
+# The deployments the tests make are tests, as every page's band says, as a deployment of the
+# sample would name itself (core/environment.py); a test about the band sets its own
+os.environ.setdefault("A5S_ENVIRONMENT", "test")
 SANDBOX_STATE = Path(tempfile.mkdtemp(prefix="a5s-sandbox-systems-"))  # the sandbox's copies'
 SPARE = 100  # how far the sandbox's copy of each system is from it, as each mcp.yaml says
 
@@ -886,14 +889,24 @@ def with_sandbox(stack: Stack, box: Any) -> Iterator[str]:
 PHONE = {"width": 390, "height": 844}
 
 
+# Whether what animates once on a page, such as a toast rising into place, has finished: what
+# animates for ever, such as a skeleton's shimmer, never does, so it doesn't count
+SETTLED = """() => document.getAnimations().every((animation) => {
+    const timing = animation.effect && animation.effect.getComputedTiming();
+    return !timing || timing.iterations === Infinity || animation.playState !== "running";
+})"""
+
+
 def accessible(page) -> None:
     """Axe finds nothing amiss on a page, light or dark, as wide as it is and as wide as a
-    phone, by WCAG's rules and its best practices."""
+    phone, by WCAG's rules and its best practices: once what animates in has settled, so axe
+    judges the page as people read it, not a frame of a toast's entrance, half faded in."""
     size = page.viewport_size
     for viewport in [size, PHONE] if size and size != PHONE else [PHONE]:
         page.set_viewport_size(viewport)
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
+            page.wait_for_function(SETTLED, timeout=10000)
             found = Axe().run(page, options={"resultTypes": ["violations"]})
             assert found.violations_count == 0, (f"{scheme}, {viewport['width']} wide: "
                                                  f"{found.generate_report()}")

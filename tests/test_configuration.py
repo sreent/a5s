@@ -252,6 +252,8 @@ def rendered(*values: str, sandbox: bool = False, sets: tuple[str, ...] = ()) ->
 
 def pod(doc: dict) -> dict:
     spec = doc.get("spec") or {}
+    if doc.get("kind") == "Pod":  # one of its own, as `helm test`'s doctor is
+        return spec
     spec = (spec.get("jobTemplate") or {}).get("spec", spec)
     return (spec.get("template") or {}).get("spec") or {}
 
@@ -319,6 +321,32 @@ def test_the_charts_pods_are_given_no_service_links():
     assert pods and all(p.get("enableServiceLinks") is False for p in pods)
 
 
+def test_helm_test_runs_the_doctor_with_the_cores_settings():
+    """`helm test` runs `a5s doctor` in a pod of its own, with the core's settings, account and
+    models, reaching the core where the other parts do, which lets it in (docs/runbooks.md)."""
+    docs = rendered("ci-values.yaml")
+    [doctor] = [d for d in docs if d["kind"] == "Pod" and d["metadata"]["name"] == "a5s-doctor"]
+    [gateway] = [d for d in docs if d["kind"] == "Deployment"
+                 and d["metadata"]["name"] == "a5s-gateway"]
+    assert doctor["metadata"]["annotations"]["helm.sh/hook"] == "test"
+    spec, [container] = pod(doctor), containers(doctor)
+    assert container["args"] == ["doctor"] and spec["restartPolicy"] == "Never"
+    assert spec["serviceAccountName"] == pod(gateway)["serviceAccountName"] == "a5s-gateway"
+    env = {e["name"]: e for e in container["env"]}
+    core = {e["name"]: e for c in containers(gateway) if c["name"] == "gateway" for e in c["env"]}
+    assert set(core) <= set(env) and all(env[n] == e for n, e in core.items()
+                                         if n != "A5S_GATEWAY_URL")
+    assert env["A5S_GATEWAY_URL"]["value"] == "http://a5s-gateway:8700"
+    [allowed] = [d for d in docs if d["kind"] == "NetworkPolicy"
+                 and d["metadata"]["name"] == "a5s-gateway"]
+    sources = [f["podSelector"]["matchLabels"].get("app.kubernetes.io/component")
+               for f in allowed["spec"]["ingress"][0]["from"] if "matchLabels" in f["podSelector"]]
+    assert "doctor" in sources
+    [own] = [d for d in docs if d["kind"] == "NetworkPolicy"
+             and d["metadata"]["name"] == "a5s-doctor"]
+    assert own["metadata"]["annotations"]["helm.sh/hook"] == "test"
+
+
 def test_the_copier_copies_within_15_minutes_unless_its_told_otherwise(monkeypatch, tmp_path):
     every: list[int | None] = []
     monkeypatch.setattr(cli, "_anchor", lambda cfg, n: every.append(n))
@@ -348,9 +376,10 @@ def test_the_chart_gives_the_core_alone_the_tokens_of_mcp_servers_and_repositori
                 if env["name"].startswith(("A5S_MCP_", "A5S_REPOSITORY_")):
                     key = env["valueFrom"]["secretKeyRef"]["key"]
                     held.setdefault(f"{env['name']}={key}", set()).add(doc["metadata"]["name"])
-    assert held == {"A5S_MCP_TICKETS_TOKEN=mcp-token-tickets": {"a5s-gateway"},
-                    "A5S_MCP_DEVICES_TOKEN=mcp-token-devices": {"a5s-gateway"},
-                    "A5S_REPOSITORY_DELIVERY_TOKEN=repository-token-delivery": {"a5s-gateway"}}
+    core = {"a5s-gateway", "a5s-doctor"}  # and `helm test`'s doctor, with the core's settings
+    assert held == {"A5S_MCP_TICKETS_TOKEN=mcp-token-tickets": core,
+                    "A5S_MCP_DEVICES_TOKEN=mcp-token-devices": core,
+                    "A5S_REPOSITORY_DELIVERY_TOKEN=repository-token-delivery": core}
     assert all(config.known(name.split("=")[0]) for name in held)
     for doc in rendered("ci-values.yaml"):  # and none, unless the values name them
         for container in containers(doc):

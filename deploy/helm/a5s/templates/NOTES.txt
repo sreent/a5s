@@ -6,16 +6,36 @@ that address, sandbox.release and sandbox.namespace to this release's, and the s
 sandbox-token in its Secret, and the studio tries people's drafts here, on the scenario's
 made-up records, with {{ ternary "the stand-in model or an approved one it has the key for" "the stand-in model alone" .Values.sandbox.realModels }}.
 {{- else -}}
-a5s is installed as {{ .Release.Name }}, in {{ .Release.Namespace }}.
+{{- $in := printf "kubectl -n %s exec deploy/%s-gateway --" .Release.Namespace .Release.Name -}}
+a5s is installed as {{ .Release.Name }}, in {{ .Release.Namespace }}. Next:
 
-The core opens no run until this deployment's people approve the release it runs:
-  kubectl -n {{ .Release.Namespace }} exec deploy/{{ .Release.Name }}-gateway -- a5s release show > release.yaml
-Each person its changes need signs it with their own key (a5s release sign --as <them>), and
-a ConfigMap with release.yaml and release.sig, named in release.approval, records it at the
-next upgrade. `a5s release status` in the gateway says what's still needed.
+1. Check it as a whole, which reads and changes nothing:
+     helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+     kubectl -n {{ .Release.Namespace }} logs pod/{{ .Release.Name }}-doctor
+   says on each line what it found, and what to fix first.
+{{- if .Values.release.approval }}
+
+2. The release's approval, in the ConfigMap {{ .Values.release.approval }}, was recorded as this
+   upgrade went in. Whether it's approved here:
+     {{ $in }} a5s release status
+{{- else }}
+
+2. The core opens no run until this deployment's people approve the release it runs. Who
+   must sign it, and why, each named as the directory has them:
+     {{ $in }} a5s release status
+   Each signs its manifest with their own key, on their own machine:
+     {{ $in }} a5s release show > release.yaml
+     a5s release sign --as <them> --key <their key>
+   Then a ConfigMap with release.yaml and release.sig, named in release.approval, records
+   their signatures at the next upgrade.
+{{- end }}
+
+3. Whether anything needs someone, now or in working hours, and what to do:
+     {{ $in }} a5s status
 {{- if .Values.ingress.enabled }}
 
-People reach a5s at https://{{ .Values.ingress.host }}.
+People reach a5s at https://{{ .Values.ingress.host }}: the studio at /studio/, the web chat at
+/chat/.
 {{- else }}
 
 Nothing outside the cluster reaches a5s yet: set ingress.enabled, with a host, for people and

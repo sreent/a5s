@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER
-from a5s.core import approvals, languages, ledger, proposals, web, words
+from a5s.core import acting, approvals, languages, ledger, proposals, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -88,6 +88,7 @@ def router(gw: Any) -> APIRouter:
                              and r["yours"] == "approve" and not proposals.settled(
                                  conn, gw.scenario, r, two)}
         shown = []
+        deciding: list[list[str]] = []  # the parts of each change they may decide now
         for row in rows:
             waits = row["status"] == "waiting"
             decides = waits and proposals.may_decide(gw.scenario, row, who)
@@ -95,6 +96,8 @@ def router(gw: Any) -> APIRouter:
                 continue  # they no longer own what it touches, or may no longer see it
             if len(shown) >= 50:
                 break
+            if decides:
+                deciding.append(list(row["parts"] or []))
             try:
                 changed = proposals.changed(gw.scenario, row) if waits else []
             except Exception:  # the records system didn't answer: say so, rather than nothing
@@ -117,7 +120,8 @@ def router(gw: Any) -> APIRouter:
                                       if r and r.get("link")],
                           "changed": [words.say(spoken, proposals.CHANGED, key=k)
                                       for k in changed]})
-        return {"you": person.name if person else who, "proposals": shown}
+        return {"you": person.name if person else who, "proposals": shown,
+                **acting.shown(acting.deciding(person, deciding, spoken) if person else None)}
 
     @pages.post("/decide/proposals", **shapes.answers(shapes.Decided))
     def decide_proposals(body: Deciding, authorization: str | None = Header(default=None)

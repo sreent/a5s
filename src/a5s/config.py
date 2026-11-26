@@ -26,6 +26,7 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Final, NamedTuple
 from urllib.parse import urlsplit
@@ -119,6 +120,21 @@ def _pairs(of: Parse, example: str) -> Parse:
             found[agent.strip()] = of(value)
         return found
     return parse
+
+
+def _days(given: str) -> dict[str, date]:
+    """credential=YYYY-MM-DD, by commas: the day each credential expires."""
+    found: dict[str, date] = {}
+    for item in _items(given):
+        name, sep, day = item.partition("=")
+        try:
+            if not sep or not name.strip():
+                raise ValueError
+            found[name.strip()] = date.fromisoformat(day.strip())
+        except ValueError:
+            raise ValueError(f"{item!r} isn't a credential and the day it expires, such as "
+                             "registry-secret=2027-05-01") from None
+    return found
 
 
 def _json_list(given: str) -> list[dict[str, Any]]:
@@ -258,6 +274,20 @@ SEAL_KEYS = Var("A5S_SEAL_KEYS", "the core's own keys, sealing what people appro
                 "grade: the first seals, the others are ones it's moving from, until `a5s "
                 "seal-again` retires them (docs/runbooks.md#rotating-the-seal-key)", (), _items,
                 "keys, by commas", secret=True, area=CORE, file=".a5s/seal-key")
+ENVIRONMENT = Var("A5S_ENVIRONMENT", "which kind of deployment this is, as a band across the top "
+                  "of every page says it: production, staging or test. Unset, every page beside "
+                  "`a5s dev` says development, and every other page says to treat it as "
+                  "production (docs/configuration.md)", None, _matching(r"production|staging|test"),
+                  "production, staging or test", area=CORE)
+ENVIRONMENT_NAME = Var("A5S_ENVIRONMENT_NAME", "this deployment's name, as every page's band says "
+                       "it, such as Pilot test, if not its kind's", None, _text, "a short name",
+                       area=CORE)
+EXPIRES = Var("A5S_EXPIRES", "when the credentials a5s holds expire, as whoever made each noted "
+              "it, such as a client secret an identity provider gives for two years at most: the "
+              "status says so 30 days before each, and once it's past "
+              "(docs/runbooks.md#credentials-that-expire)", None, _days,
+              "credential=YYYY-MM-DD pairs, by commas, each named as you keep it, such as its "
+              "secret's key", area=CORE)
 GATEWAY_URL = Var("A5S_GATEWAY_URL", "where the other parts reach the core",
                   DEFAULT_GATEWAY_URL, _url(*_WEB), "an http(s):// address", area=CORE)
 CHANNELS_URL = Var("A5S_CHANNELS_URL", "where people's messages reach the core's channels",

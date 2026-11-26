@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { type Catalogue, type Figures, get, type Instance, type RunLine, type RunsPage, send,
          type Standing, type StatusAsked } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { Confirm, Skeleton, useToast } from "../design";
+import { ActingAs, ActionZone, Skeleton, useToast } from "../design";
 import { locale, t } from "../i18n";
 import { levelName } from "../levels";
 import { Link } from "../router";
@@ -36,37 +36,49 @@ function askedTo(by: string, action: string, at: string): string {
   return t("{by} asked to {action} it, {when}: a5s does so within a minute, once it has checked that sign-in again.", { by, action, when: at });
 }
 
-/** Suspending it, which stops it at its next step, or resuming it, which only whoever suspended
- * it may: each signed in afresh for that alone, and carried out by a5s within a minute, once it
- * has checked the sign-in again (core/suspension.py). */
-function Stopping({ id, standing, settles, problem, setProblem }: {
-  id: string; standing?: Standing; settles: boolean; problem?: string; setProblem: (problem: string) => void;
+/** What was asked of it, and whether it went wrong, beside its head, and a way to its settings,
+ * for those who approve versions of them: what changes nothing yet. */
+function Stopping({ id, standing, settles, problem }: {
+  id: string; standing?: Standing; settles: boolean; problem?: string;
 }) {
-  const go = (action: "suspend" | "resume") => () => {
-    const salt = salted();  // the act's nonce, as core/suspension.py's `nonce` makes it
-    hashed(`a5s ${action} instance ${id} ${salt}`)
-      .then((nonce) => signInFor({ kind: "status", action, instance: id, salt }, nonce))
-      .catch((e: Error) => setProblem(e.message));
-  };
   const asked = standing?.asked;
   return (
     <>
       {asked && <p className="note" role="status" id="asked">{askedTo(asked.by, asked.action, when(asked.at))}</p>}
       {problem && <p className="problem" role="alert">{problem}</p>}
-      {(standing?.may || settles) && (
+      {settles && (
         <div className="actions">
-          {settles && <Link to={{ page: "settings", search: `?instance=${encodeURIComponent(id)}` }} className="button"
-                            id="its-settings">{t("Change its settings")}</Link>}
-          {standing?.may === "suspend"
-            ? <Confirm label={t("Suspend it")} danger title={t("Suspend {instance}?", { instance: id })}
-                       about={t("It stops at its next step, even in a run already going, and starts no runs, until whoever suspended it, or the release approver, resumes it. Those it serves are told it's suspended. You'll sign in again, for this alone.")}
-                       confirm={t("Sign in and suspend it")} onConfirm={go("suspend")} />
-            : standing?.may === "resume" && <Confirm label={t("Resume it")} title={t("Resume {instance}?", { instance: id })}
-                       about={t("It works again as its settings say, from its next message. You'll sign in again, for this alone, with a second factor where your organisation asks for one.")}
-                       confirm={t("Sign in and resume it")} onConfirm={go("resume")} />}
+          <Link to={{ page: "settings", search: `?instance=${encodeURIComponent(id)}` }} className="button"
+                id="its-settings">{t("Change its settings")}</Link>
         </div>
       )}
     </>
+  );
+}
+
+/** Suspending it, which stops it at its next step, or resuming it, which only whoever suspended
+ * it may, or the release approver: in a zone of its own, right below the head, as it may be
+ * wanted at once, saying first whom it reaches (docs/design.md). Each is signed in afresh for
+ * that alone, and carried out by a5s within a minute, once it has checked the sign-in again
+ * (core/suspension.py): so no dialog besides. */
+function Suspending({ inst, may, setProblem }: {
+  inst: Instance; may: string; setProblem: (problem: string) => void;
+}) {
+  const go = (action: "suspend" | "resume") => () => {
+    const salt = salted();  // the act's nonce, as core/suspension.py's `nonce` makes it
+    hashed(`a5s ${action} instance ${inst.id} ${salt}`)
+      .then((nonce) => signInFor({ kind: "status", action, instance: inst.id, salt }, nonce))
+      .catch((e: Error) => setProblem(e.message));
+  };
+  const whom = inst.people === 1 ? t("the one person it serves") : t("the {n} people it serves", { n: inst.people });
+  return (
+    <ActionZone title={t("Suspend or resume it")} reach={may === "suspend"
+      ? t("Suspending {instance} stops it at its next step, even in a run already going, and it starts no runs, so it answers none of {whom}, who are told it's suspended, until whoever suspended it, or the release approver, resumes it. Nothing it keeps is lost. You sign in again, for this alone.", { instance: inst.id, whom })
+      : t("Resuming {instance} lets it answer {whom} again, and work on its own, as its settings say, from its next message. You sign in again, for this alone, with a second factor where your organisation asks for one.", { instance: inst.id, whom })}>
+      {may === "suspend"
+        ? <button type="button" id="suspend" className="primary" onClick={go("suspend")}>{t("Sign in and suspend it")}</button>
+        : <button type="button" id="resume" className="primary" onClick={go("resume")}>{t("Sign in and resume it")}</button>}
+    </ActionZone>
   );
 }
 
@@ -268,6 +280,7 @@ export function InstancePage({ id }: { id: string }) {
   }
   return (
     <>
+      <ActingAs acting={standing.data?.acting} />
       <PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } },
                          ...(inst ? [{ label: inst.agent, to: { page: "agent" as const, agent: inst.agent } }] : [])]}
                 title={inst?.id ?? t("An instance")} badges={inst && <StatusBadge status={inst.status} />}
@@ -275,7 +288,7 @@ export function InstancePage({ id }: { id: string }) {
         {head && inst ? (
           <>
             <div className="meta"><span>{aboutInstance(inst)}</span><span>{t("run by {runners}", { runners: runners(inst) })}</span><Link to={{ page: "map", at: `instance:${inst.id}` }} id="on-the-map">{t("What it depends on")}</Link>{standing.data?.suspended_by && <span>{t("suspended by {person}", { person: standing.data.suspended_by })}</span>}{!inst.current && <span className="badge warn">{t("still on release {release}", { release: inst.release })}</span>}</div>
-            <Stopping id={id} standing={standing.data} settles={settles} problem={problem} setProblem={setProblem} />
+            <Stopping id={id} standing={standing.data} settles={settles} problem={problem} />
           </>
         ) : <Skeleton lines={2} title={false} bare />}
         <label className="period">{t("Over the last")}{" "}
@@ -284,6 +297,7 @@ export function InstancePage({ id }: { id: string }) {
           </select>
         </label>
       </PageHead>
+      {head && inst && standing.data?.may && <Suspending inst={inst} may={standing.data.may} setProblem={setProblem} />}
       <div className="two-up">
         <Waits standing={standing} />
         {inst ? <Reach inst={inst} /> : <section className="card" id="reach"><Skeleton lines={3} /></section>}

@@ -69,11 +69,14 @@ The pieces pages are made of live in [`studio/src/design`](../studio/src/design)
 | `AutonomyLadder` | What an agent may do, the further steps its release allows, and how far it has come towards the next |
 | `RunTimeline` | A run as time: each step in order, in the colour of what it did |
 | `JourneyPath` | The way from a draft to an agent at work: each stage done, to do now, or later, with who does it, and the one thing to do next |
-| `Confirm` | Asking first, for what can't be undone, in the browser's own dialog |
+| `Confirm` | Asking first, for what can't be undone, in the browser's own dialog; for what can't be undone and reaches someone else, such as an erasure, with the thing's name typed, which the server checks too |
 | `Hint` | A word on what something means, for whoever points at it or tabs to it |
 | `Skeleton`, `Loading` | What's loading, in the shape it will have, which screen readers hear as loading |
 | `Toasts` | What was just done, said once at the foot of the window as well as in the page's status line |
 | `Palette` | Going anywhere someone may, by name, from any page, with Ctrl-K |
+| `EnvironmentBand` | Which deployment this is, across the top of every page, the sign-in's too, as `/shell/environment` says it: production in the change's colour, filled, a staging, a test or a developer's own machine in amber |
+| `ActingAs` | Whose power a page uses, first in its main, before its head, while the page holds an act a role gives someone: the role its acts count as, by the rules that let them, and what it lets them do there, as the page's own API says ([`core/acting.py`](../src/a5s/core/acting.py)). A page that only shows has none, so the line means a role's power is in use |
+| `ActionZone` | Where a page's consequential acts are, apart from what only shows, saying first whom and what they reach: at the end of the page or of the card they act on, or right below the head for an act wanted at once, such as suspending. What can't be undone is in a zone of its own, marked so ([below](#risk-and-the-friction-it-earns)) |
 
 The popover a traced value opens and the hint are Radix's, which keyboards and screen readers reach as they do the mouse. The dialog is the browser's own: it keeps focus in it and the page behind it out of reach without injecting styles of its own, which the pages' policy wouldn't allow.
 
@@ -83,6 +86,28 @@ The browser tests open the showcase signed in, and check that:
 - [axe](https://github.com/dequelabs/axe-core) finds nothing amiss in light or dark, as wide as a desktop and as a phone, by WCAG's rules and its best practices, as on every page people use (`tests/test_ui_pages.py`);
 - each piece works from the keyboard: a traced value opens and closes with focus back on it, a hint shows to whoever tabs to it, the dialog starts on "Keep it" and closes with Escape even when a hint was open, a toast closes with Dismiss, and the palette chooses with the arrows and closes with Escape, focus back where it was;
 - nothing on the page writes an error to the console, such as a style the pages' policy refused.
+
+## Risk, and the friction it earns
+
+A page makes it as hard to do something as it is to undo it, and no harder, as [Ocean's design](https://github.com/sreent/ocean/blob/main/docs/design.md#risk-and-the-friction-it-earns) says: a dialog met too often is a dialog clicked through. a5s has no administrator's mode, so what a press will do is said where it happens, on whichever page:
+
+- **Where you are.** The band across the top of every page, the sign-in's too, says which deployment this is: production in the change's colour, filled, a test, a staging or a developer's own machine in amber ([naming it](first-day.md#6-install)).
+- **Whose power you use.** A page that changes things says first which of your roles its acts count as, while it holds one, by the rules that let you ([`core/acting.py`](../src/a5s/core/acting.py)).
+- **What a press does**, by its tier. Every act in the studio, and the command line's one that loosens a5s, is in one of three:
+
+| Act | Where | Its tier, and what it asks |
+| --- | --- | --- |
+| Chat; start, change or cancel your own task; save, try, drop or publish a draft; ask for an agent, or for a version of the settings; connect or disconnect your own account; keep a run as a test case; say an answer was wrong; grade a new version's answers; answer a conversation handed to your team; take a note out of a notebook | Their own pages | **Everyday**: a button where the work is. What nothing brings back, though it reaches nobody else, such as dropping a draft or taking a note out, asks first |
+| Decide a held change, alone or with others ticked | Decisions | **Consequential**: in a zone at the card's foot, or the list's, saying first what approving and rejecting do; a fresh sign-in |
+| Send grades | Grading | **Consequential**: in a zone saying what they count towards; a fresh sign-in |
+| Approve a version of the settings | Settings to approve | **Consequential**: in a zone saying when it comes into force, and which instances it retires; a fresh sign-in |
+| Suspend or resume an instance | Its page | **Consequential**: in a zone right below its head, saying how many people it stops answering, or answers again; a fresh sign-in, with a second factor to resume |
+| Undo a change | Its page | **Consequential**: in a zone saying what goes back, and who hears of it; a fresh sign-in |
+| Export someone's data | Data protection | **Consequential**: in a zone saying what an export holds; a fresh sign-in |
+| Put a stopped model back | `a5s health --restore` | **Consequential**: `a5s health` and the health page name the instances it reaches first, and the command says so again once it's back; the release approver's own sign-in |
+| Erase someone's data | Data protection | **Can't be undone**: in a zone of its own, marked so; their id typed again, which the channels app checks too; a fresh sign-in |
+
+A consequential act asks no dialog besides its sign-in, so a dialog, met only where nothing brings it back, keeps meaning that; and a zone holds nothing everyday, so its edge always means the press reaches beyond you. The browser tests check that each consequential act sits in its zone, saying whom it reaches, that the pages that only show, or whose acts are everyday, have none, and that an erasure without the id typed again erases nobody ([`tests/test_safety.py`](../tests/test_safety.py), [`tests/test_officer.py`](../tests/test_officer.py)).
 
 ## Pages
 

@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { get, type Note, type NotebookNow, send } from "../api";
-import { Confirm, useToast } from "../design";
+import { ActingAs, Confirm, useToast } from "../design";
 import { t } from "../i18n";
 import { PageHead, plural, useLoad, Waiting } from "../ui";
 
@@ -38,6 +38,7 @@ export function NotebookPage() {
   const kept = data ? data.instances.map((id) => data.names[id] || id) : [];
   return (
     <>
+      <ActingAs acting={data?.acting} />
       <PageHead title={t("Notebook")}
                 about={t("What your agents noted from records, on their schedules, for their later runs: each note with the records it comes from. Remove any that's no longer worth keeping. A note goes once its records change: a5s reads them again each day.")} />
       <p id="status" role="status" className="note">

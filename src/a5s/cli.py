@@ -20,6 +20,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
+import psycopg
+import psycopg.errors
 import yaml
 
 from a5s import authoring, build, config, db, definitions, devdb, gitops, worker
@@ -86,6 +88,36 @@ def _migrate(cfg: Config, url: str | None = None) -> None:
     db.set_passwords(url, passwords)
     print(f"Migrated: {', '.join(ran) or 'nothing new'}. "
           f"Passwords set for {', '.join(passwords) or 'no roles'}.")
+
+
+def _pending(url: str) -> None:
+    """What `a5s migrate` would run, before it runs: each migration this release has and the
+    database lacks, and what it says it does. Once one runs, the release before won't start on
+    the database (db.known), so rolling back past it means restoring the database. It changes
+    nothing."""
+    where, _ = db.where(url)
+    done, known = db.applied(url), db.migrations()
+    newest = known[-1][0]
+    if (found := max(done, default=0)) > newest:
+        sys.exit(f"The database at {where} is at migration {found}, from a later release of a5s "
+                 f"than this one, which goes to {newest}: run that release, or restore the "
+                 f"database from before it ({releases.ROLLING_BACK}).")
+    pending = [(name, statements) for version, name, statements in known if version not in done]
+    if not done:
+        print(f"The database at {where} has no schema yet: `a5s migrate` makes it, with this "
+              f"release's {len(known)} migrations.")
+    elif not pending:
+        print(f"Nothing to migrate: the database at {where} has each of this release's "
+              f"migrations, to {newest}.")
+    else:
+        print(f"`a5s migrate` would run {len(pending)} "
+              f"migration{'' if len(pending) == 1 else 's'} on the database at {where}, "
+              "in one transaction:")
+        for name, statements in pending:
+            print(f"- {Path(name).stem}: {db.described(statements)}")
+        print("Once they've run, the release before won't start on the database, so take a "
+              "backup first: rolling back past them means restoring it "
+              f"({releases.ROLLING_BACK}).")
 
 
 def _apply(cfg: Config) -> None:
@@ -285,9 +317,15 @@ def _service(cfg: Config, name: str):
     return inbox.create_app(build.gateway(cfg))  # the channels' endpoints, in the core
 
 
-def _seal_again(cfg: Config, leaked: bool, lost: tuple[str, ...] = ()) -> None:
+# What a command's dry run says first: it did all it would, and rolled it back
+REHEARSED = "A dry run, so nothing has changed. Without --dry-run, it would say:\n"
+
+
+def _seal_again(cfg: Config, leaked: bool, lost: tuple[str, ...] = (),
+                dry_run: bool = False) -> None:
     """Rotate the seal key, as the core, with its settings (core/rotation.py): or retire, as
-    leaked, keys a5s no longer holds, by their fingerprints."""
+    leaked, keys a5s no longer holds, by their fingerprints. With `dry_run`, it does all of it
+    and rolls it back, saying what it would have done."""
     if not cfg.seal_keys:
         sys.exit("Run this where the core runs, with its A5S_SEAL_KEYS, the new key first.")
     if wrong := [f for f in lost if not re.fullmatch(r"[0-9a-f]{16}", f)]:
@@ -296,18 +334,20 @@ def _seal_again(cfg: Config, leaked: bool, lost: tuple[str, ...] = ()) -> None:
     db.known(cfg.database_url)
     db.own_role(cfg.database_url, "gateway")
     try:
-        with db.transaction(cfg.database_url) as conn:
+        with (db.rehearsal if dry_run else db.transaction)(cfg.database_url) as conn:
             done = rotation.again(conn, cfg.seal_keys, leaked=leaked, lost=lost)
     except rotation.Refused as exc:
         sys.exit(str(exc))
-    print(rotation.told(done))
+    print((REHEARSED if dry_run else "") + rotation.told(done))
 
 
-def _restore(cfg: Config, backup: str | None = None) -> None:
+def _restore(cfg: Config, backup: str | None = None, dry_run: bool = False) -> None:
     """Restore what a5s keeps after its database was restored from a backup, as the core, with
     the ledger's copies as the copier reads them (core/restoring.py): with the core's database
     address, such as in the copier's container, which reaches the store. Once for a backup it
-    names, as the chart's job does at each install or upgrade while its settings name one."""
+    names, as the chart's job does at each install or upgrade while its settings name one.
+    With `dry_run`, as in a restore drill, it does all of it and rolls it back, saying what it
+    would have done: it reads the copies, and writes to them never."""
     store = build.store(cfg)
     if store is None:
         sys.exit("Set A5S_ANCHOR_STORE to the ledger's copies, as the copier has it.")
@@ -320,7 +360,7 @@ def _restore(cfg: Config, backup: str | None = None) -> None:
                 return
     db.known(cfg.database_url)
     try:
-        with db.transaction(cfg.database_url) as conn:
+        with (db.rehearsal if dry_run else db.transaction)(cfg.database_url) as conn:
             if backup and (seq := restoring.restored(conn, backup)) is not None:
                 print(f"a5s restored after the backup {backup} already, as entry {seq} of the "
                       "ledger says: nothing to do.")
@@ -328,7 +368,7 @@ def _restore(cfg: Config, backup: str | None = None) -> None:
             done = restoring.restore(conn, store, backup)
     except anchor.AnchorError as exc:
         sys.exit(str(exc))
-    print(restoring.told(done))
+    print((REHEARSED if dry_run else "") + restoring.told(done))
 
 
 def _stopping() -> threading.Event:
@@ -547,12 +587,25 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
                     print(f"Its approvers sign it as following the release approved here last: "
                           f"`a5s release sign --follows {last}`.")
     for need in verdict.needs:
-        print(f"- It needs {releases.who(need.role)}, because {need.why}.")
+        print(_needing(sc, cfg.team, need))
     if verdict.signed_by:
         print(f"Signed by {', '.join(verdict.signed_by)}.")
     if not verdict.ok:
+        if args.what == "status":
+            print("Each signs the manifest `a5s release show` writes with their own key, `a5s "
+                  "release sign --as <them> --key <their key>`, and a ConfigMap with release.yaml "
+                  "and release.sig, named in the chart's release.approval, records it at the next "
+                  "upgrade (docs/first-day.md#6-install).")
         sys.exit("Not approved here: " + "; ".join(verdict.missing))
     print("Approved here.")
+
+
+def _needing(sc: Scenario, team: str, need: releases.Need) -> str:
+    """What a release needs of a role, and why, with whom the directory names for it."""
+    named = releases.able(sc, team, need.role)
+    who = (", ".join(f"{p.name} ({p.id})" for p in named) if named
+           else "the directory names nobody with a key for it")
+    return f"- It needs {releases.who(need.role)}, because {need.why}: {who}."
 
 
 def _as_deployed(cfg: Config, folder: Path, before: Path | None = None) -> Config:
@@ -612,9 +665,11 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
     verdict = releases.verify(raw, signatures, sc, cfg.team, before, approval, roots, ran)
     print(f"Release {yaml.safe_load(raw)['version']} of a5s, {hashlib.sha256(raw).hexdigest()}.")
     for need in verdict.needs:
-        print(f"- It needs {releases.who(need.role)}, because {need.why}.")
+        print(_needing(sc, cfg.team, need))
     if verdict.signed_by:
         print(f"Signed by {', '.join(verdict.signed_by)}.")
+    if migrates := releases.migrating(before, raw):  # what rolling back past it takes
+        print(migrates)
     if args.what == "promote":
         print(f"{folder} runs it once that's merged" + (
             "." if verdict.ok else ": each person it still needs signs it there, with "
@@ -637,14 +692,46 @@ def _approves(approval: releases.Approval) -> str:
     return ", ".join(said)
 
 
+# What fixes the refusals an operator's command most often meets from the core: a token that
+# isn't the core's, by what the core says (core/gateway.py)
+TOKEN_FIXES = {
+    "service token required": "set A5S_SERVICE_TOKEN to the core's own",
+    "the operators' token required": "set A5S_OPERATOR_TOKEN to the operators' token the core "
+                                     "was started with",
+}
+
+
 def _core(cfg: Config, call, timeout: float = 30):
-    """A call to the core's API, through its client (a5s/client.py), or the reason it's refused."""
+    """A call to the core's API, through its client (a5s/client.py), or the reason it's refused,
+    with what fixes it where that's known."""
     with Client(cfg.gateway_url, cfg.operator_token or cfg.service_token,  # operators' own
                 timeout=timeout) as core:
         try:
             return call(core)
         except Refused as exc:
-            sys.exit(f"{exc.status}: {exc.text or exc.detail}" if exc.status else str(exc.detail))
+            if not exc.status:  # nothing answered there
+                sys.exit(f"{exc.detail}. Is it running? `a5s dev` runs it for development; "
+                         "otherwise set A5S_GATEWAY_URL to where yours is.")
+            said = f"{exc.status}: {exc.text or exc.detail}"
+            fix = next((f for told, f in TOKEN_FIXES.items() if told in str(exc.detail)), None)
+            sys.exit(f"{said}\nTo fix it, {fix}." if fix else said)
+
+
+def _unmigrated(command: str, exc: psycopg.errors.UndefinedTable) -> str | None:
+    """What a command says when the database has none of a5s's tables yet, as it hasn't been
+    migrated: None if it has them, so what's missing is something else."""
+    url = config.DATABASE_URL.read()
+    try:
+        with db.connect(url) as conn:
+            migrated = conn.execute("select to_regclass('schema_migrations') as t").fetchone()
+    except psycopg.Error:
+        return None
+    if migrated and migrated["t"] is not None:
+        return None
+    where, _ = db.where(url)
+    return (f"a5s {command} found none of a5s's tables in the database at {where} ({exc}): run "
+            "`a5s migrate` there first, as its administrator, or `a5s setup`, which migrates it "
+            "and applies the settings.")
 
 
 def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30) -> dict:
@@ -681,6 +768,20 @@ def _config(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _doctor(as_json: bool) -> None:
+    """Every check `a5s doctor` makes, said in order, and exit 1 if anything needs fixing."""
+    from a5s import doctor
+
+    found = doctor.checked()
+    try:
+        cfg: Config | None = Config.from_env()
+    except config.ConfigError:
+        cfg = None
+    print(json.dumps(doctor.as_json(found), indent=2) if as_json else doctor.told(found, cfg))
+    if any(f.state == "fix" for f in found):
+        sys.exit(1)
+
+
 def _checked(command: str) -> None:
     """Stop before anything starts if a setting can't be used, saying which and why."""
     problems, warnings = config.check(serving=command in PARTS)
@@ -706,18 +807,70 @@ def _served(cfg: Config) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """a5s's command line. What stops a command for a reason someone can fix, such as a database
+    nobody started or a schema not yet migrated, it says in a line that names the fix, rather
+    than as a traceback."""
+    given = sys.argv[1:] if argv is None else argv
+    command = next((a for a in given if not a.startswith("-")), "")
+    try:
+        _main(argv)
+    except psycopg.OperationalError as exc:
+        sys.exit(db.refusal(exc, config.DATABASE_URL.read(), f"a5s {command}"))
+    except psycopg.errors.UndefinedTable as exc:
+        if (told := _unmigrated(command, exc)) is None:
+            raise
+        sys.exit(told)
+    except (db.NewerSchema, db.OlderSchema, db.WrongRole, devdb.Missing) as exc:
+        sys.exit(f"a5s {command} can't go on: {exc}.")
+
+
+def _main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="a5s", description="An agent OS on Deep Agents.")
     sub = parser.add_subparsers(dest="command", required=True)
+    doctor = sub.add_parser("doctor", help="whether a5s can work where it runs, and what to "
+                                           "fix first",
+                            description="Check, in order, what a5s needs where it runs: its "
+                                        "settings, the database and its schema, the release and "
+                                        "whether this deployment approved it, the settings in "
+                                        "force, the core and its token, how people sign in, "
+                                        "each model's key, the ledger's copies, and the "
+                                        "credentials noted to expire. Each line "
+                                        "says what it found and, where something's wrong, what "
+                                        "fixes it. Run it where the core runs, with its "
+                                        "settings, such as `kubectl exec deploy/a5s-gateway -- "
+                                        "a5s doctor`, or `helm test`. It changes nothing, and "
+                                        "exits 1 if anything needs fixing.")
+    doctor.add_argument("--json", action="store_true", help="as JSON, for a script")
     shown = sub.add_parser("config", help="every setting a5s reads, what this environment sets "
                                           "it to, and what a part would refuse to start with")
     shown.add_argument("--set", action="store_true", help="only those set here")
     shown.add_argument("--json", action="store_true", help="as JSON")
     shown.add_argument("--markdown", action="store_true",
                        help="the table docs/configuration.md shows")
-    sub.add_parser("up", help="start a local Postgres and set up the schema")
+    sub.add_parser("up", help="start a local Postgres and set up the schema",
+                   description="For development: start Postgres in .a5s/pg, on port 54329, "
+                               "with the schema and each part's role in place, and make the "
+                               "core's own service token and seal key in .a5s/. It runs "
+                               "Postgres 16 from this machine's own programs, or in Docker "
+                               "Desktop on Windows. Next: `a5s apply`, then `a5s dev`.")
     sub.add_parser("down", help="stop the local Postgres")
-    sub.add_parser("migrate", help="bring the schema up to date, as the administrator")
-    sub.add_parser("apply", help="bring instances in line with the settings and releases")
+    migrate = sub.add_parser("migrate", help="bring the schema up to date, as the administrator",
+                             description="Run the migrations this release has and the database "
+                                         "lacks, as the database's administrator "
+                                         "(A5S_DATABASE_URL), and give each part's role the "
+                                         "password A5S_DB_<PART>_PASSWORD sets. With --pending, "
+                                         "say which it would run, and run none: from the release "
+                                         "you're upgrading to, before the upgrade "
+                                         "(docs/runbooks.md#upgrading-and-rolling-back).")
+    migrate.add_argument("--pending", action="store_true",
+                         help="say which migrations would run, and what each does, and run none")
+    sub.add_parser("apply", help="bring instances in line with the settings and releases",
+                   description="Bring the instances in line with the scenario's signed "
+                               "settings and the agents in A5S_AGENTS_DIR: start those the "
+                               "settings add, and change or retire the rest. It refuses, "
+                               "saying why, a version that lacks an approval it needs or is "
+                               "older than the one in force. On a database of your own, run "
+                               "`a5s migrate` first.")
     pin = sub.add_parser("pin", help="pin the schemas of an agent's tools in its release")
     pin.add_argument("agent")
     agent = sub.add_parser("agent", help="make an agent from a template, or check agents before "
@@ -738,7 +891,9 @@ def main(argv: list[str] | None = None) -> None:
     sign = sub.add_parser("sign", help="sign the current settings, as a person")
     sign.add_argument("--as", dest="person", required=True)
     sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
-    sub.add_parser("setup", help="migrate and apply the settings, as the administrator")
+    sub.add_parser("setup", help="migrate and apply the settings, as the administrator",
+                   description="`a5s migrate`, then `a5s apply`: what a deployment's "
+                               "migration job runs, as the database's administrator.")
     propose = sub.add_parser("propose", help="ask the instance approvers to approve the settings "
                                              "where they work, with a card")
     propose.add_argument("--file", type=Path, help="a version of the settings (default: the "
@@ -750,7 +905,12 @@ def main(argv: list[str] | None = None) -> None:
         service.add_argument("--host", default="127.0.0.1")
         service.add_argument("--port", type=int, default=port)
     sub.add_parser("scheduler", help="answer the messages the core receives")
-    sub.add_parser("dev", help="run the core, the channels and the scheduler, for development")
+    sub.add_parser("dev", help="run the core, the channels and the scheduler, for development",
+                   description="For development only: run the core on port 8700, the "
+                               "channels and the web chat on 8703, and the scheduler, in one "
+                               "process. It takes people's word for who they are and runs "
+                               "whatever release it is. Run `a5s up` and `a5s apply` first; "
+                               "then chat at http://127.0.0.1:8703/chat/ or with `a5s say`.")
     boxed = sub.add_parser("sandbox", help="run the sandbox, where people try the agents they're "
                                            "making, on its own database")
     boxed.add_argument("--host", default="0.0.0.0")
@@ -804,7 +964,11 @@ def main(argv: list[str] | None = None) -> None:
                                                           "id erases nobody")
     erased.add_argument("--by", help="in development, the officer, who asks nowhere else")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
-                                  "objectives")
+                                  "objectives",
+                   description="How a5s is doing, as the core at A5S_GATEWAY_URL tells it: its "
+                               "queue, runs, denials, budgets, objectives and the ledger's "
+                               "copies. It calls the core with A5S_OPERATOR_TOKEN, or "
+                               "A5S_SERVICE_TOKEN where the deployment sets none.")
     restore = sub.add_parser("restore", help="after the database is restored from a backup, "
                                              "as the core, before any part starts: put back "
                                              "the ledger's entries its copies hold, take as "
@@ -812,6 +976,9 @@ def main(argv: list[str] | None = None) -> None:
                                              "would send again, and start mailboxes afresh")
     restore.add_argument("--id", dest="backup", help="the backup's name, as the chart's "
                          "restore.id gives it: once a5s has restored after it, nothing more")
+    restore.add_argument("--dry-run", action="store_true",
+                         help="do all of it and roll it back, saying what it would do, as in "
+                              "a restore drill (docs/runbooks.md#backing-up-and-a-restore-drill)")
     again = sub.add_parser("seal-again", help="to rotate the seal key: seal again with the "
                                               "first of A5S_SEAL_KEYS what the others sealed, "
                                               "and retire them, as the core, where it runs")
@@ -821,6 +988,9 @@ def main(argv: list[str] | None = None) -> None:
     again.add_argument("--leaked", action="store_true",
                        help="for a key that leaked: retire the keys after the first, sealing "
                             "nothing again, so what they sealed stops counting")
+    again.add_argument("--dry-run", action="store_true",
+                       help="do all of it and roll it back, saying what it would seal again, "
+                            "or what would stop counting")
     measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
                                                "pilot's later stages show: what fell due and "
                                                "was met, who came back, what runs cost, how "
@@ -932,6 +1102,8 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("a5s").setLevel(logging.INFO)
+    if args.command not in PARTS:  # a command says once, in its own words, that it can't reach
+        logging.getLogger("psycopg.pool").setLevel(logging.ERROR)  # the database, and why
 
     if args.command == "canaries":
         from a5s.core import canaries as canary_runs
@@ -953,15 +1125,25 @@ def main(argv: list[str] | None = None) -> None:
         if args.restore:  # a loosening: the core checks who asks, and the ledger records it
             put = _admin(cfg, f"/models/{quote(args.restore, safe='')}/restore",
                          {"by": args.by, "identity": config.TOKEN.read()})
-            print(f"{put['restored']} is back, put there by {put['by']}.")
+            print(f"{put['restored']} is back, put there by {put['by']}. {put['reaches']}")
         else:
             for row in health_mod.report(url, scenario, days=args.days):
                 state = "stopped" if row["gated_at"] else "answering"
                 print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
                       f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
+                if row["gated_at"]:  # whom putting it back reaches, said before it's done
+                    with db.connect(url) as conn:
+                        on = [r["id"] for r in health_mod.running_on(conn, row["model"])]
+                    reaches = ("no instance at work" if not on else
+                               f"{on[0]}, which calls it again from its next run" if len(on) == 1
+                               else f"{', '.join(on)}: each calls it again from its next run")
+                    print(f"  Putting it back, as the release approver, with a5s health --restore "
+                          f"{row['model']}, reaches {reaches}.")
 
     if args.command == "config":
         return _config(args)
+    if args.command == "doctor":  # before the settings' check, as it says what that finds
+        return _doctor(args.json)
     _checked(args.command)
     root = Path.cwd()
     if args.command == "up":
@@ -972,7 +1154,7 @@ def main(argv: list[str] | None = None) -> None:
         return _keygen(args.person, args.out)
     cfg = Config.from_env()
     if args.command == "migrate":
-        _migrate(cfg)
+        _pending(cfg.database_url) if args.pending else _migrate(cfg)
     elif args.command == "apply":
         _apply(cfg)
     elif args.command == "pin":
@@ -1050,9 +1232,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
     elif args.command == "seal-again":
-        _seal_again(cfg, args.leaked, tuple(args.fingerprint))
+        _seal_again(cfg, args.leaked, tuple(args.fingerprint), args.dry_run)
     elif args.command == "restore":
-        _restore(cfg, args.backup)
+        _restore(cfg, args.backup, args.dry_run)
     elif args.command == "measures":
         print(measures.told(_core(cfg, lambda core: core.measures(
             args.days, agent=args.agent, instance=args.instance))))

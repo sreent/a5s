@@ -69,6 +69,7 @@ from a5s.core import (
     registry,
     settings_api,
     shell_api,
+    status_api,
     studio_api,
     tasks_api,
     topics,
@@ -230,6 +231,10 @@ def create_app(gw: Any) -> FastAPI:
     explorer = gw.cfg.development  # FastAPI's explorer pages load scripts from a CDN
     app = FastAPI(title="a5s channels", docs_url="/docs" if explorer else None,
                   redoc_url="/redoc" if explorer else None)
+
+    @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
+    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+        return {"ok": True}
 
     app.add_middleware(Small)
     log.info("people reach a5s through %s", ", ".join(chats_on(gw)))
@@ -700,8 +705,12 @@ def create_app(gw: Any) -> FastAPI:
         with db.transaction(gw.url) as conn:
             rows = conn.execute("select definition, serves from instances "
                                 "where status in ('active', 'suspended')").fetchall()
-        return {"agents": sorted({r["definition"] for r in rows if r["definition"] in gw.definitions
-                                  and registry.serving(gw.scenario, r["serves"], who)})}
+        listed: dict = {"agents": sorted({r["definition"] for r in rows
+                                          if r["definition"] in gw.definitions
+                                          and registry.serving(gw.scenario, r["serves"], who)})}
+        if gw.cfg.development and not rows:  # none at work here at all, so the chat says to
+            listed["at_work"] = False  # apply the settings first
+        return listed
 
     @app.get("/channels/local/conversation")
     def conversation(agent: str, limit: int = 50, person: str | None = None,
@@ -781,10 +790,12 @@ def create_app(gw: Any) -> FastAPI:
     # the studio's (core/studio_api.py), the settings app's, the notebook's, people's own tasks',
     # the auditors' and the administrators'
     for pages in (studio_api, settings_api, notebook_api, tasks_api, audit_api, admin_api,
-                   health_api):
+                   health_api, status_api):
         app.include_router(pages.router(gw))
 
-    # Every page's sidebar: who signed in, and the pages they may use (core/shell_api.py)
+    # Every page's sidebar: who signed in, and the pages they may use (core/shell_api.py); and
+    # which deployment this is, for the band across the top of every page, the sign-in's too
     app.include_router(shell_api.router(gw))
+    app.include_router(shell_api.environment_router(gw))
 
     return app

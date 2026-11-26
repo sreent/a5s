@@ -20,7 +20,7 @@ BUDGETS = {
     "grade a sample from the home": (3, 1),
     "cancel a task from the sidebar": (3, 0),
     "open an instance by name": (0, 0),
-    "suspend an instance by name": (2, 1),
+    "suspend an instance by name": (1, 1),  # in its zone, signed in afresh: no dialog besides
 }
 
 pytestmark = pytest.mark.usefixtures("approving")
@@ -133,7 +133,6 @@ def test_suspending_an_instance_by_name(stack, approving, provider, browser):
     walk.page.wait_for_selector("[role=option] >> text=assistant-finance", timeout=30000)
     walk.type("assistant-finance")
     walk.keys("Enter")
-    walk.click("button:has-text('Suspend it')")
-    walk.click("dialog[open] button:has-text('Sign in and suspend it')")  # afresh, for this alone
+    walk.click("#suspend")  # in its zone, below the head: signed in afresh, for this alone
     walk.page.wait_for_selector("#asked", timeout=30000)
     walk.done()

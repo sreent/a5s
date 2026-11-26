@@ -1,0 +1,36 @@
+# a5s on Google Cloud: GKE, Cloud SQL for PostgreSQL and Google's sign-in, with the web chat
+# alone (docs/first-day.md has each provider's settings side by side). Fill each <...>, and
+# install with `helm install a5s deploy/helm/a5s -n a5s -f gcp.yaml`. The Secret's keys are in
+# deploy/helm/README.md; `python3 deploy/reach-check.py` checks first that the cluster reaches
+# what a5s needs.
+
+environment:  # as a band across the top of every page says it: production once real people use it
+  kind: test
+  name: Pilot test
+
+image:  # the deployment's own image, built on the release's, by its digest (step 5)
+  repository: <region>-docker.pkg.dev/<project>/<repository>/a5s
+  digest: sha256:<the push's digest>
+
+people:  # Google (step 2)
+  oidcIssuer: https://accounts.google.com
+  webchatClientId: <the a5s client's id>
+  oidcPersonClaim: email  # or sub
+  oidcMfa: none  # its tokens show no second factor: require one in the Admin console
+  publicUrl: https://<host>
+
+anchor:  # a bucket with object retention (step 4)
+  store: gs://<bucket>/a5s
+serviceAccounts:
+  annotations:
+    anchor: {iam.gke.io/gcp-service-account: <a service account that may write the bucket>}
+
+networkPolicies:
+  database:
+    cidrs: [<the Cloud SQL instance's private address>/32]
+
+ingress:
+  enabled: true
+  className: gce  # or the cluster's ingress controller's class
+  host: <host>
+  tlsSecret: <the certificate's Secret>

@@ -28,13 +28,16 @@ SIGNED_IN = ("/studio/api", "/settings/api", "/notebook/api", "/tasks/api", "/au
              "/admin/api", "/shell/api")
 ACTING = ("/approve/", "/officer/", "/decide/", "/grade/")
 # The routes that check for themselves: the chats', each with its own sign-in or token; the web
-# chat's, which hold nobody's data; where the studio signs someone in, which holds nothing; and
+# chat's, which hold nobody's data; where the studio signs someone in, which holds nothing; which
+# deployment this is, for every page's band, the sign-in's too, which says nothing more; and
 # each act's
-OWN = ("/channels/", "/chat/", "/studio/sign-in/", "/health/api", *ACTING)
+OWN = ("/channels/", "/chat/", "/studio/sign-in/", "/health/api", "/status/api",
+       "/shell/environment", *ACTING)
 DIGEST = "0" * 64
 ACTS = {  # each act, with a body of the shape it takes, so it's refused for want of a sign-in
     ("get", "/approve/settings/{version}"): None,  # what an approver reads before approving
     ("post", "/approve/settings/{version}"): {"salt": "s"},
+    ("get", "/officer/api"): None,
     ("post", "/officer/requests"): {"action": "export", "person": "ben", "salt": "s"},
     ("post", "/decide/review"): None,
     ("post", "/decide/proposals"): {"proposals": [DIGEST], "decision": "approve", "salt": "s"},
@@ -44,7 +47,8 @@ ACTS = {  # each act, with a body of the shape it takes, so it's refused for wan
 PEOPLE = ("ana", "ben", "chen", "omar", "dana", "priya", "tomas", "lena", "rosa", "kofi", "noor")
 PAGES = {"home": "/studio/api/home", "agents": "/studio/api", "settings": "/settings/api",
          "notebook": "/notebook/api",
-         "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api"}
+         "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api",
+         "status": "/status/api", "officer": "/officer/api"}
 
 
 def described(url: str) -> dict[str, dict]:
@@ -119,3 +123,17 @@ def test_the_channels_app_serves_no_api_explorer_but_in_development(approving):
     assert [httpx.get(f"{approving}{page}", timeout=30).status_code
             for page in ("/docs", "/redoc")] == [404, 404]
     assert httpx.get(f"{approving}/openapi.json", timeout=30).status_code == 200
+
+
+def test_each_part_answers_its_probe_with_no_token_and_says_nothing_else(stack, approving):
+    """/healthz, for the cluster's probes: each part answers it over HTTP, which a part that
+    takes connections but is stuck doesn't, with nothing more, and it's in no API's description,
+    so it's no way into one (deploy/helm/a5s/templates/deployments.yaml)."""
+    from a5s import worker
+
+    for url in (stack.url, approving):
+        answer = httpx.get(f"{url}/healthz", timeout=30)
+        assert (answer.status_code, answer.json()) == (200, {"ok": True})
+        assert "/healthz" not in described(url)
+    at_work = TestClient(worker.create_app(stack.url, (), ()))
+    assert at_work.get("/healthz").json() == {"ok": True}

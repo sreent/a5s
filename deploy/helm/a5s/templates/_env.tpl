@@ -9,6 +9,7 @@
 {{ include "a5s.secretEnv" (dict "root" $ "name" $name "key" $key "optional" true) }}
 {{- end }}
 {{ include "a5s.teamEnv" . }}
+{{ include "a5s.environmentEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
 {{- range .Values.delegation.systems }}
@@ -23,6 +24,10 @@
 {{- with .Values.telemetry.endpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
+{{- end }}
+{{- with .Values.expires }}
+- name: A5S_EXPIRES  # when the credentials a5s holds expire, for its status to say so
+  value: {{ include "a5s.expires" . | quote }}
 {{- end }}
 - name: A5S_PROVIDER_TIMEOUT
   value: {{ .Values.timeouts.provider | quote }}
@@ -47,6 +52,7 @@
 
 {{- define "a5s.env.channels" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-channels-url") }}
+{{ include "a5s.environmentEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
 {{ include "a5s.dbConnectEnv" . }}
@@ -136,6 +142,19 @@ role, and the ledger's copies, as the copier reaches them (docs/runbooks.md#rest
 {{- end }}
 
 {{/* The directory's team that runs a5s, if the deployment names one. */}}
+{{/* Which deployment this is, for the band across the top of every page the channels serve,
+and for the doctor, which runs with the core's settings. */}}
+{{- define "a5s.environmentEnv" -}}
+{{- with .Values.environment.kind }}
+- name: A5S_ENVIRONMENT
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.environment.name }}
+- name: A5S_ENVIRONMENT_NAME
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+
 {{- define "a5s.teamEnv" -}}
 {{- with .Values.team }}
 - name: A5S_TEAM
@@ -158,4 +177,13 @@ role, and the ledger's copies, as the copier reaches them (docs/runbooks.md#rest
   value: {{ $value | quote }}
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/* The credentials values' expires names, as A5S_EXPIRES takes them: name=day, by commas. */}}
+{{- define "a5s.expires" -}}
+{{- $pairs := list }}
+{{- range $name, $day := . }}
+{{- $pairs = append $pairs (printf "%s=%v" $name $day) }}
+{{- end }}
+{{- join "," $pairs }}
 {{- end }}

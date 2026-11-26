@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person
-from a5s.core import approvals, languages, ledger, masking, proposals, samples, web, words
+from a5s.core import acting, approvals, languages, ledger, masking, proposals, samples, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -64,7 +64,7 @@ def router(gw: Any) -> APIRouter:
              "flags": words.flags(r, spoken), "decided": r["decided"],
              "drawn_at": r["drawn_at"].isoformat(),
              "asked": heard(r)}  # (round 15, C1)
-            for r in rows]}
+            for r in rows], **acting.shown(acting.grading(person, language=spoken) if rows else None)}
 
     @pages.post("/grade/samples", **shapes.answers(shapes.Graded))
     def grade_samples(body: Grading, authorization: str | None = Header(default=None)) -> dict:

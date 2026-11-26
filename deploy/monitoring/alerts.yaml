@@ -1,0 +1,139 @@
+# a5s's alerts, as Prometheus rules, for Prometheus or anything that reads its rule files, such
+# as Grafana Mimir or Thanos (deploy/monitoring/README.md).
+#
+# The core sends its figures over OpenTelemetry, named a5s.* (src/a5s/core/metrics.py); these name
+# them as the OpenTelemetry Collector's Prometheus exporters write them by default: dots become
+# underscores, a figure in seconds ends in _seconds, and a 1 or 0 ends in _ratio. With
+# add_metric_suffixes off, drop those two endings.
+#
+# Two groups, as the runbooks' on-call section sorts them: what pages out of hours too, and what
+# waits for working hours. Each alert names the runbook section that says what to do.
+groups:
+  - name: a5s-now  # docs/runbooks.md#on-call: these page the primary out of hours
+    rules:
+      - alert: A5sLedgerCopiesStopped
+        expr: max(a5s_ledger_copies_stopped_ratio) > 0
+        for: 1m
+        labels: {when: now}
+        annotations:
+          summary: The ledger's copies have stopped until someone acts.
+          runbook: docs/runbooks.md#the-ledgers-copies-stop
+      - alert: A5sLedgerCopiesFailing
+        expr: max(a5s_ledger_copies_failing_ratio) > 0
+        for: 10m
+        labels: {when: now}
+        annotations:
+          summary: The copier's tries to copy the ledger keep failing.
+          runbook: docs/runbooks.md#the-ledgers-copies-stop
+      - alert: A5sLedgerCopiesLate
+        expr: max(a5s_ledger_copies_age_seconds) > 1800 and max(a5s_ledger_copies_behind) > 0
+        for: 5m
+        labels: {when: now}
+        annotations:
+          summary: The ledger's newest copy is more than half an hour old, with entries waiting.
+          runbook: docs/runbooks.md#the-ledgers-copies-stop
+      - alert: A5sLedgerCheckProblems
+        expr: max(a5s_ledger_check_problems) > 0
+        labels: {when: now}
+        annotations:
+          summary: The copier's check of the whole ledger found it doesn't match its copies.
+          runbook: docs/runbooks.md#the-ledgers-copies-stop
+      - alert: A5sChangesStuck
+        expr: max(a5s_changes_stuck) > 0
+        for: 5m
+        labels: {when: now}
+        annotations:
+          summary: An approved change stopped part way through being made.
+          runbook: docs/runbooks.md#changes-wait-or-stop-part-way
+
+  - name: a5s-working-hours  # the rest waits: people carry on without a5s, and it catches up
+    rules:
+      - alert: A5sSendsNoFigures
+        expr: absent(a5s_status_readable_ratio)
+        for: 10m
+        labels: {when: working hours}
+        annotations:
+          summary: The core has sent no figures for ten minutes, so it may be away.
+          runbook: docs/runbooks.md#start-with-a5s-doctor
+      - alert: A5sStatusUnreadable
+        expr: min(a5s_status_readable_ratio) == 0
+        for: 5m
+        labels: {when: working hours}
+        annotations:
+          summary: The core can't read its status, which is the database.
+          runbook: docs/runbooks.md#the-database-is-away
+      - alert: A5sSchedulerAway
+        expr: max(a5s_scheduler_seen_age_seconds) > 180
+        for: 5m
+        labels: {when: working hours}
+        annotations:
+          summary: The scheduler hasn't asked the core to record its status for three minutes.
+          runbook: docs/runbooks.md#messages-are-waiting
+      - alert: A5sMessagesWaiting
+        expr: max(a5s_queue_oldest_seconds) > 300
+        for: 5m
+        labels: {when: working hours}
+        annotations:
+          summary: The oldest message waiting for an answer has waited more than five minutes.
+          runbook: docs/runbooks.md#messages-are-waiting
+      - alert: A5sBreakerOpen
+        expr: max by (gen_ai_request_model) (a5s_breakers_open) > 0
+        for: 15m
+        labels: {when: working hours}
+        annotations:
+          summary: a5s isn't calling a model, after three failures in a row.
+          runbook: docs/runbooks.md#runs-fail-or-a-model-isnt-answering
+      - alert: A5sUnsealed
+        expr: max(a5s_unsealed) > 0
+        for: 10m
+        labels: {when: working hours}
+        annotations:
+          summary: Approvals, decisions or grades the core hasn't sealed, which don't count until it does.
+          runbook: docs/runbooks.md#changes-wait-or-stop-part-way
+      - alert: A5sInstanceSuspended
+        expr: max(a5s_instances_not_active{a5s_status="suspended"}) > 0
+        for: 1h
+        labels: {when: working hours}
+        annotations:
+          summary: An instance has been suspended for an hour.
+          runbook: docs/runbooks.md#an-instance-isnt-active
+      - alert: A5sDeliveriesLeftInInbox
+        expr: max(a5s_deliveries_left_in_inbox) > 0
+        for: 30m
+        labels: {when: working hours}
+        annotations:
+          summary: Messages a chat didn't take were left in people's local inbox.
+          runbook: docs/runbooks.md#deliveries-a-chat-didnt-take
+      - alert: A5sRepliesSlow
+        expr: max(a5s_replies_p90_seconds) > 120
+        for: 30m
+        labels: {when: working hours}
+        annotations:
+          summary: Nine in ten answers took longer than the objective, two minutes.
+          runbook: docs/runbooks.md#an-objective-is-missed
+      - alert: A5sChasesLate
+        expr: min(a5s_chases_on_time_ratio) < 0.95
+        for: 1h
+        labels: {when: working hours}
+        annotations:
+          summary: Fewer chases went out before what's owed fell due than the objective, 95%.
+          runbook: docs/runbooks.md#an-objective-is-missed
+      - alert: A5sLedgerCheckLate
+        expr: max(a5s_ledger_check_age_seconds) > 172800
+        labels: {when: working hours}
+        annotations:
+          summary: The copier hasn't checked the whole ledger for two days.
+          runbook: docs/runbooks.md#the-ledgers-copies-stop
+      - alert: A5sBudgetWarnings
+        expr: max by (a5s_instance) (a5s_budget_warnings) > 0
+        labels: {when: working hours}
+        annotations:
+          summary: An instance went past four fifths of its budget.
+          runbook: docs/runbooks.md#budgets-run-out
+      - alert: A5sPeopleMissing
+        expr: max(a5s_departures_missing) > 0
+        for: 1h
+        labels: {when: working hours}
+        annotations:
+          summary: People the directory no longer names wait to be archived.
+          runbook: docs/runbooks.md#people-the-directory-no-longer-names

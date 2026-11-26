@@ -449,9 +449,21 @@ async function main() {
       return;
     }
     const serving = await api("/channels/local/agents");
-    const { agents } = serving.ok ? await serving.json() : { agents: [] };
+    const listed = await serving.json().catch(() => ({}));
+    if (!serving.ok) {  // such as someone the directory doesn't know: why, in the core's words
+      status(listed.detail || t("The agents here can't be listed just now: try again in a minute."));
+      if (state.config.development && serving.status === 403) {  // and another name to try
+        store.removeItem("a5s.person");
+        $("rename").hidden = false;
+        $("rename").addEventListener("click", () => location.reload());
+      }
+      return;
+    }
+    const agents = listed.agents || [];
     if (!agents.length) {  // the studio lists those they may know of, and ask for
-      status(t("No agent serves you here yet. The studio lists the agents you may ask for, at /studio/."));
+      status(listed.at_work === false  // only in development: none is at work here at all
+        ? t("No agent is at work here yet: apply the settings first, with `a5s apply`, then reload this page.")
+        : t("No agent serves you here yet. The studio lists the agents you may ask for, at /studio/."));
       return;
     }
     for (const agent of agents) {

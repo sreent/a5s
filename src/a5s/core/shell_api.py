@@ -22,6 +22,7 @@ from a5s.core import (
     administration,
     audit,
     drafts,
+    environment,
     handover,
     notebook_api,
     registry,
@@ -52,10 +53,11 @@ PAGES = (
     ("grade", "Grading", "grade", "Decide", "/studio/grade"),
     ("shadows", "Shadows", "grade", "Decide", "/studio/shadows"),
     ("settings", "Settings", "settings", "Decide", "/studio/settings"),
+    ("status", "Status", "bell", "Oversee", "/studio/status"),
     ("audit", "Audit trail", "audit", "Oversee", "/studio/audit"),
     ("admin", "Administration", "admin", "Oversee", "/studio/admin"),
     ("spending", "Spending", "spend", "Oversee", "/studio/spending"),
-    ("health", "Model health", "health", "Oversee", "/studio/health"),
+    ("health", "Model health", "model", "Oversee", "/studio/health"),
     ("officer", "Data protection", "officer", "Oversee", "/studio/officer"),
 )
 
@@ -91,6 +93,7 @@ def router(gw: Any) -> APIRouter:
                  "admin": administration.administers(person, gw.cfg.team),
                  "spending": spending.sees_any(gw.url, person),
                  "officer": DATA_PROTECTION in roles,
+                 "status": person.team == gw.cfg.team,  # as `a5s status` is theirs
                  "health": bool(roles & {RELEASE_APPROVER, ENGINEER}) or any(
                      r.startswith(ENGINEER + ":") for r in roles)}
         with db.transaction(gw.url) as conn:
@@ -100,5 +103,18 @@ def router(gw: Any) -> APIRouter:
         return {"you": person.name, "roles": held(person, gw.cfg.team), "pages": [
             {"page": key, "name": name, "icon": icon, "group": group, "at": at}
             for key, name, icon, group, at in PAGES if found[key]]}
+
+    return api
+
+
+def environment_router(gw: Any) -> APIRouter:
+    """Which deployment this is, for the band across the top of every page, the sign-in's too:
+    so it asks no sign-in, and says nothing but the deployment's kind and name, which every
+    page shows whoever's on it (core/environment.py)."""
+    api = APIRouter()
+
+    @api.get("/shell/environment", **shapes.answers(shapes.Environment))
+    def where() -> dict:
+        return environment.here(gw.cfg.development)
 
     return api

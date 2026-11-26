@@ -15,6 +15,18 @@ a5s assumes no cloud and no identity provider. Each step says what it needs, and
 | A chat for the test: a Matrix homeserver of the organisation's own, Teams in a test tenant with leave to upload custom apps, or a Slack workspace where the organisation may install apps | The chat's administrator | People reach the agents where they already talk; the web chat needs nothing more |
 | A host name, such as `a5s-test.example.org`, and a TLS certificate for it | The platform owner | People reach the pages, and a chat the bots, only over HTTPS |
 | `DEEPSEEK_API_KEY` and `QWEN_API_KEY` in the repository's secrets (Settings, Secrets and variables, Actions) | The repository's administrator | The release runs each agent's regression suite against them, on the sample's made-up data only |
+| On the platform owner's machine: `kubectl` and `helm` 3.16 or later for the cluster, Docker to build the deployment's image, and Python 3.10 or later for the two scripts below | The platform owner | Nothing else of a5s's needs installing there: its own commands run in its pods |
+
+Once the cluster, its Postgres and the identity provider are there, check that a pod in a5s's namespace reaches what a5s will, before installing it. [`deploy/reach-check.py`](../deploy/reach-check.py) needs nothing but Python, sends each nothing but a connection or a plain GET, and says on each line what answered and what to fix:
+
+```sh
+kubectl create namespace a5s
+kubectl -n a5s run reach-check --rm -i --restart=Never --image=python:3.12-slim -- \
+  python - --postgres <the server's host>:5432 --issuer <the issuer, as step 2 gives it> \
+  --https https://api.deepseek.com --https <the store's endpoint> --teams < deploy/reach-check.py
+```
+
+`--slack` and `--matrix <the homeserver>` check those chats instead, and `--plan` says what it would try, and tries nothing. Where a proxy opens TLS, the pod needs its certificate trusted, as a5s's own pods will.
 
 ## 1. The release
 
@@ -46,11 +58,11 @@ A deployment whose people chat in Teams signs them in with Entra ID too, since T
 | Chat | What | Fills |
 | --- | --- | --- |
 | Matrix | a5s's application service, registered on the organisation's homeserver, as [`deploy/matrix`](../deploy/matrix) registers it on the test stack's | `matrix.homeserver`, `matrix.serverName`, and the Secret's `matrix-as-token` and `matrix-hs-token` |
-| Teams | A bot for each agent, the assistant and the watcher, so each talks to people as itself: a single-tenant bot registration in the tenant's Entra ID, with Teams turned on, whose messaging endpoint is `https://<host>/channels/teams/messages`, made a Teams app in the personal and group chat scopes, but not a team's, which a5s turns away | `teams.tenantId`, `teams.bots: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `teams-secret-assistant` and `teams-secret-watcher` |
-| Slack | An app for each agent, the assistant and the watcher, so each talks to people as itself: made in the organisation's workspace and installed there, with Socket Mode and token rotation off, people allowed to write to it from its Messages tab, and its scopes, events and request URLs, `https://<host>/channels/slack/events` and `https://<host>/channels/slack/actions`, as [the README](../README.md#chats) lists them. a5s answers in direct messages and group DMs, and turns a channel away | `slack.teamId`, `slack.apps: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `slack-secret-<agent>` and `slack-token-<agent>` for each, its signing secret and bot token |
+| Teams | A bot for each agent, the assistant and the watcher, so each talks to people as itself: a single-tenant bot registration in the tenant's Entra ID, with Teams turned on, whose messaging endpoint is `https://<host>/channels/teams/messages`, made a Teams app in the personal and group chat scopes, but not a team's, which a5s turns away. `python3 deploy/chat-apps.py teams --agent assistant --app-id <its bot's app id> --host <host> --developer <the organisation> --out assistant.zip` makes the app's package to upload | `teams.tenantId`, `teams.bots: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `teams-secret-assistant` and `teams-secret-watcher` |
+| Slack | An app for each agent, the assistant and the watcher, so each talks to people as itself: made in the organisation's workspace and installed there, with Socket Mode and token rotation off, people allowed to write to it from its Messages tab, and its scopes, events and request URLs, `https://<host>/channels/slack/events` and `https://<host>/channels/slack/actions`, as [the README](../README.md#chats) lists them, which `python3 deploy/chat-apps.py slack --agent assistant --host <host>` writes as the app's manifest, for "From a manifest". a5s answers in direct messages and group DMs, and turns a channel away | `slack.teamId`, `slack.apps: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `slack-secret-<agent>` and `slack-token-<agent>` for each, its signing secret and bot token |
 | The web chat | Nothing more: the core serves it, at `https://<host>/chat/` | |
 
-A Teams bot's secret expires: put its date in the on-call calendar, since a bot whose secret has expired can't answer. A Slack app's bot token lasts until the app is uninstalled, as long as its token rotation stays off, since a5s doesn't renew it. The directory names each person in Slack as `slack:<team id>/<user id>`, as Slack's own profile shows the user id.
+A Teams bot's secret expires, and a bot whose secret has expired can't answer: note its date in the values' `expires`, such as `teams-secret-assistant: "2027-05-01"`, and the status says so 30 days before ([runbook](runbooks.md#credentials-that-expire)). A Slack app's bot token lasts until the app is uninstalled, as long as its token rotation stays off, since a5s doesn't renew it. The directory names each person in Slack as `slack:<team id>/<user id>`, as Slack's own profile shows the user id.
 
 ## 4. The cluster, Postgres and locked storage
 
@@ -114,7 +126,13 @@ kubectl -n a5s create secret generic a5s "$@" \
 helm install a5s deploy/helm/a5s -n a5s -f test-values.yaml  # the values from steps 2 to 5
 ```
 
+Name the deployment in the values, `environment: {kind: test, name: Pilot test}`, as a band across the top of every page says it: production in the change's colour, a test or a staging in amber, so nobody does in one what they meant for the other. A deployment nobody named shows as unnamed, to be treated as production, and `helm test` says to name it.
+
+[`deploy/helm/examples`](../deploy/helm/examples) has a values file to start from for each cloud, AKS with Entra ID and Teams, EKS with Okta and Slack, GKE with Google's sign-in, and one for the organisation's own cluster, with Keycloak, Matrix and a store with S3's object lock, each `<...>` to fill as the steps above say. Once it's installed, the chart says what to do next, and the commands for each.
+
 The core opens no run until the release is approved here, as [the chart's README](../deploy/helm/README.md#install) says: `a5s release show` in the gateway prints it, the sample's release approvers sign it (`a5s release sign`), and a ConfigMap of their signatures, named in `release.approval`, is recorded at the next `helm upgrade`. Then `kubectl -n a5s exec deploy/a5s-gateway -- a5s release status` ends "Approved here.", and `a5s status` reports.
+
+Then check the install as a whole: `helm test a5s -n a5s` runs `a5s doctor` in a pod of its own, with the core's settings, and `kubectl -n a5s logs pod/a5s-doctor` shows what it found. It checks the settings, the database and its schema, the release and its approval, the settings in force, the core and its token, the identity provider, each model's key, the ledger's copies and the credentials noted to expire, says on each line what to fix, and fails while anything needs fixing. Fix them in the order it lists them, as a later one may follow from an earlier ([runbooks](runbooks.md#start-with-a5s-doctor)).
 
 ## 7. The four checks
 

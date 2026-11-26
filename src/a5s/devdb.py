@@ -21,13 +21,24 @@ def _windows() -> bool:
     return os.name == "nt"
 
 
+# What a5s up says when it can't run Postgres here, and so what does instead
+INSTEAD = ("or run Postgres 16 yourself, set A5S_DATABASE_URL to it, and run `a5s migrate` "
+           "rather than `a5s up`")
+
+
+class Missing(RuntimeError):
+    """This machine lacks what `a5s up` runs Postgres with."""
+
+
 def _bin(name: str) -> str:
     found = shutil.which(name)
     if found:
         return found
     candidates = sorted(glob.glob(f"/usr/lib/postgresql/*/bin/{name}"))
     if not candidates:
-        raise RuntimeError(f"can't find {name}; install Postgres or set A5S_DATABASE_URL")
+        raise Missing(f"`a5s up` runs Postgres from its own programs, and can't find {name} "
+                      "here: install Postgres 16, such as with `apt install postgresql-16` or "
+                      f"`brew install postgresql@16`, {INSTEAD}")
     return candidates[-1]
 
 
@@ -53,7 +64,8 @@ def _docker_ready(name: str) -> bool:
 
 def _docker_start(folder: Path, port: int, url: str) -> str:
     if not shutil.which("docker"):
-        raise RuntimeError("Windows development needs Docker Desktop or Postgres installed")
+        raise Missing("on Windows, `a5s up` runs Postgres in Docker, and can't find docker "
+                      f"here: install Docker Desktop and start it, {INSTEAD}")
     name = _docker_name(folder)
     found = subprocess.run(["docker", "inspect", "--format", "{{.State.Running}}", name],
                            capture_output=True, check=False)

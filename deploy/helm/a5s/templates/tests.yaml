@@ -1,0 +1,87 @@
+{{- if ne .Values.mode "sandbox" }}
+{{/* `helm test <release>`: `a5s doctor`, with the core's settings, account and models, in a pod
+of its own, which says what it found and fails if anything needs fixing (docs/runbooks.md). It
+reads, and changes nothing. */}}
+{{- if .Values.networkPolicies.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-doctor" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-weight: "-1"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "doctor") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "a5s.policy.dns" . | nindent 4 }}
+    {{- include "a5s.policy.database" . | nindent 4 }}
+    {{- include "a5s.policy.outside" . | nindent 4 }}
+    - to:  # the core, as the other parts reach it
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "gateway") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8700}
+{{- end }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ printf "%s-doctor" .Release.Name }}
+  labels:
+    {{- include "a5s.podLabels" (dict "root" . "part" "doctor") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ printf "%s-gateway" .Release.Name }}  # reaching what the core reaches
+  automountServiceAccountToken: false
+  enableServiceLinks: false  # a5s finds services by name: no A5S_GATEWAY_SERVICE_HOST and such
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  securityContext:
+    runAsNonRoot: true
+    fsGroup: 10001
+  containers:
+    - name: doctor
+      image: {{ include "a5s.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      args: ["doctor"]
+      securityContext:
+        {{- include "a5s.securityContext" . | nindent 8 }}
+      env:
+        {{- include "a5s.scratch" . | nindent 8 }}
+        {{- include "a5s.env.gateway" . | nindent 8 }}
+        - name: A5S_GATEWAY_URL  # the core, where the other parts reach it
+          value: {{ printf "http://%s-gateway:8700" .Release.Name | quote }}
+      resources:
+        {{- toYaml .Values.resources.jobs | nindent 8 }}
+      volumeMounts:
+        - name: scratch
+          mountPath: /tmp
+        {{- if .Values.models.configMap }}
+        - name: models
+          mountPath: /app/config/models.yaml
+          subPath: models.yaml
+          readOnly: true
+        {{- end }}
+  volumes:
+    - name: scratch
+      emptyDir: {}
+    {{- if .Values.models.configMap }}
+    - name: models
+      configMap:
+        name: {{ .Values.models.configMap }}
+    {{- end }}
+{{- end }}

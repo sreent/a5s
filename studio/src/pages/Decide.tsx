@@ -9,7 +9,7 @@ import { type DecideNow, type Decided, type HeldChange, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { locale, t } from "../i18n";
 import { Icon } from "../icons";
-import { useToast } from "../design";
+import { ActingAs, ActionZone, useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 type Decision = "approve" | "reject";
@@ -56,12 +56,18 @@ function Card({ change, decide, ticked, tick, together }: {
           ? <p className="note">{t("You can see it, as you were told it waits, but only its deciders decide it.")}</p>
           : (
             <>
-              <input type="text" maxLength={300} placeholder={t("Why, if you reject it (optional)")} value={reason}
-                     aria-label={t("Why you reject {key}, if you do", { key: change.key })} onChange={(e) => setReason(e.target.value)} />
-              <div className="approval-actions">
-                <button type="button" className="primary" onClick={() => decide([change.digest], "approve", "")}>{t("Approve")}</button>
-                <button type="button" onClick={() => decide([change.digest], "reject", reason.trim())}>{t("Reject")}</button>
-              </div>
+              <ActionZone title={t("Decide it")} level={3} stacked reach={change.for.length
+                ? t("Approving it, the {agent} makes this change for {whom} within a minute, once every part it touches has approved it, if its records haven't changed. Rejecting it, a5s tells whoever asked, with your reason if you give one.",
+                    { agent: change.agent, whom: change.for.join(` ${t("and")} `) })
+                : t("Approving it, the {agent} makes this change within a minute, once every part it touches has approved it, if its records haven't changed. Rejecting it, a5s tells whoever asked, with your reason if you give one.",
+                    { agent: change.agent })}>
+                <input type="text" maxLength={300} placeholder={t("Why, if you reject it (optional)")} value={reason}
+                       aria-label={t("Why you reject {key}, if you do", { key: change.key })} onChange={(e) => setReason(e.target.value)} />
+                <div className="approval-actions">
+                  <button type="button" className="primary" onClick={() => decide([change.digest], "approve", "")}>{t("Approve")}</button>
+                  <button type="button" onClick={() => decide([change.digest], "reject", reason.trim())}>{t("Reject")}</button>
+                </div>
+              </ActionZone>
               {!change.sensitive && together && (  /* only where there are others to go with (round 13, C14) */
                 <label className="tick-label">
                   <input type="checkbox" className="tick" checked={ticked} onChange={(e) => tick(e.target.checked)} />
@@ -134,6 +140,7 @@ export function DecidePage() {
   const together = waiting.filter((p) => p.may_decide && !p.sensitive).length >= 2;
   return (
     <>
+      <ActingAs acting={found?.acting} />
       <PageHead title={t("Changes to decide")}
                 about={t("An agent asked for each of these, and it waits for you. Decide only what you mean: deciding signs you in again, and your sign-in decides once.")} />
       <p id="status" role="status" className="note">{status ?? (found && waiting.length === 0 ? t("Nothing waits for your decision.") : "")}</p>
@@ -150,9 +157,12 @@ export function DecidePage() {
                   })} />
           ))}</div>
           {together && (
-            <div className="actions" id="together">
-              <button id="approve-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "approve", "")}>{t("Approve the ticked ones")}</button>
-              <button id="reject-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "reject", "")}>{t("Reject the ticked ones")}</button>
+            <div id="together">
+              <ActionZone title={t("Decide the ticked ones together")}
+                          reach={t("Each change you ticked is decided as you choose here, as if one at a time: approved, each agent makes its change within a minute, once every part it touches has approved it; rejected, a5s tells whoever asked. You sign in again, for exactly these.")}>
+                <button id="approve-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "approve", "")}>{t("Approve the ticked ones")}</button>
+                <button id="reject-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "reject", "")}>{t("Reject the ticked ones")}</button>
+              </ActionZone>
             </div>
           )}
         </section>

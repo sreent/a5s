@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { onRunOut, runOut, runsOutAt, signedIn } from "./api";
 import { signIn, signInAgain } from "./auth";
 import { Toasts } from "./design/feedback";
+import { EnvironmentBand } from "./design/safety";
 import { t } from "./i18n";
 import { Find } from "./Find";
 import { AdminPage } from "./pages/Admin";
@@ -25,6 +26,7 @@ import { OfficerPage } from "./pages/Officer";
 import { RunPage } from "./pages/Run";
 import { SettingsPage } from "./pages/Settings";
 import { HealthPage } from "./pages/Health";
+import { StatusPage } from "./pages/Status";
 import { SpendingPage } from "./pages/Spending";
 import { TasksPage } from "./pages/Tasks";
 import { HandoverPage, HandoversPage } from "./pages/Handovers";
@@ -122,6 +124,7 @@ export function App() {
   else if (route.page === "map") content = <MapPage at={route.at} />;
   else if (route.page === "spending") content = <SpendingPage key={route.month ?? ""} month={route.month} />;
   else if (route.page === "health") content = <HealthPage />;
+  else if (route.page === "status") content = <StatusPage />;
   else if (route.page === "approve") content = <ApprovePage key={route.settings} version={route.settings} />;
   else content = <HomePage />;
   const workbench = route.page === "draft" && state === "ready";  // a draft fills the window, as Ocean's workbench
@@ -133,6 +136,7 @@ export function App() {
     return (
       <Toasts>
         <Find ready={ready}>
+          <EnvironmentBand />
           <div className="wb window">
             <Sidebar signedIn rail />
             <main className="wb-main">{content}</main>
@@ -145,6 +149,7 @@ export function App() {
   return (
     <Toasts>
       <Find ready={ready}>
+        <EnvironmentBand />
         <Sidebar signedIn={ready} />
         <div className="page studio">
           <main>{content}</main>

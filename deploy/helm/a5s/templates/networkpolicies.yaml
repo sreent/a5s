@@ -1,7 +1,8 @@
 {{- if ne .Values.mode "sandbox" }}
 {{- if .Values.networkPolicies.enabled }}
 {{/* Each part reaches only what its job needs, as compose's networks keep them: the workers,
-in every pool, reach the gateway alone, and only they and the scheduler reach the gateway. */}}
+in every pool, reach the gateway alone, and only they, the scheduler and `helm test`'s doctor
+reach the gateway. */}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -21,6 +22,9 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "a5s.selector" (dict "root" . "part" "scheduler") | nindent 14 }}
+        - podSelector:  # `helm test`'s doctor (templates/tests.yaml)
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "doctor") | nindent 14 }}
       ports:
         - {protocol: TCP, port: 8700}
   egress:

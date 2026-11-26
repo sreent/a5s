@@ -1,6 +1,6 @@
 # Deploying a5s from git, with Flux
 
-A signed release deploys itself. What each environment runs is a folder in git: the release, the signatures over it of the people its changes need, its image by digest, and its chart, from the release's own tag. A change to the folder goes in by pull request, and merges itself once its signatures meet what the release needs. [Flux](https://fluxcd.io) deploys what's merged, and the chart's job records the signatures, which the core checks again before it opens a run. Nobody runs `helm`, and rolling back is reverting the merge.
+A signed release deploys itself. What each environment runs is a folder in git: the release, the signatures over it of the people its changes need, its image by digest, and its chart, from the release's own tag. A change to the folder goes in by pull request, and merges itself once its signatures meet what the release needs. [Flux](https://fluxcd.io) deploys what's merged, and the chart's job records the signatures, which the core checks again before it opens a run. Nobody runs `helm`, and rolling back a release that adds no migration is reverting the merge: one that migrated the database means restoring it too ([upgrading, and rolling back](../../docs/runbooks.md#upgrading-and-rolling-back)).
 
 People still sign with their own keys, as before (`a5s release sign`): a sign-in to a page would put the identity provider's word in place of theirs, and a release's approval is the one thing in a5s that mustn't rest on the team that runs it.
 
@@ -64,7 +64,7 @@ signers:
    a5s release promote --environment "$env" --manifest release.yaml --image "$image"
    ```
 
-   It says what the release needs, weighed against the one the environment runs, such as the release approver and assurance for a change to the core.
+   It says what the release needs, weighed against the one the environment runs, such as the release approver and assurance for a change to the core, and whether it migrates the database, which decides how it rolls back: "It adds no migration", or "It migrates the database, with 0124_status_seen". If it migrates, take a backup of the database before it merges.
 3. Each person it needs reviews it and signs it there, with their own key, and pushes:
 
    ```sh
@@ -74,7 +74,7 @@ signers:
 4. The check on the pull request passes once the signatures meet what the release needs, weighed against the release the environment runs now. They're judged as the environment runs that release: by its image, with its directory, and with the environment's values as they are now. So a release that changes the directory can't approve itself with people it adds, and the pull request can't choose who judges it. The core judges it the same way when its job records the signatures, from who each release records may sign the next, so going around git with `helm upgrade` approves nothing more. The check also refuses a pull request that deploys a release and changes anything else in the environment; one whose signatures approve the release as another image than the environment would run, or as following another release than it runs; one that approves the release it runs again as another image, until the release approver and assurance sign that; one that takes an environment's release away; an environment file that sets values or post-renderers of its own in `helmrelease.yaml`, which Flux would merge over the release's image, or approves models with a ConfigMap of its own, which the release its approvers sign doesn't hold; and an image that doesn't hold exactly the release's manifest. On GitHub, it checks too that the release workflow built and attested the image, with `gh attestation verify`. An environment's first release is judged by `approvers.yaml` as the branch it merges into has it.
 5. The pull request merges itself. Flux deploys it, the chart's job records the signatures, and the core opens runs again once they check out.
 
-To roll back, revert the merge: Flux deploys the release before, whose approval the core has already recorded.
+To roll back, revert the merge: Flux deploys the release before, whose approval the core has already recorded. That's all it takes for a release that added no migration. The release before won't start on a database a later release migrated, so rolling back past a migration means restoring the database from a backup taken before it first, or rolling forward instead ([upgrading, and rolling back](../../docs/runbooks.md#upgrading-and-rolling-back)).
 
 ## The check
 

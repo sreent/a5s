@@ -5,6 +5,14 @@ export type ActedFor = {
   name: string | null;
 };
 
+// Whose power a page that changes things uses, for the line across its top: the roles its
+// acts count as, in words, and what that lets someone do there (core/acting.py). A page that
+// only shows, or whose acts are someone's own, has none.
+export type Acting = {
+  role: string;
+  lets: string;
+};
+
 // An administrative act, as the ledger records it: who did it, when, and to what, with whom
 // it was about as a stand-in until the officer agrees to names.
 export type AdminAct = {
@@ -130,11 +138,13 @@ export type Asked = {
 };
 
 // What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
-// its nonce was made with.
+// its nonce was made with; and, to erase, their id typed again, as the page asks for it, since
+// an erasure can't be undone: checked here too, so no script skips it (docs/design.md).
 export type Asking = {
   action: string;
   person: string;
   salt: string;
+  confirm?: string | null;
 };
 
 // A page of a period's entries, as the auditor asked, and where the next begins.
@@ -282,6 +292,7 @@ export type ChangeMade = {
   state: string;
   by?: string;
   outcome?: string;
+  acting?: Acting;
 };
 
 export type CoAuthors = {
@@ -345,6 +356,7 @@ export type Day = {
 export type DecideNow = {
   you: string;
   proposals: HeldChange[];
+  acting?: Acting;
 };
 
 // A decision recorded, for the core to check again, seal and act on: and the changes an
@@ -510,6 +522,16 @@ export type Ended = {
   runs: number;
 };
 
+// Which deployment this is, as the band across the top of every page says it: its kind,
+// production, staging, test or development, its name, what that means here, and whether
+// anyone named it, as one nobody named is taken as production (core/environment.py).
+export type Environment = {
+  kind: string;
+  name: string;
+  about: string;
+  named: boolean;
+};
+
 // What another system may tell an agent happened, and what it's asked to do each time.
 export type EventTaken = {
   type: string;
@@ -544,6 +566,7 @@ export type Figures = {
 export type GradeNow = {
   you: string;
   samples: SampleLine[];
+  acting?: Acting;
 };
 
 // Grades recorded, for the core to check again and seal.
@@ -602,6 +625,7 @@ export type Handover = {
   since: HandoverSince[];
   answers: HandoverAnswer[];
   ended: boolean;
+  acting?: Acting;
 };
 
 export type HandoverAnswer = {
@@ -659,6 +683,7 @@ export type HealthModel = {
   gated_at?: string | null;
   canary_passed?: number;
   canary_failed?: number;
+  reaches?: string;
 };
 
 // The health page: each model's day, measured rather than argued about.
@@ -875,6 +900,7 @@ export type NotebookNow = {
   entries: Note[];
   hidden: number;
   others: string[];
+  acting?: Acting;
 };
 
 export type Obligations = {
@@ -925,6 +951,13 @@ export type OfficerAsked = {
   by: string;
   lasts: string;
   command: string;
+};
+
+// The officer's page, before they ask: who they are, and the line that says they act as
+// the data protection officer there.
+export type OfficerNow = {
+  you: string;
+  acting: Acting;
 };
 
 // The agents, instances and parts nobody answers for.
@@ -1336,6 +1369,7 @@ export type ShadowPair = {
 export type Shadows = {
   pairs: ShadowPair[];
   shadows: ShadowFigures[];
+  acting?: Acting;
 };
 
 // Who signed in, the roles they hold, in words, the team that runs a5s first, and the pages
@@ -1411,6 +1445,7 @@ export type Standing = {
   suspended_by: string | null;
   may: string | null;
   asked: StatusAsked | null;
+  acting?: Acting;
 };
 
 // Suspending or resuming an instance from its page: which, and the salt the page made its
@@ -1426,6 +1461,23 @@ export type StatusAsked = {
   action: string;
   by: string;
   at: string;
+};
+
+// One thing that needs someone, for the Status page: now, out of hours too, or in working
+// hours, what it is, and the runbook's section on what to do.
+export type StatusNeed = {
+  when: string;
+  said: string;
+  runbook: string;
+};
+
+// The Status page: how a5s is doing, as the core last said, and how long ago.
+export type StatusNow = {
+  seen_seconds_ago?: number | null;
+  verdict: string;
+  needs: StatusNeed[];
+  release?: string | null;
+  day: string[];
 };
 
 // One of someone's tasks, with an agent: how it stands, what it waits on, and what it has
@@ -1568,6 +1620,8 @@ export type VersionReview = {
   you_approved: boolean;
   status: string;
   impact?: Impact;
+  acting?: Acting;
+  retires?: string[];
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still

@@ -23,7 +23,7 @@ The Grading page, `/studio/grade`, lists *Agents' work to grade*. Each card says
 ![Samples to grade: who asked, what code flagged, and the grade](../guides/master-data/19-over-the-quarter-each-correction-mo-decided-is-d.png)
 
 1. For each sample, choose **Right** if it's what a careful colleague would have done with what they knew, **Wrong** if not, or **Critical** if it could have done real harm. Choose a grade again to take it back.
-2. Choose **Send the grades you chose**, and sign in again, with your second factor where your organisation asks for one. Your sign-in covers exactly the grades you send, up to 20 at a time.
+2. Choose **Send the grades you chose**, in *Send your grades*, which says first what they count towards, and sign in again, with your second factor where your organisation asks for one. Your sign-in covers exactly the grades you send, up to 20 at a time.
 
 You don't see the judge's verdict, who decided the change, or another grader's grade of the same sample, so each grade is your own.
 

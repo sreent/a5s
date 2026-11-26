@@ -16,6 +16,8 @@ spending every connection the database allows.
 from __future__ import annotations
 
 import atexit
+import os
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -25,6 +27,7 @@ from typing import LiteralString, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
+import psycopg.conninfo
 from psycopg import sql
 from psycopg.rows import DictRow, dict_row
 from psycopg_pool import ConnectionPool, PoolTimeout
@@ -125,12 +128,80 @@ def migrations() -> list[tuple[int, str, str]]:
     return sorted(found)
 
 
+@contextmanager
+def rehearsal(url: str) -> Iterator[Connection]:
+    """A transaction rolled back whatever happens, on a connection of its own: for a command's
+    dry run, which does all it would, as it would, and keeps none of it. It holds the locks the
+    command would, for as long as it takes."""
+    with connect(url) as conn:
+        try:
+            yield conn
+        finally:
+            conn.rollback()
+
+
+def described(statements: str) -> str:
+    """What a migration says it does: the first sentence of the comment it opens with, as each
+    of a5s's does."""
+    said = []
+    for line in statements.splitlines():
+        if not line.startswith("--"):
+            break
+        said.append(line.removeprefix("--").strip())
+    return re.split(r"(?<=\.)\s", " ".join(said), maxsplit=1)[0] or "it says nothing of itself"
+
+
+def applied(url: str) -> set[int]:
+    """The migrations a database has had, by number: none for one a5s never migrated. It
+    changes nothing."""
+    with transaction(url) as conn:
+        made = conn.execute("select to_regclass('schema_migrations') is not null as made")
+        if not (made.fetchone() or {}).get("made"):
+            return set()
+        return {r["version"] for r in conn.execute("select version from schema_migrations")}
+
+
 class NewerSchema(RuntimeError):
     """The database has migrations this a5s doesn't know: a later release made it."""
 
 
 class OlderSchema(RuntimeError):
     """The database lacks migrations this a5s needs: nobody ran `a5s migrate` (round 15, D11)."""
+
+
+def where(url: str) -> tuple[str, str]:
+    """Where a database address points, as user@host:port/database, never with its password;
+    and its user."""
+    try:
+        given = psycopg.conninfo.conninfo_to_dict(url)
+    except psycopg.ProgrammingError:
+        return "the address A5S_DATABASE_URL gives", "its user"
+    user = str(given.get("user") or os.environ.get("PGUSER") or "postgres")
+    return (f"{user}@{given.get('host') or 'localhost'}:{given.get('port') or 5432}/"
+            f"{given.get('dbname') or user}"), user
+
+
+def refusal(exc: psycopg.OperationalError, url: str, who: str = "a5s") -> str:
+    """What `who` says when the database at `url` can't be reached or won't let it in: where it
+    looked, without the password, what Postgres said, and what fixes it."""
+    at, user = where(url)
+    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
+    said = (lines[0].rsplit("failed: ", 1)[-1].removeprefix("FATAL:").strip() if lines
+            else type(exc).__name__)
+    if "password" in said:
+        fix = (f"Postgres won't take the password for {user}: put the right one in "
+               "A5S_DATABASE_URL. A part's own role has the password `a5s migrate` gave it, from "
+               "A5S_DB_<PART>_PASSWORD")
+    elif said.startswith("database ") and "does not exist" in said:
+        fix = ("there's no such database there: create it, or name the one a5s uses in "
+               "A5S_DATABASE_URL")
+    elif said.startswith("role ") and "does not exist" in said:
+        fix = ("there's no such role there: `a5s migrate`, run as the database's administrator, "
+               "makes each part's role")
+    else:
+        fix = ("start Postgres there (`a5s up` starts one for development), or set "
+               "A5S_DATABASE_URL to where yours is")
+    return f"{who} can't reach the database at {at} ({said}): {fix}."
 
 
 class WrongRole(RuntimeError):

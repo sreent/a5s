@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 
 from a5s import db
 from a5s.contract import Person
-from a5s.core import ledger, notebook, web
+from a5s.core import acting, ledger, notebook, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 Keeper = tuple[Person, list[dict]]  # who signed in, and the instances whose notebooks they keep
@@ -84,7 +84,10 @@ def router(gw: Any) -> APIRouter:
                                          for k in r["sources"]],
                              "noted": r["written_at"].date().isoformat(),
                              "checked": r["checked_at"].date().isoformat()} for r in shown],
-                "hidden": len(rows) - len(shown), "others": others}
+                "hidden": len(rows) - len(shown), "others": others,
+                **acting.shown(acting.keeping(  # for the notebooks whose notes they may take out
+                    person, [i for i in instances if i["id"] in {r["instance_id"] for r in shown}],
+                    named))}
 
     @api.post("/notebook/api/{entry}/remove", **shapes.answers(shapes.NoteRemoved))
     def notebook_remove(entry: str, keeper: Annotated[Keeper, Depends(keeping)]) -> dict:
