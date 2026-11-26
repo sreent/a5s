@@ -254,7 +254,7 @@ Each refusal names what the sign-in said against what a5s takes, and the setting
 
 ## Calls are denied
 
-**Shows as:** many denials of one kind.
+**Shows as:** many denials of one kind; or more calls denied in the last hour than five times as many as usual for that hour, and 20 at least, which `a5s status` says needs someone now, and which pages out of hours (`A5sDenialsSpike`).
 
 1. Read the reasons with `a5s ledger tail`. Each denial names the policy that decided it.
 2. `tools-match-the-release`: a scenario's tool changed since the release pinned it. Pin the tools again with `a5s pin`, test, and release.

@@ -267,3 +267,18 @@ def test_the_dev_chat_shows_why_and_lets_someone_say_who_they_are_again(stack, b
         page.fill("#person", "ana")
         page.click("#name button")
         page.wait_for_selector("#compose:visible", timeout=30000)
+
+
+@pytest.mark.parametrize(("postgres", "fix"), [
+    ("FATAL:  sorry, too many clients already", "docs/runbooks.md#connections-to-the-database-run-out"),
+    ('FATAL:  no pg_hba.conf entry for host "10.0.0.5", user "a5s_gateway", database "a5s", '
+     "no encryption", "?sslmode=require"),
+    ("FATAL:  permission denied for database \"a5s\"", "grant it CONNECT"),
+])
+def test_each_common_refusal_names_its_own_fix(postgres, fix):
+    """Postgres refuses for many reasons beside being away: each common one names what fixes
+    it, never "start Postgres there" (round 17, A7)."""
+    refused = psycopg.OperationalError(
+        f'connection to server at "db.test" (10.0.0.9), port 5432 failed: {postgres}')
+    said = db.refusal(refused, "postgresql://a5s_gateway:hunter2@db.test:5432/a5s", "a5s gateway")
+    assert fix in said and "start Postgres there" not in said and "hunter2" not in said

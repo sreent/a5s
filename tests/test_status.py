@@ -184,3 +184,23 @@ def test_an_expiry_note_mistyped_stops_nothing_and_is_said(stack, monkeypatch):
     with stack.client() as c:
         now = c.get("/status").json()
     assert [n["runbook"] for n in now["needs"]] == ["docs/runbooks.md#credentials-that-expire"]
+
+
+def test_a_spike_of_denials_pages_as_the_on_call_section_says(stack):
+    """More calls denied in an hour than five times the usual for that hour, and 20 at least,
+    is what an attack looks like: the status says it needs someone now, and the figures carry
+    it for the alert that pages (docs/runbooks.md#on-call; round 17, A5)."""
+    from a5s.core import ledger, metrics
+
+    with db.transaction(stack.admin) as conn:
+        for n in range(25):
+            ledger.append(conn, {"kind": "tool", "action": "change_due_date", "run": None,
+                                 "instance": "assistant-finance", "acts_for": [],
+                                 "decision": "deny", "reasons": ["records-are-named-by-key"],
+                                 "args": {"n": n}})
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert now["denied_hour"]["last"] == 25 and now["denied_hour"]["usual"] == 0
+    [spike] = [n for n in now["needs"] if n["runbook"] == "docs/runbooks.md#calls-are-denied"]
+    assert spike["when"] == "now" and spike["said"].startswith("25 calls were denied in the last hour")
+    assert metrics.figures(now)["a5s.denied.hour"] == [(25.0, {})]

@@ -94,10 +94,13 @@ spec:
           readinessProbe:  # the part answers, as /healthz says, over HTTP: a stuck one
             httpGet: {path: /healthz, port: http}  # that still takes connections doesn't
             periodSeconds: 5
-          livenessProbe:
-            httpGet: {path: /healthz, port: http}
-            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          livenessProbe:  # a busy one, whose calls wait on a slow model, is never restarted
+            httpGet: {path: /healthz, port: http}  # for it: only one that answers nothing for
+            initialDelaySeconds: 30  # two minutes
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           {{- end }}
           resources:
             {{- toYaml (.resources | default (get $.Values.resources $role)) | nindent 12 }}

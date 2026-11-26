@@ -45,6 +45,12 @@ groups:
         annotations:
           summary: An approved change stopped part way through being made.
           runbook: docs/runbooks.md#changes-wait-or-stop-part-way
+      - alert: A5sDenialsSpike
+        expr: max(a5s_denied_hour) >= 20 and max(a5s_denied_hour) > 5 * max(a5s_denied_usual)
+        labels: {when: now}
+        annotations:
+          summary: More calls were denied in the last hour than five times the usual for that hour.
+          runbook: docs/runbooks.md#calls-are-denied
 
   - name: a5s-working-hours  # the rest waits: people carry on without a5s, and it catches up
     rules:

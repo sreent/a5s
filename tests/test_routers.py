@@ -138,3 +138,15 @@ def test_each_part_answers_its_probe_with_no_token_and_says_nothing_else(stack, 
         assert "/healthz" not in described(url)
     at_work = TestClient(worker.create_app(stack.url, (), ()))
     assert at_work.get("/healthz").json() == {"ok": True}
+
+
+def test_each_parts_health_answers_on_its_event_loop(approving, stack):
+    """A part's /healthz answers at once, never queued behind the calls that wait for models,
+    so the cluster's probes never restart a core that's busy (round 17, A13)."""
+    import inspect
+
+    from a5s.core import gateway, inbox
+
+    for app in (gateway.create_app(stack.gateway), inbox.create_app(stack.gateway)):
+        [route] = [r for r in app.routes if getattr(r, "path", None) == "/healthz"]
+        assert inspect.iscoroutinefunction(route.endpoint), app

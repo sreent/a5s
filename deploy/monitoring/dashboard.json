@@ -158,7 +158,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(a5s_breakers_open) or vector(0)",
+          "expr": "sum(a5s_breakers_open) or vector(0)",
           "legendFormat": "__auto"
         }
       ],

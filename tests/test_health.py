@@ -204,3 +204,25 @@ def test_whom_putting_a_model_back_reaches_reads_as_a_sentence():
         "assistant-finance calls it again from its next run, for the one person it serves.")
     assert health.reached(["a", "b", "c"], 12) == (
         "a, b and c call it again from their next run, for the 12 people they serve.")
+
+
+def test_a_key_never_set_is_a_skipped_call_never_the_models_stall(stack, monkeypatch):
+    """A model whose key nobody set was never called: each such call is in the ledger as
+    skipped, as one an open breaker skips, never counted against how the model did, so setting
+    the key, as a5s says to, is all it takes (round 17, A4)."""
+    import conftest
+
+    monkeypatch.setattr(stack.gateway.breakers, "allow", lambda model: True)  # no breaker skips
+    monkeypatch.delenv("A5S_TEST_PROVIDER_KEY")  # nobody set the key yet
+    for n in range(11):
+        stack.say(f"Hello {n}")
+    with db.transaction(stack.admin) as conn:
+        kept = conn.execute("select coalesce(sum(calls), 0) as calls, coalesce(bool_or(gated_at "
+                            "is not null), false) as gated from model_health where model = "
+                            "'fake'").fetchone()
+        skipped = conn.execute("select count(*) as n from ledger where kind = 'model' and "
+                               "(entry::jsonb) -> 'outcome' ->> 'skipped' = 'no key'").fetchone()
+    assert (kept["calls"], kept["gated"]) == (0, False) and skipped["n"] >= 11
+    monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", conftest.PROVIDER_KEY)  # the named fix
+    stack.model.reply("Hello, Ana.")
+    assert stack.say("Are you there now?") == "Hello, Ana."

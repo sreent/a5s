@@ -38,6 +38,10 @@ networkPolicies:
 
 ingress:
   enabled: true
-  className: alb  # or the cluster's ingress controller's class
+  className: alb  # the AWS Load Balancer Controller's, or the cluster's own controller's class
   host: <host>
-  tlsSecret: <the certificate's Secret>
+  annotations:  # the controller's: facing people, to the pods themselves, with ACM's certificate,
+    alb.ingress.kubernetes.io/scheme: internet-facing  # which it takes in place of tlsSecret;
+    alb.ingress.kubernetes.io/target-type: ip  # internal, where people reach it over a VPN
+    alb.ingress.kubernetes.io/certificate-arn: <the certificate's ARN in ACM>
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'

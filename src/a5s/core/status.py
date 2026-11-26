@@ -85,6 +85,13 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
     ).fetchall()
     turned = [d for d in denied if d["kind"] == "inbound"]
     denied = [d for d in denied if d["kind"] != "inbound"]
+    spiking = conn.execute(  # the last hour's denials, and the same hour's on each of the seven
+        "with recent as (select (entry::jsonb->>'at')::timestamptz as at from ledger "  # days
+        "  where decision = 'deny' and kind <> 'inbound' order by seq desc limit 10000) "  # before
+        "select (select count(*) from recent where at > now() - interval '1 hour') as last, "
+        "(select count(*) from recent, generate_series(1, 7) as d where at > now() - "
+        "make_interval(days => d) - interval '1 hour' and at <= now() - make_interval(days => d)"
+        ") / 7.0 as usual").fetchone()  # what an attack looks like (round 17, A5)
     asked = conn.execute(  # questions agents asked each other (core/asking.py)
         "select count(*) filter (where answered_at is not null) as answered, "
         "count(*) filter (where problem is not null) as unanswered, "
@@ -174,6 +181,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "queue": {"waiting": queue["waiting"], "oldest_seconds": _number(queue["oldest"])},
         "runs": _outcomes(runs),
         "denied": [dict(r) for r in denied],
+        "denied_hour": {"last": spiking["last"], "usual": float(spiking["usual"])},
         "turned_away": sum(d["n"] for d in turned),
         "questions": {"answered": asked["answered"], "unanswered": asked["unanswered"],
                       "p90_seconds": _number(asked["p90"])},
@@ -236,6 +244,7 @@ def _outcomes(rows: list[dict]) -> list[dict]:
 # can wait for working hours: each with the runbook section that says what to do
 NOW, LATER = "now", "working hours"
 QUEUE_LATE = 5 * 60  # seconds the oldest message may wait before it's worth a look
+DENIED_SPIKE, DENIED_FLOOR = 5, 20  # denials in an hour beyond five times the usual, and 20, page
 COPIES_LATE = 30 * 60  # seconds the ledger's newest copy may age, entries waiting, before a page
 CHECK_LATE = 2 * 86400  # seconds since the copier last checked the whole ledger, before a look
 
@@ -304,6 +313,11 @@ def needs(status: dict[str, Any]) -> list[dict[str, str]]:
     development = bool((status.get("configuration") or {}).get("development"))
     for when, said in copies_needs(status.get("copies"), development):
         need(when, said, COPYING)
+    hour = status.get("denied_hour") or {}
+    if (hour.get("last") or 0) >= DENIED_FLOOR and hour["last"] > DENIED_SPIKE * hour["usual"]:
+        need(NOW, f"{hour['last']} calls were denied in the last hour, more than five times as "
+                  f"many as usual for that hour, {hour['usual']:.0f}: read why with `a5s ledger "
+                  "tail`, as that's what an attack looks like", "calls-are-denied")
     if stuck := status["changes"]["stuck"]:
         need(NOW, f"{stuck} {'change' if stuck == 1 else 'changes'} stopped part way through "
                   "being made: `a5s proposals` lists them", "changes-wait-or-stop-part-way")

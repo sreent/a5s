@@ -83,6 +83,11 @@ class IdentityConfig:
     # Whether the deployment says its provider's tokens show no second factor (A5S_OIDC_MFA=none):
     # a5s asks none, as with none set, but the status and the doctor take it as said (round 17, A10)
     mfa_said_none: bool = False
+    # The settings a refusal names as what decides the issuer and audiences it takes: people's
+    # sign-in's, unless the verifier is another's, such as Teams', whose bots name their own
+    # (round 17, A9); None where no setting decides it
+    issuer_setting: str | None = "A5S_OIDC_ISSUER"
+    audience_setting: str = "A5S_OIDC_AUDIENCE, with A5S_WEBCHAT_CLIENT_ID,"
     # The claim a sign-in shows its groups by, for the roles the settings give them
     # (A5S_OIDC_GROUPS_CLAIM, groups if not set, and none if set empty): core/memberships.py
     groups_claim: str | None = "groups"
@@ -256,14 +261,17 @@ class Verifier:
         except jwt.PyJWTError:
             said = {}
         if isinstance(exc, jwt.InvalidIssuerError):
+            if self.cfg.issuer_setting is None:  # a5s's own, such as the Bot Framework's
+                return (f"it's from the issuer {shown(said.get('iss'))}, not "
+                        f"{shown(self.cfg.issuer)}, whose tokens alone a5s takes here")
             return (f"it's from the issuer {shown(said.get('iss'))}, and a5s takes sign-ins from "
-                    f"{shown(self.cfg.issuer)}, as A5S_OIDC_ISSUER sets it: set that to exactly "
-                    "what the provider's tokens name")
+                    f"{shown(self.cfg.issuer)}, as {self.cfg.issuer_setting} sets it: set that to "
+                    "exactly what the provider's tokens name")
         if isinstance(exc, jwt.InvalidAudienceError):
             ours = [self.cfg.audience] if isinstance(self.cfg.audience, str) else self.cfg.audience
             return (f"it's for {shown(said.get('aud'))}, and a5s takes tokens for "
-                    f"{', '.join(map(shown, ours)) or 'none'}: A5S_OIDC_AUDIENCE, with "
-                    "A5S_WEBCHAT_CLIENT_ID, names the client ids a5s takes tokens for")
+                    f"{', '.join(map(shown, ours)) or 'none'}: {self.cfg.audience_setting} "
+                    "names the client ids a5s takes tokens for")
         if isinstance(exc, jwt.ExpiredSignatureError):
             return "it has expired: sign in again"
         if isinstance(exc, jwt.ImmatureSignatureError):

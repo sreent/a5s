@@ -198,6 +198,18 @@ def refusal(exc: psycopg.OperationalError, url: str, who: str = "a5s") -> str:
     elif said.startswith("role ") and "does not exist" in said:
         fix = ("there's no such role there: `a5s migrate`, run as the database's administrator, "
                "makes each part's role")
+    elif "too many clients" in said or "remaining connection slots" in said:  # (round 17, A7)
+        fix = ("Postgres has no connection to spare: see docs/runbooks.md#connections-to-the-"
+               "database-run-out, and A5S_DB_POOL_SIZE")
+    elif "no encryption" in said or ("pg_hba.conf" in said and "SSL off" in said):
+        fix = ("the database takes encrypted connections only, as a managed Postgres does: add "
+               "?sslmode=require to A5S_DATABASE_URL")
+    elif "pg_hba.conf" in said:
+        fix = ("Postgres doesn't let this role in from here: its pg_hba.conf, or the managed "
+               "database's network rules, must allow it")
+    elif "permission denied for database" in said:
+        fix = (f"{user} may not connect to that database: grant it CONNECT, as `a5s migrate`, "
+               "run as the database's administrator, does")
     else:
         fix = ("start Postgres there (`a5s up` starts one for development), or set "
                "A5S_DATABASE_URL to where yours is")

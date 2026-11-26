@@ -1519,7 +1519,8 @@ def create_app(gw: Gateway) -> FastAPI:
                   redoc_url="/redoc" if explorer else None)
 
     @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
-    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+    async def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md),
+        # on the event loop, never queued behind the calls that wait for models (round 17, A13)
         return {"ok": True}
 
     @app.exception_handler(psycopg.OperationalError)
@@ -5165,10 +5166,13 @@ def create_app(gw: Gateway) -> FastAPI:
                     "gen_ai.operation.name": "chat", "gen_ai.provider.name": fallback.provider,
                     "gen_ai.request.model": candidate, "a5s.run.id": row["run"],
                     "a5s.instance": row["id"]}) as current:
-                started = time.perf_counter()
+                started, unkeyed = time.perf_counter(), False
                 try:
                     status, data = models.forward(fallback, forwarded, gw.http, timeout=min(
                         config.PROVIDER_TIMEOUT.read(), left))
+                except models.KeyMissing as exc:  # nobody set its key: no call was made, so
+                    unkeyed = True  # nothing of the model's to count (round 17, A4)
+                    status, data = 503, models.error_body(api, str(exc), "model_unavailable")
                 except models.ModelTimedOut as exc:
                     timed_out.add(candidate)
                     status, data = 503, models.error_body(api, str(exc), "model_unavailable")
@@ -5183,6 +5187,13 @@ def create_app(gw: Gateway) -> FastAPI:
                     "gen_ai.usage.output_tokens": (usage or {}).get("completion_tokens",
                                                                     (usage or {}).get("output_tokens")),
                     "error.type": str(status) if status >= 400 else None}.items() if v is not None})
+            if unkeyed:  # skipped, as an open breaker's call is: in the ledger, not its health
+                record({"kind": "model", "action": candidate, "run": row["run"],
+                        "instance": row["id"], "decision": "record", "of": seq,
+                        "outcome": {"status": 503, "reported_model": None, "usage": None,
+                                    "skipped": "no key"}})
+                tried_here.append(candidate)
+                continue
             reported = data.get("model") if isinstance(data, dict) else None
             expected = fallback.reported_model or fallback.model
             if status < 400 and reported != expected:
