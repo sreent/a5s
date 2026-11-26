@@ -84,6 +84,8 @@ def router(gw: Any) -> APIRouter:
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         preview = impact.shown(gw, before, settings, person) if status == "waiting" else None
         approves = status == "waiting" and person.id not in approved
+        kept = {i.id for i in settings.instances}  # what it retires, for the approval's zone to say
+        retires = sorted(i.id for i in (before.instances if before else ()) if i.id not in kept)
         rooted = memberships.rooted(gw.scenario).person
         own = rooted(person.id)  # a role only the directory's giving counts as, for some needs
         theirs = [role for role, _, only in registry.needed(
@@ -99,7 +101,7 @@ def router(gw: Any) -> APIRouter:
                 if status == "waiting" else [],
                 "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
                 "asked_by": asker, "you": person.name, "you_approved": person.id in approved,
-                "status": status,
+                "status": status, "retires": retires,
                 **acting.shown(acting.approving(person, theirs, spoken) if approves else None)}
 
     @pages.post("/approve/settings/{version}", **shapes.answers(shapes.Approved))

@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { type Approved, get, send, type VersionReview } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { ActingAs, useToast } from "../design";
+import { ActingAs, ActionZone, useToast } from "../design";
 import { locale, t } from "../i18n";
 import { ImpactPreview } from "../Impact";
 import { initials, PageHead, useLoad, Waiting } from "../ui";
@@ -118,13 +118,14 @@ export function ApprovePage({ version }: { version: string }) {
               <ul id="whole" className="plain well">{found.whole.map((line) => <li key={line}>{line}</li>)}</ul>
             </div>
             {found.impact && <ImpactPreview impact={found.impact} />}
-            {found.status === "waiting" && !found.you_approved && (
-              <div id="decision" className="decision">
-                <div className="approval-actions">
-                  <button id="approve" className="primary" type="button" onClick={approve}>{t("Approve version {serial}", { serial: found.serial })}</button>
-                </div>
-                <p className="approval-signed">{t("Approve only if you mean these changes. Approving signs you in again, for this version alone, and only once.")}</p>
-              </div>
+            {found.status === "waiting" && !found.you_approved && (  /* what agents may do, for everyone they serve */
+              <ActionZone title={t("Approve it")} level={3} reach={[
+                t("Your approval counts towards version {serial}: once every approval it needs is in, a5s puts it in force within a minute, and each instance it names works as it says from its next message.", { serial: found.serial }),
+                (found.retires ?? []).length > 0 && t("It retires {instances}, which stop answering the people they serve at once, until a later version puts them back.", { instances: (found.retires ?? []).join(", ") }),
+                t("Approve only if you mean these changes: approving signs you in again, for this version alone, and only once."),
+              ].filter(Boolean).join(" ")}>
+                <button id="approve" className="primary" type="button" onClick={approve}>{t("Approve version {serial}", { serial: found.serial })}</button>
+              </ActionZone>
             )}
           </div>
         </section>

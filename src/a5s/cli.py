@@ -1125,12 +1125,20 @@ def _main(argv: list[str] | None = None) -> None:
         if args.restore:  # a loosening: the core checks who asks, and the ledger records it
             put = _admin(cfg, f"/models/{quote(args.restore, safe='')}/restore",
                          {"by": args.by, "identity": config.TOKEN.read()})
-            print(f"{put['restored']} is back, put there by {put['by']}.")
+            print(f"{put['restored']} is back, put there by {put['by']}. {put['reaches']}")
         else:
             for row in health_mod.report(url, scenario, days=args.days):
                 state = "stopped" if row["gated_at"] else "answering"
                 print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
                       f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
+                if row["gated_at"]:  # whom putting it back reaches, said before it's done
+                    with db.connect(url) as conn:
+                        on = [r["id"] for r in health_mod.running_on(conn, row["model"])]
+                    reaches = ("no instance at work" if not on else
+                               f"{on[0]}, which calls it again from its next run" if len(on) == 1
+                               else f"{', '.join(on)}: each calls it again from its next run")
+                    print(f"  Putting it back, as the release approver, with a5s health --restore "
+                          f"{row['model']}, reaches {reaches}.")
 
     if args.command == "config":
         return _config(args)

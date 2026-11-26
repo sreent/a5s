@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { get, send } from "../api";
 import type * as gen from "../api.gen";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { ActingAs, Badge, Confirm, useToast } from "../design";
+import { ActingAs, ActionZone, Badge, useToast } from "../design";
 import { t } from "../i18n";
 import { PageHead, useLoad, Waiting, when } from "../ui";
 
@@ -72,12 +72,12 @@ export function UndoPage({ change }: { change: string }) {
           </dl>
           <Standing change={c} />
           {problem && <p className="problem" role="alert">{problem}</p>}
-          {c.may
-            ? <div className="actions">
-                <Confirm label={t("Undo it")} danger title={t("Undo this change to {record}?", { record: c.record })}
-                         about={t("a5s puts it back as it was before, so long as nobody has changed it since. It counts against the {agent}'s accuracy, as a wrong grade of its work. You'll sign in again, for this alone.", { agent: c.agent })}
-                         confirm={t("Undo it")} onConfirm={undo} />
-              </div>
+          {c.may  /* it reaches the record, for everyone who reads it: a zone, saying so first (docs/design.md) */
+            ? <ActionZone title={t("Undo it")} level={3}
+                          reach={t("Undoing it puts {record} back as it was before the {agent} changed it, for everyone who reads it, within a minute, so long as nobody has changed it since. a5s tells {whom} and those who run the {agent}, in their digests, and it counts against the {agent}'s accuracy, as a wrong grade of its work. You sign in again, for this alone.",
+                                   { record: c.record, agent: c.agent, whom: c.whom.join(` ${t("and")} `) || t("whoever it was for") })}>
+                <button type="button" id="undo" className="primary" onClick={undo}>{t("Sign in and undo it")}</button>
+              </ActionZone>
             : c.why_not && c.state === "kept" && <p className="note" id="why-not">{t("You can't undo it: {why}.", { why: c.why_not })}</p>}
         </section>
       )}

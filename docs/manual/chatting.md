@@ -84,7 +84,7 @@ The agent's owners see the answer, the run behind it and what you wrote, and who
 A change an agent made for you can be undone for a while, where its tool says how: a day, unless the tool says otherwise, and a week at most.
 
 - **Find it.** a5s says so beside the agent's next message when the agent made a change on its own, and in its own message when a decider approved one. Your studio home lists each change you can still undo.
-- **Undo it.** Open its page from the link, choose **Undo it**, and sign in again, for that alone. a5s puts the record back within a minute, as it was before the change, so long as nobody has changed it since. If a5s couldn't, your digest says why.
+- **Undo it.** Open its page from the link, choose **Sign in and undo it**, under what undoing reaches, and sign in again, for that alone. a5s puts the record back within a minute, as it was before the change, so long as nobody has changed it since. If a5s couldn't, your digest says why.
 - An undone change counts against the agent's accuracy, as a wrong grade of its work.
 
 ## When your conversation is handed to a team

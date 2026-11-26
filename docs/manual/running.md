@@ -42,10 +42,10 @@ It works once the owner of every part any instance in the version works in has a
 
 An instance's owner or deputy, its agent's owners, the owners and delegates of its parts, and the team that runs a5s may suspend it.
 
-1. On its page, choose **Suspend it**. It stops at its next step, even in a run already going, and starts no runs until it's resumed.
+1. On its page, right below its head, *Suspend or resume it* says first whom suspending reaches: it stops at its next step, even in a run already going, and starts no runs, so it answers none of the people it serves until it's resumed. Nothing it keeps is lost.
 2. Choose **Sign in and suspend it**, and sign in again, for this alone. a5s suspends it within a minute, once it has checked that sign-in again.
 
-The people it serves are told it's suspended, who suspended it and that they can resume it. To resume it, choose **Resume it**, then **Sign in and resume it**, with your second factor where your organisation asks for one. Whoever suspended it may resume it, and so may the release approver, from outside the team that runs a5s. If a5s couldn't do either, your digest says why.
+The people it serves are told it's suspended, who suspended it and that they can resume it. To resume it, choose **Sign in and resume it** in the same place, with your second factor where your organisation asks for one. Whoever suspended it may resume it, and so may the release approver, from outside the team that runs a5s. If a5s couldn't do either, your digest says why.
 
 ## Answer someone who asks for an agent
 

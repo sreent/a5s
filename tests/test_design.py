@@ -145,7 +145,7 @@ def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
 # The showcase: each piece pages are made of, as pages use it
 
 PIECES = ("colours", "type", "buttons", "people", "traced", "approval", "facts", "ladder",
-          "timeline", "journey", "confirm", "acting", "find", "loading", "toast")
+          "timeline", "journey", "confirm", "acting", "zones", "find", "loading", "toast")
 
 
 def showcase(browser, url: str, errors: list[str]):

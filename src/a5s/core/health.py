@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from a5s import db
+from a5s.core import registry
 
 # What a model must keep to stay answerable: over a day, with at least this many calls, at
 # most this share may fail. One model's own may come from its release later; a default is
@@ -60,6 +61,35 @@ def stopped(conn: db.Connection, scenario: str, alias: str) -> bool:
     """Whether the gate stopped the model and nobody has put it back since."""
     return conn.execute("select 1 from model_health where scenario = %s and model = %s and "
                         "gated_at is not null limit 1", (scenario, alias)).fetchone() is not None
+
+
+def running_on(conn: db.Connection, alias: str) -> list[dict[str, Any]]:
+    """The instances at work whose own model it is, and whom each serves, as the settings name
+    them: what putting it back reaches first."""
+    return conn.execute("select id, serves from instances where model = %s and status <> "
+                        "'retired' order by id", (alias,)).fetchall()
+
+
+def reach(conn: db.Connection, scenario: Any, alias: str) -> tuple[list[str], int]:
+    """Whom putting a stopped model back reaches, said before it's done and once it is
+    (docs/design.md): the instances at work whose own model it is, which call it again from
+    their next run, and how many people they serve, as the directory says now. A release that
+    falls back to it may call it again too, as `model_for` chooses."""
+    rows = running_on(conn, alias)
+    people = {p for r in rows for p in registry.served(scenario, r["serves"] or [])}
+    return [r["id"] for r in rows], len(people)
+
+
+def reached(instances: list[str], people: int) -> str:
+    """What putting a model back reaches, in a sentence, as `reach` found it."""
+    if not instances:
+        return ("No instance at work runs on it, though a release that falls back to it may "
+                "call it again.")
+    one = len(instances) == 1
+    which = instances[0] if one else ", ".join(instances[:-1]) + " and " + instances[-1]
+    whom = "the one person" if people == 1 else f"the {people} people"
+    return (f"{which} {'calls' if one else 'call'} it again from {'its' if one else 'their'} "
+            f"next run, for {whom} {'it serves' if one else 'they serve'}.")
 
 
 def restore(conn: db.Connection, scenario: str, alias: str) -> None:

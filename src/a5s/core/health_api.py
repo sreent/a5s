@@ -5,6 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
+from a5s import db
 from a5s.contract import RELEASE_APPROVER, Person
 from a5s.core import canaries, health, web
 from a5s.core import studio_models as shapes
@@ -12,8 +13,14 @@ from a5s.core.releases import ENGINEER
 
 
 def health_now(gw: Any, days: int = 1) -> dict:
-    """The page's data: each model's day from the ledger, and its canaries' latest day."""
+    """The page's data: each model's day from the ledger, and its canaries' latest day; and, for
+    a stopped model, whom putting it back would reach, said before anyone does."""
     rows = health.report(gw.url, gw.scenario.name, days=days)
+    reaches: dict[str, str] = {}
+    if any(row["gated_at"] for row in rows):
+        with db.transaction(gw.url) as conn:
+            reaches = {row["model"]: health.reached(*health.reach(conn, gw.scenario, row["model"]))
+                       for row in rows if row["gated_at"]}
     scores = canaries.scorecard(gw.url, gw.scenario.name, days=days)
     by_model: dict[str, dict[str, int]] = {}
     for row in scores:
@@ -27,6 +34,7 @@ def health_now(gw: Any, days: int = 1) -> dict:
             "gated_at": row["gated_at"].isoformat() if row["gated_at"] else None,
             "canary_passed": by_model.get(row["model"], {}).get("passed", 0),
             "canary_failed": by_model.get(row["model"], {}).get("failed", 0),
+            **({"reaches": reaches[row["model"]]} if row["model"] in reaches else {}),
         } for row in rows],
     }
 

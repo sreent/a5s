@@ -38,10 +38,14 @@ def sign_in(url: str, provider, action: str, person: str, by: str = "noor") -> t
     return tokens["id_token"], salt
 
 
-def ask(url: str, action: str, person: str, token: str | None, salt: str) -> httpx.Response:
+def ask(url: str, action: str, person: str, token: str | None, salt: str,
+        confirm: str | None = None) -> httpx.Response:
+    """The officer's page asking, with the id typed again to erase, as the page asks for it."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    typed = confirm if confirm is not None else person if action == "erase" else None
     return httpx.post(f"{url}/officer/requests", headers=headers,
-                      json={"action": action, "person": person, "salt": salt})
+                      json={"action": action, "person": person, "salt": salt,
+                            **({"confirm": typed} if typed is not None else {})})
 
 
 def asked(url: str, provider, action: str, person: str) -> dict:
@@ -101,6 +105,25 @@ def test_no_sign_in_but_the_officers_own_for_this_asks_for_anything(stack, appro
     assert export(stack, "ben", identity=kept).status_code == 403  # a sign-in alone: nothing
 
 
+def test_an_erasure_asks_for_the_id_typed_again_and_the_server_checks_it(stack, approving,
+                                                                         provider):
+    """What can't be undone asks for the thing's name typed, and the server checks it too, so
+    no script skips it (docs/design.md): a sign-in for the erasure alone isn't enough."""
+    token, salt = sign_in(approving, provider, "erase", "ben")
+    for typed in ("", "ana", "be"):
+        r = ask(approving, "erase", "ben", token, salt, confirm=typed)
+        assert r.status_code == 400 and "type their id again" in r.text, typed
+    without = httpx.post(f"{approving}/officer/requests", json={
+        "action": "erase", "person": "ben", "salt": salt},
+        headers={"Authorization": f"Bearer {token}"})
+    assert without.status_code == 400
+    with db.transaction(stack.admin) as conn:  # none of them was recorded, nor used the sign-in
+        assert conn.execute("select count(*) as n from officer_requests").fetchone()["n"] == 0
+    assert ask(approving, "erase", "ben", token, salt, confirm=" Ben ").status_code == 200
+    export_token, export_salt = sign_in(approving, provider, "export", "ana")
+    assert ask(approving, "export", "ana", export_token, export_salt).status_code == 200  # no word
+
+
 def test_a_request_waits_ten_minutes_for_the_team(stack, approving, provider):
     asked(approving, provider, "export", "ben")
     with db.transaction(stack.admin) as conn:
@@ -126,13 +149,22 @@ def test_the_officer_asks_in_the_browser(stack, approving, provider, browser):
     assert (went.status_code, went.headers["location"]) == (303, "/studio/officer")
     page = browser.new_page()
     page.goto(f"{approving}/studio/officer")
-    page.wait_for_selector("#ask", state="visible", timeout=30000)
+    page.wait_for_selector("#whom", state="visible", timeout=30000)
     accessible(page)
     shot(page, "officer")
-    page.select_option("#action", "erase")
     page.fill("#person", "ben")
-    page.fill("#confirm", "ben")
-    page.click("button[type=submit]")  # to the provider, afresh, and straight back
+    erasing = page.locator(".action-zone.cant-undo")  # in a zone of its own, marked so
+    assert "Can't be undone" in erasing.inner_text() and "ben" in erasing.inner_text()
+    erasing.locator("button:text-is('Erase it')").click()
+    dialog = page.wait_for_selector("dialog[open]", timeout=30000)
+    assert "Erase all a5s keeps about ben?" in dialog.inner_text()
+    erase_it = page.locator("dialog[open] button.danger")
+    assert erase_it.is_disabled()  # until the id is typed, letter case aside
+    assert page.evaluate("document.activeElement.tagName") == "INPUT"  # the field has the focus
+    page.fill("dialog[open] input", "be")
+    assert erase_it.is_disabled()
+    page.fill("dialog[open] input", "BEN")
+    erase_it.click()  # to the provider, afresh, and straight back
     page.wait_for_selector("#status >> text=a5s erase --person ben --confirm ben", timeout=30000)
     assert "Ben Okafor (ben)" in page.inner_text("#status")
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger

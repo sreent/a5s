@@ -43,10 +43,10 @@ A change that read content from outside always waits for a person, however far t
 
 1. Read its card, and open its records if you need to.
 2. To reject it, say why in *Why, if you reject it (optional)*. Whoever asked reads what you write.
-3. Choose **Approve** or **Reject**.
+3. Choose **Approve** or **Reject**, in *Decide it* at the card's foot, which says first what each does: approved, the agent makes the change for whoever it was for within a minute, once every part it touches has approved it; rejected, a5s tells whoever asked.
 4. Sign in again, for this decision alone, with your second factor where your organisation asks for one. a5s takes only a fresh sign-in, from the last ten minutes, and it decides this one change and nothing else.
 
-To decide several unflagged changes together, tick *Decide it with the others ticked* on each, then choose **Approve the ticked ones** or **Reject the ticked ones**. One sign-in decides up to 20, and a rejection of several carries no reason. A flagged change is always decided on its own.
+To decide several unflagged changes together, tick *Decide it with the others ticked* on each, then choose **Approve the ticked ones** or **Reject the ticked ones**, in *Decide the ticked ones together* at the list's foot. One sign-in decides up to 20, and a rejection of several carries no reason. A flagged change is always decided on its own.
 
 ## What happens after you decide
 
@@ -74,7 +74,7 @@ A part's settings may say a change above an amount, such as a payment above 10,0
 Where a change's tool says how to reverse it, the change can be undone for a while after it's made: a day unless its tool says otherwise, and never more than a week.
 
 - **Who may.** Whoever it was for, and anyone who decides that type of change in its record's part, while they may see the record.
-- **Where.** a5s's note in the chat, the digest of the instance's owner, and the home of whoever it was for each link to the change's page. Choose **Undo it** there, and sign in again for that alone.
+- **Where.** a5s's note in the chat, the digest of the instance's owner, and the home of whoever it was for each link to the change's page. Choose **Sign in and undo it** there, under what undoing reaches, and sign in again for that alone.
 - **Only as the change left it.** If someone has changed the record since, a5s leaves it as it is: putting it right is for whoever changed it, in the records system.
 - An undone change counts against the agent's accuracy, as a wrong grade of its work, so an agent whose changes people undo stops acting on its own sooner.
 

@@ -10,7 +10,12 @@ production until someone does, and the doctor says to name it (core/environment.
 Whose power a page uses, first on each page that changes things while it holds an act a role
 gives someone: the role its acts count as, by the rules that let them, and what that lets them
 do there. A page that only shows says none, nor one whose acts are someone's own, so the line
-always means a role's power is in use (core/acting.py)."""
+always means a role's power is in use (core/acting.py).
+
+And friction follows the risk: an everyday act is a button where the work is; one that reaches
+others, what agents may do, or another system's records, sits in a zone that says first whom
+and what it reaches; and erasing someone's data, which nobody can bring back, asks for their id
+typed, which the server checks too (test_officer.py)."""
 
 from __future__ import annotations
 
@@ -231,15 +236,40 @@ def test_a_page_that_changes_things_says_whose_power_it_uses_and_one_that_shows_
     assert page.locator("#acting-as").count() == 0
     page.goto(f"{approving}/studio/officer")  # not hers: refused, and no form to fill
     page.wait_for_selector("p.problem", timeout=30000)
-    assert page.locator("#acting-as").count() == 0 and page.locator("#ask").count() == 0
+    assert page.locator("#acting-as").count() == 0 and page.locator("#whom").count() == 0
     assert not broken, broken
 
 
 def test_the_officer_reads_whose_power_their_page_uses(approving, provider, browser):
     page, broken = arrive(browser, approving, provider, "noor")
     page.goto(f"{approving}/studio/officer")
-    page.wait_for_selector("#ask", timeout=30000)
+    page.wait_for_selector("#whom", timeout=30000)
     assert "Acting as Data protection officer: what you ask here, a5s exports, or erases for " \
         "good, about one person" in page.inner_text("#acting-as")
+    accessible(page)
+    assert not broken, broken
+
+
+# Friction by risk: what a press reaches, said first, where it reaches beyond you
+
+EVERYDAY = ("/studio/", "/studio/tasks", "/studio/agents", "/studio/settings", "/studio/notebook",
+            "/studio/map", "/studio/admin", "/studio/spending")  # their acts are everyday, or none
+
+
+def test_a_held_change_says_first_whom_deciding_it_reaches_and_everyday_pages_have_no_zone(
+        stack, approving, provider, browser):
+    asked(stack)  # Ben asks for a change in billing, which Ana decides
+    page, broken = arrive(browser, approving, provider, "ana")
+    for path in EVERYDAY:
+        page.goto(f"{approving}{path}")
+        page.wait_for_load_state("networkidle")
+        assert page.locator(".action-zone").count() == 0, path  # so a zone always means a reach
+    page.goto(f"{approving}/studio/decide")
+    zone = page.locator(".approval .action-zone")
+    zone.wait_for(timeout=30000)
+    assert zone.locator("h3").inner_text() == "Decide it"
+    assert zone.locator(".action-zone-reach").inner_text().startswith(
+        "Approving it, the assistant makes this change for Ben Okafor within a minute")
+    assert zone.locator("button").all_inner_texts() == ["Approve", "Reject"]  # nothing everyday
     accessible(page)
     assert not broken, broken

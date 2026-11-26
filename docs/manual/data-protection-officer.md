@@ -5,8 +5,8 @@ For the data protection officer: answering requests for someone's data, and the 
 ## Ask for someone's data to be exported
 
 1. Open **Data protection** in the sidebar, `/studio/officer`: *A request for someone's data*.
-2. Choose to **export** all a5s keeps about someone, and say who: their id in the directory, an archive's name, such as *former:9c1e2b7a4d3f0e65*, for someone who has left, or an email address, for a customer who wrote to a shared mailbox.
-3. Choose **Sign in and ask**, and sign in again, for this request alone, with your second factor where your organisation asks for one.
+2. Under *Whose data*, say who: their id in the directory, an archive's name, such as *former:9c1e2b7a4d3f0e65*, for someone who has left, or an email address, for a customer who wrote to a shared mailbox.
+3. In *Export all a5s keeps about them*, which says first what an export holds, choose **Sign in and ask to export it**, and sign in again, for this request alone, with your second factor where your organisation asks for one.
 
 The page then gives the command, `a5s export`, for someone in the team that runs a5s to carry it out, once, within ten minutes; after that, the request lapses.
 
@@ -14,7 +14,11 @@ The export holds their conversations and summaries, their messages, notes, prefe
 
 ## Ask for someone to be erased
 
-Choose **erase** instead, and type their id again, since an erasure can't be undone. As for an export, someone in the team that runs a5s carries it out, with `a5s erase`.
+An erasure can't be undone, so it's in a zone of its own, *Erase all a5s keeps about them*, marked *Can't be undone*, which says first what goes.
+
+1. Under *Whose data*, say who, as for an export.
+2. Choose **Erase it**. It asks *Erase all a5s keeps about ben?*, and for their id typed again: *Type ben to erase it*. Its **Sign in and erase it** stays off until what you type matches, letter case aside, and a5s checks it again before it takes your request, so nothing erases anyone without it.
+3. Sign in again, for this request alone. As for an export, someone in the team that runs a5s carries it out, with `a5s erase`, the id typed twice again.
 
 - **What goes:** what a5s keeps of them, their words in conversations among it. In a group chat, a name no person has takes theirs, and the agents' answers there stay.
 - **What stays, and why:** the ledger, runs, the changes asked for them, and what they owe while the records still owe it, as evidence of what agents did.

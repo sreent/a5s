@@ -164,15 +164,15 @@ def test_someone_suspends_it_from_its_page_in_the_browser(stack, approving, prov
     provider.person = "ben"
     page = browser.new_page(viewport={"width": 1440, "height": 900})
     page.goto(f"{approving}/studio/instances/assistant-finance")
-    page.wait_for_selector("button:has-text('Suspend it')", timeout=30000)
+    page.wait_for_selector("#suspend", timeout=30000)
     before = len(provider.asked)
-    page.click("button:has-text('Suspend it')")
-    dialog = page.locator("dialog[open]")
-    assert "stops at its next step" in dialog.inner_text()
-    dialog.locator("button:has-text('Sign in and suspend it')").click()
+    zone = page.locator(".action-zone")  # whom it reaches, said first, below the head
+    assert "Suspending assistant-finance stops it at its next step" in zone.inner_text()
+    assert "it answers none of the 2 people it serves" in zone.inner_text()
+    page.click("#suspend")  # signed in afresh, for this alone: no dialog besides
     page.wait_for_selector("#asked", timeout=30000)  # back, and asked: a5s carries it out
     assert "Ben Okafor asked to suspend it" in page.inner_text("#asked")
-    assert page.locator("button:has-text('Suspend it')").count() == 0
+    assert page.locator("#suspend").count() == 0
     went = provider.asked[before:]  # the sign-in went afresh, with the act's own nonce
     assert went and went[-1].get("max_age") == "0"
     assert page.evaluate("location.pathname") == "/studio/instances/assistant-finance"
@@ -180,7 +180,7 @@ def test_someone_suspends_it_from_its_page_in_the_browser(stack, approving, prov
     sweep(stack)
     assert status(stack) == ("suspended", "ben")
     page.reload()
-    page.wait_for_selector("button:has-text('Resume it')", timeout=30000)
+    page.wait_for_selector("#resume", timeout=30000)
     assert "suspended by Ben Okafor" in page.inner_text(".page-head .meta")
     assert page.locator(".page-head .badge.warn").first.inner_text().strip().endswith("suspended")
     accessible(page)

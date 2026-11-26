@@ -302,6 +302,10 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     assert "code=" not in page.evaluate("window.location.search")  # the code doesn't linger
     accessible(page)
     shot(page, "approve")
+    zone = page.locator("#version .action-zone")  # what approving reaches, said first, in its zone
+    assert zone.locator("#approve").count() == 1
+    assert zone.locator(".action-zone-reach").inner_text().startswith(
+        f"Your approval counts towards version {asked['serial']}: once every approval it needs is in")
     page.click("#approve")  # to the provider, afresh, for this version alone, and straight back
     page.wait_for_selector(f"#status >> text=You approved version {asked['serial']}", timeout=30000)
     assert not page.is_visible("#approve") and page.inner_text("#standing") == "you approved it"

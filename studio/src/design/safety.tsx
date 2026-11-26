@@ -62,9 +62,10 @@ export function ActingAs({ acting }: { acting?: Acting | null }) {
 
 /** Where a page's consequential acts are, saying first whom and what they reach. What can't be
  * undone is marked so, on the failure's well, and its Confirm asks for the name typed. An
- * everyday act has no zone at all. */
-export function ActionZone({ title, reach, cantUndo = false, level = 2, children }: {
-  title: string; reach: ReactNode; cantUndo?: boolean; level?: 2 | 3; children: ReactNode;
+ * everyday act has no zone at all. Its buttons go in a row, or, `stacked`, as they come, for a
+ * card's own actions, such as an approval card's yes and no, which lay themselves out. */
+export function ActionZone({ title, reach, cantUndo = false, level = 2, stacked = false, children }: {
+  title: string; reach: ReactNode; cantUndo?: boolean; level?: 2 | 3; stacked?: boolean; children: ReactNode;
 }) {
   const head = useId();
   const Heading = level === 3 ? "h3" : "h2";
@@ -73,7 +74,7 @@ export function ActionZone({ title, reach, cantUndo = false, level = 2, children
       <Heading id={head}>{title}</Heading>
       {cantUndo && <p className="action-zone-mark"><Icon name="cross" />{t("Can't be undone")}</p>}
       <p className="action-zone-reach">{reach}</p>
-      <div className="cluster">{children}</div>
+      {stacked ? children : <div className="cluster">{children}</div>}
     </section>
   );
 }

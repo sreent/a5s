@@ -1249,6 +1249,7 @@ class HealthModel(Shape):
     gated_at: str | None = None  # as a time, or None when it may answer
     canary_passed: int = 0  # its canaries' latest day, for the drift it might hide
     canary_failed: int = 0
+    reaches: str | SkipJsonSchema[None] = None  # once stopped: whom putting it back would reach
 
 
 class HealthNow(Shape):
@@ -1676,6 +1677,7 @@ class VersionReview(Shape):
     status: str  # waiting, applied, superseded, or why a5s couldn't apply it
     impact: Impact | SkipJsonSchema[None] = None  # while it waits: what it would do differently
     acting: Acting | SkipJsonSchema[None] = None  # while it waits for their approval
+    retires: list[str] = []  # the instances in force that it leaves out, which it retires
 
 
 class Approved(Shape):

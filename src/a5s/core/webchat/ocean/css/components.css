@@ -549,6 +549,7 @@ dialog.dialog::backdrop { background: rgba(10, 23, 36, 0.45); }
 body:has(dialog.dialog[open]) { overflow: hidden; }
 .dialog h2 { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
 .dialog p { margin: 0 0 var(--space-4); color: var(--muted); }
+.dialog > .form-field { margin: 0 0 var(--space-4); }  /* a word typed to confirm, apart from the answers */
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
 button.danger { color: var(--bad); border-color: var(--bad); }
 button.danger.primary { background: var(--bad); border-color: var(--bad); color: var(--surface); }
@@ -2790,6 +2791,7 @@ body.lone:has(.env-band) { padding-top: calc(2rem + var(--space-6)); }
 .action-zone > h2, .action-zone > h3 { margin: 0; font-size: var(--text-base); }
 .action-zone-reach { margin: 0; color: var(--text); }
 .action-zone .cluster { margin: 0; }
+.action-zone > :is(input, textarea) { width: 100%; }  /* a card's own actions, stacked: a reason before its yes and no */
 .action-zone.cant-undo { border-color: var(--bad); background: var(--bad-bg); }
 .action-zone-mark { display: inline-flex; align-items: center; gap: var(--space-1); margin: 0;
                     color: var(--bad); font-size: var(--text-sm); font-weight: 600; }

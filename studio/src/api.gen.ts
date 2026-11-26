@@ -138,11 +138,13 @@ export type Asked = {
 };
 
 // What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
-// its nonce was made with.
+// its nonce was made with; and, to erase, their id typed again, as the page asks for it, since
+// an erasure can't be undone: checked here too, so no script skips it (docs/design.md).
 export type Asking = {
   action: string;
   person: string;
   salt: string;
+  confirm?: string | null;
 };
 
 // A page of a period's entries, as the auditor asked, and where the next begins.
@@ -681,6 +683,7 @@ export type HealthModel = {
   gated_at?: string | null;
   canary_passed?: number;
   canary_failed?: number;
+  reaches?: string;
 };
 
 // The health page: each model's day, measured rather than argued about.
@@ -1618,6 +1621,7 @@ export type VersionReview = {
   status: string;
   impact?: Impact;
   acting?: Acting;
+  retires?: string[];
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still

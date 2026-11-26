@@ -2842,11 +2842,12 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             if not health.stopped(conn, gw.scenario.name, alias):
                 raise HTTPException(409, f"{alias} isn't stopped, so there's nothing to put back")
+            reaches = health.reached(*health.reach(conn, gw.scenario, alias))  # whom it reaches
             health.restore(conn, gw.scenario.name, alias)
             ledger.append(conn, {"kind": "admin", "action": "restore-model", "instance": None,
                                  "decision": "record", "args": {"by": by, "identity": identity,
                                                                 "model": alias}})
-        return {"restored": alias, "by": by}
+        return {"restored": alias, "by": by, "reaches": reaches}
 
     # What a worker may ask, with its run token.
 
