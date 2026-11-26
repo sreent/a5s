@@ -16,15 +16,15 @@ The export holds their conversations and summaries, their messages, notes, prefe
 
 An erasure can't be undone, so it's in a zone of its own, *Erase all a5s keeps about them*, marked *Can't be undone*, which says first what goes.
 
-1. Under *Whose data*, say who, as for an export.
-2. Choose **Erase it**. It asks *Erase all a5s keeps about ben?*, and for their id typed again: *Type ben to erase it*. Its **Sign in and erase it** stays off until what you type matches, letter case aside, and a5s checks it again before it takes your request, so nothing erases anyone without it.
+1. Under *Whose data*, say who, as for an export. The page says whose it is, under the field: a name and a team, such as *Ben Okafor, of the finance team, in the directory*, an archive, an address, or nobody the directory knows. Read it: an id mistyped as someone else's shows as theirs.
+2. Choose **Erase it**. It asks *Erase all a5s keeps about Ben Okafor?*, and for their id typed again, *Type their id again*, without showing it. Its **Sign in and erase it** stays off until what you type matches, letter case aside, and a5s checks it again before it takes your request.
 3. Sign in again, for this request alone. As for an export, someone in the team that runs a5s carries it out, with `a5s erase`, the id typed twice again.
 
 - **What goes:** what a5s keeps of them, their words in conversations among it. In a group chat, a name no person has takes theirs, and the agents' answers there stay.
 - **What stays, and why:** the ledger, runs, the changes asked for them, and what they owe while the records still owe it, as evidence of what agents did.
 - **A customer** who wrote to a shared mailbox: each text holding their address keeps *[an address a5s erased]* in its place, and what runs held of their address, and what was read from their mail, goes. Changes that name them, and their samples, stay as evidence.
 - **When it waits:** an erasure is refused while a run is working for them, or holds a customer's address, or while a change naming the customer waits for a decision: try again shortly.
-- **Not reached:** the database's backups, so restoring one means erasing again, and the sandbox's own disk.
+- **Not reached:** the database's backups, until they age out: `a5s restore` erases again whoever was erased since the backup it restores, and names any customer it can't, for you to ask again. And the sandbox's own disk.
 
 ## One holder of an id at a time
 

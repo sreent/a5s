@@ -16,6 +16,10 @@ type Decision = "approve" | "reject";
 
 const day = (at: string) => new Date(at).toLocaleDateString(locale(), { day: "numeric", month: "short" });
 
+/** What a change its tool says no way to reverse adds to its zone, which is marked so: deciding
+ * it is as hard to undo as erasing, so the page says it first (docs/design.md; round 17, B4). */
+const LASTS = "a5s can't undo it once it's made.";
+
 /** A held change on the approval card (docs/design.md), made for a phone: who asks and for whom,
  * what it does in the words code worked out when it was asked for, never the agent's own, what to
  * know, and the decider's yes or no. */
@@ -56,11 +60,11 @@ function Card({ change, decide, ticked, tick, together }: {
           ? <p className="note">{t("You can see it, as you were told it waits, but only its deciders decide it.")}</p>
           : (
             <>
-              <ActionZone title={t("Decide it")} level={3} stacked reach={change.for.length
+              <ActionZone title={t("Decide {key}", { key: change.key })} level={3} stacked cantUndo={!change.undoable} reach={`${change.for.length
                 ? t("Approving it, the {agent} makes this change for {whom} within a minute, once every part it touches has approved it, if its records haven't changed. Rejecting it, a5s tells whoever asked, with your reason if you give one.",
                     { agent: change.agent, whom: change.for.join(` ${t("and")} `) })
                 : t("Approving it, the {agent} makes this change within a minute, once every part it touches has approved it, if its records haven't changed. Rejecting it, a5s tells whoever asked, with your reason if you give one.",
-                    { agent: change.agent })}>
+                    { agent: change.agent })}${change.undoable ? "" : ` ${t(LASTS)}`}`}>
                 <input type="text" maxLength={300} placeholder={t("Why, if you reject it (optional)")} value={reason}
                        aria-label={t("Why you reject {key}, if you do", { key: change.key })} onChange={(e) => setReason(e.target.value)} />
                 <div className="approval-actions">
@@ -138,6 +142,7 @@ export function DecidePage() {
     .sort((a, b) => Number(b.digest === named) - Number(a.digest === named));
   const decided = (found?.proposals ?? []).filter((p) => p.status !== "waiting" || p.yours);
   const together = waiting.filter((p) => p.may_decide && !p.sensitive).length >= 2;
+  const lasting = waiting.some((p) => ticked.has(p.digest) && !p.undoable);  // one ticked can't be undone
   return (
     <>
       <ActingAs acting={found?.acting} />
@@ -158,8 +163,8 @@ export function DecidePage() {
           ))}</div>
           {together && (
             <div id="together">
-              <ActionZone title={t("Decide the ticked ones together")}
-                          reach={t("Each change you ticked is decided as you choose here, as if one at a time: approved, each agent makes its change within a minute, once every part it touches has approved it; rejected, a5s tells whoever asked. You sign in again, for exactly these.")}>
+              <ActionZone title={t("Decide the ticked ones together")} cantUndo={lasting}
+                          reach={`${t("Each change you ticked is decided as you choose here, as if one at a time: approved, each agent makes its change within a minute, once every part it touches has approved it; rejected, a5s tells whoever asked. You sign in again, for exactly these.")}${lasting ? ` ${t("Some you ticked a5s can't undo once they're made, as their cards say.")}` : ""}`}>
                 <button id="approve-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "approve", "")}>{t("Approve the ticked ones")}</button>
                 <button id="reject-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "reject", "")}>{t("Reject the ticked ones")}</button>
               </ActionZone>

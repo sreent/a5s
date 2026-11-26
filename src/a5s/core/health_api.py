@@ -9,7 +9,14 @@ from a5s import db
 from a5s.contract import RELEASE_APPROVER, Person
 from a5s.core import canaries, health, suspension, web
 from a5s.core import studio_models as shapes
-from a5s.core.releases import ENGINEER
+from a5s.core.releases import engineer
+
+
+def reads(person: Person, team: str) -> bool:
+    """Whether someone may read the models' health: the release approver, who puts a stopped
+    model back, and the engineers, anyone in the team that runs a5s, as a release counts them.
+    The sidebar asks the same, so it lists the page exactly where it opens (round 17, C3)."""
+    return RELEASE_APPROVER in person.roles or engineer(person, team)
 
 
 def health_now(gw: Any, days: int = 1, person: Person | None = None) -> dict:
@@ -47,9 +54,8 @@ def router(gw: Any) -> APIRouter:
 
     def someone(authorization: str | None = Header(default=None)) -> Person:
         person = web.known(gw, authorization)
-        if not ({RELEASE_APPROVER, ENGINEER} & set(person.roles)) and not any(
-                role.startswith(ENGINEER + ":") for role in person.roles):
-            raise HTTPException(403, "the health page is for the engineers and the "
+        if not reads(person, gw.cfg.team):
+            raise HTTPException(403, "the health page is for the team that runs a5s and the "
                                      "release approver")
         return person
 

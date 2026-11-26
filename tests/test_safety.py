@@ -53,7 +53,7 @@ def test_a_deployment_says_its_kind_and_name_and_one_nobody_named_is_taken_as_pr
     named(monkeypatch, "test", "Pilot test")
     assert environment.here(development=False) == {
         "kind": "test", "name": "Pilot test", "named": True,
-        "about": "A test: what you do here reaches its test accounts and made-up records alone."}
+        "about": "A test, for test accounts and made-up records."}
     named(monkeypatch, "production")  # named, even beside `a5s dev`
     assert environment.here(development=True)["name"] == "Production"
     named(monkeypatch, "live")
@@ -76,8 +76,9 @@ def test_the_doctor_says_to_name_a_deployment_nobody_named(monkeypatch):
         in unnamed.said
     named(monkeypatch, "production", "Production")
     [found] = doctor._deployment(development=False)
-    assert found.state == "ok" and found.said == (
-        "Every page's band says this is Production, a production deployment.")
+    assert found.state == "ok" and found.said.startswith(  # all it reads is the core's (B10)
+        "The core's settings here name this Production, a production deployment. The band "
+        "across every page says what the channels' own settings name it")
 
 
 def test_every_page_says_which_deployment_this_is_from_before_sign_in(approving, provider,
@@ -143,11 +144,13 @@ def test_the_line_names_the_roles_a_pages_acts_count_as_and_none_without_one():
         "lets": "what you write here goes to Ben Okafor in their chat, with your name"}
 
 
-def test_approving_names_the_roles_a_version_needs_of_them_else_those_they_approve_by():
+def test_approving_names_the_roles_a_version_needs_of_them_and_none_where_it_needs_none():
+    """Where a version needs nothing of someone's, their approval would count for nothing, so
+    no line says it counts (round 17, B2)."""
     ana = someone("instance-approver", "part-owner:billing", id="ana")
     assert acting.approving(ana, ["part-owner:billing", "part-owner:orders"])["role"] == (
         "Owner of billing")  # what it needs of hers, never what it needs of others
-    assert acting.approving(ana, [])["role"] == "Instance approver and Owner of billing"
+    assert acting.approving(ana, []) is None
     assert acting.approving(someone("grader"), []) is None
 
 
@@ -170,7 +173,7 @@ def test_suspending_says_why_its_theirs_by_the_rules_that_let_them():
         (someone("part-delegate:billing"), inst, "suspend", "Delegate in billing"),
         (someone(team="platform"), inst, "suspend", "one of the team that runs a5s"),
         (someone("grader"), inst, "suspend", None),
-        (someone(), suspended, "resume", "the one who suspended it"),
+        (someone(), suspended, "resume", None),  # her own act, which no role lets her
         (someone("release-approver", id="rosa", team="risk"), suspended, "resume",
          "Release approver"),
         (someone(id="ana"), suspended, "resume", None),  # not hers to lift
@@ -178,9 +181,10 @@ def test_suspending_says_why_its_theirs_by_the_rules_that_let_them():
     for person, stands, action, role in cases:
         line = acting.suspending(person, stands, action, "platform")
         assert (line and line["role"]) == role, (person.id, person.roles, action)
-        # and the line is there exactly where the rules let them do it
+        # and the line is there exactly where a role lets them do it
+        own = action == "resume" and stands["suspended_by"] == person.id
         assert (line is not None) == (suspension.may(Nobody, person, stands, action,
-                                                     "platform") is None)
+                                                     "platform") is None and not own)
 
 
 ACTS = {"DecideNow", "GradeNow", "Shadows", "VersionReview", "Standing", "ChangeMade",
@@ -267,9 +271,55 @@ def test_a_held_change_says_first_whom_deciding_it_reaches_and_everyday_pages_ha
     page.goto(f"{approving}/studio/decide")
     zone = page.locator(".approval .action-zone")
     zone.wait_for(timeout=30000)
-    assert zone.locator("h3").inner_text() == "Decide it"
+    assert zone.locator("h3").inner_text() == "Decide P-1"  # each zone by its change's name
     assert zone.locator(".action-zone-reach").inner_text().startswith(
         "Approving it, the assistant makes this change for Ben Okafor within a minute")
     assert zone.locator("button").all_inner_texts() == ["Approve", "Reject"]  # nothing everyday
+    assert zone.locator(".action-zone-mark").count() == 0  # a5s can undo a due date it moved
     accessible(page)
     assert not broken, broken
+
+
+def test_a_held_change_a5s_cant_undo_says_so_in_a_zone_marked_so(stack, approving, provider,
+                                                                  browser):
+    """Closing a question is a change its tool says no way to reverse, so approving it can't be
+    undone: its zone is marked so and says it, as the zone for the ticked ones is once it's
+    among them, while moving a due date, which a5s can undo, is marked neither (round 17, B4)."""
+    asked(stack)  # moving Q-1002's due date, which a5s can undo
+    asked(stack, ("close_question", {"key": "Q-1001"}), said="And close Q-1001.")
+    found = send(approving, provider, "ana", "POST", "/decide/review").json()["proposals"]
+    assert [p["undoable"] for p in found] == [True, False]
+    lasting = found[1]["key"]
+    page, broken = arrive(browser, approving, provider, "ana")
+    page.goto(f"{approving}/studio/decide")
+    card = page.locator(f".approval[data-proposal='{lasting}']")
+    card.locator(".action-zone").wait_for(timeout=30000)
+    assert card.locator(".action-zone").get_attribute("class") == "action-zone cant-undo"
+    assert card.locator(".action-zone-mark").inner_text() == "Can't be undone"
+    assert card.locator(".action-zone-reach").inner_text().endswith(
+        "a5s can't undo it once it's made.")
+    moving = page.locator(f".approval[data-proposal='{found[0]['key']}'] .action-zone")
+    assert moving.get_attribute("class") == "action-zone"
+    together = page.locator("#together .action-zone")
+    assert together.get_attribute("class") == "action-zone"  # nothing ticked yet
+    card.locator("input.tick").check()
+    page.wait_for_function(
+        "document.querySelector('#together .action-zone').classList.contains('cant-undo')",
+        timeout=30000)
+    assert "Some you ticked a5s can't undo once they're made" in together.inner_text()
+    accessible(page)
+    assert not broken, broken
+
+
+def test_a_band_that_cant_be_learned_says_production_never_nothing(approving, browser):
+    """Where the channels don't say which deployment this is, as through a rollout, every page
+    draws production's band, saying a5s can't tell, since no band reads as somewhere safe
+    (round 17, B7)."""
+    page = browser.new_page()
+    page.route("**/shell/environment", lambda route: route.abort())
+    for address in ("/studio/", "/chat/"):
+        page.goto(f"{approving}{address}")
+        page.wait_for_selector("#environment", timeout=30000)
+        assert page.get_attribute("#environment", "class") == "env-band production", address
+        assert "can't say just now which deployment this is" in page.inner_text("#environment")
+    page.close()

@@ -49,7 +49,7 @@ from a5s.contract import (
     Tool,
 )
 from a5s.core import audit, ledger, measures, registry, values
-from a5s.core.releases import ENGINEER, agent_owner
+from a5s.core.releases import agent_owner
 from a5s.core.status import outcome
 from a5s.definitions import Definition
 from a5s.knowledge import READERS
@@ -305,7 +305,6 @@ def layers(name: str, definition: Definition, insts: list[dict], viewer: Person,
     building = [why for role, why in ((agent_owner(name), "you own it"),
                                       (f"{AGENT_AUTHOR}:{name}", "you author it"),
                                       (f"{AGENT_VIEWER}:{name}", "you may see how it's built"),
-                                      (ENGINEER, "you're an engineer"),
                                       (RELEASE_APPROVER, "you approve its releases"))
                 if role in roles] + (["you audit it"] if audit.reads(viewer) else [])
     doing = [why for why in seen_by(name, watched, viewer) if why != "you author it"]

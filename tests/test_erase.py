@@ -53,6 +53,7 @@ def test_only_the_officer_erases_and_only_the_id_confirmed(stack):
         assert erase(stack, "ben", by=who).status_code == 403
     assert erase(stack, "ben", confirm=None).status_code == 400
     assert erase(stack, "ben", confirm="bne").status_code == 400  # mistyped: nobody's erased
+    assert erase(stack, "ben", confirm="ana").status_code == 400  # another's: nor them
     assert erase(stack, "bne", confirm="bne").status_code == 404
     assert [t["content"] for t in export(stack, "ben").json()["conversations"]
             if t["role"] == "person"] == [SAID]

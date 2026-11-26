@@ -87,20 +87,23 @@
   // studio's (Ocean's EnvironmentBand; core/environment.py): production in the change's
   // colour, filled, the rest in amber
   const BAND_ICON = { production: "people", staging: "tool", test: "tool", development: "code" };
+  // where the channels don't say, production's band, since none would read as somewhere safe
+  const UNKNOWN = { kind: "production", name: "This deployment",
+                    about: "a5s can't say just now which deployment this is: treat what you do here as real." };
   async function environment() {
+    let deployment = UNKNOWN;
     try {
       const answer = await fetch("/shell/environment");
-      if (!answer.ok) return;
-      const deployment = await answer.json();
-      const band = element("section", null, `env-band ${deployment.kind}`);
-      band.id = "environment";
-      band.setAttribute("aria-label", "Which deployment this is");
-      band.append(icon(BAND_ICON[deployment.kind] || "tool"), element("strong", deployment.name),
-                  element("span", deployment.about));
-      document.body.prepend(band);
+      if (answer.ok) deployment = await answer.json();
     } catch {
-      // the page works without it, as without the sidebar
+      // the band says a5s can't tell, below (round 17, B7)
     }
+    const band = element("section", null, `env-band ${deployment.kind}`);
+    band.id = "environment";
+    band.setAttribute("aria-label", "Which deployment this is");
+    band.append(icon(BAND_ICON[deployment.kind] || "tool"), element("strong", deployment.name),
+                element("span", deployment.about));
+    document.body.prepend(band);
   }
 
   function pages(allowed, you, roles) {  // in the order a5s gives them, each under its heading

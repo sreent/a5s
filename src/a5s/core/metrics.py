@@ -47,6 +47,9 @@ FIGURES: dict[str, tuple[str, str]] = {
     "a5s.queue.oldest": ("s", "How long the oldest message waiting has waited"),
     "a5s.runs": ("{run}", "Runs opened over the last day, by trigger and how they ended"),
     "a5s.denied": ("{call}", "Calls denied over the last day, by kind and action, such as a tool"),
+    "a5s.denied.hour": ("{call}", "Calls denied in the last hour"),
+    "a5s.denied.usual": ("{call}", ("Calls denied in the same hour of each of the seven days "
+                                    "before, on average")),
     "a5s.turned_away": ("{message}", "Chats a5s turned away over the last day"),
     "a5s.tokens": ("{token}", "Tokens used over the last day, by instance"),
     "a5s.budget.warnings": ("{warning}", "Budget warnings over the last day, by instance"),
@@ -121,6 +124,8 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         "a5s.queue.oldest": one(queue["oldest_seconds"] or 0),
         "a5s.runs": [(float(r["n"]), {"a5s.trigger": str(r["kind"]),
                                       "a5s.outcome": str(r["outcome"])}) for r in status["runs"]],
+        "a5s.denied.hour": one((status.get("denied_hour") or {}).get("last")),
+        "a5s.denied.usual": one((status.get("denied_hour") or {}).get("usual")),
         "a5s.denied": [(float(r["n"]), {"a5s.kind": str(r["kind"]),
                                         "a5s.action": str(r["action"])})
                        for r in status["denied"]],

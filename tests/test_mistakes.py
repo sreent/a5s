@@ -196,9 +196,12 @@ def test_a_provider_the_core_cant_reach_names_where_and_the_settings():
                         httpx.Client(transport=httpx.MockTransport(away)))
     with pytest.raises(IdentityError) as refused:
         verifier.person(FakeIssuer().token("ana"))
-    said = str(refused.value)
+    said = refused.value.detail  # for the operators' log and the doctor
     assert "the identity provider at https://id.test/realms/a5s couldn't be reached" in said
     assert "A5S_OIDC_ISSUER, or A5S_OIDC_METADATA_URL" in said
+    # whoever sent the token hears only that sign-in can't be checked (round 17, D7)
+    assert str(refused.value).startswith("a5s can't check sign-ins just now")
+    assert "id.test" not in str(refused.value) and "A5S_" not in str(refused.value)
 
 
 def test_someone_the_directory_doesnt_know_hears_how_they_were_named_and_looked_for():
@@ -264,3 +267,18 @@ def test_the_dev_chat_shows_why_and_lets_someone_say_who_they_are_again(stack, b
         page.fill("#person", "ana")
         page.click("#name button")
         page.wait_for_selector("#compose:visible", timeout=30000)
+
+
+@pytest.mark.parametrize(("postgres", "fix"), [
+    ("FATAL:  sorry, too many clients already", "docs/runbooks.md#connections-to-the-database-run-out"),
+    (('FATAL:  no pg_hba.conf entry for host "10.0.0.5", user "a5s_gateway", database "a5s", '
+      "no encryption"), "?sslmode=require"),
+    ("FATAL:  permission denied for database \"a5s\"", "grant it CONNECT"),
+])
+def test_each_common_refusal_names_its_own_fix(postgres, fix):
+    """Postgres refuses for many reasons beside being away: each common one names what fixes
+    it, never "start Postgres there" (round 17, A7)."""
+    refused = psycopg.OperationalError(
+        f'connection to server at "db.test" (10.0.0.9), port 5432 failed: {postgres}')
+    said = db.refusal(refused, "postgresql://a5s_gateway:hunter2@db.test:5432/a5s", "a5s gateway")
+    assert fix in said and "start Postgres there" not in said and "hunter2" not in said

@@ -1,10 +1,16 @@
 {{/* What each part is given, as in deploy/compose.yaml: each reads only its own keys. */}}
 
 {{- define "a5s.env.gateway" -}}
+{{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SEAL_KEYS" "key" "seal-keys") }}
+{{ include "a5s.env.core" . }}
+{{- end }}
+
+{{/* The core's settings but its seal keys, which only the core holds (accepted risk R7): `helm
+test`'s doctor reads these, and never seals anything (round 17, D4). */}}
+{{- define "a5s.env.core" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-gateway-url") }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SERVICE_TOKEN" "key" "service-token") }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_OPERATOR_TOKEN" "key" "operator-token" "optional" true) }}
-{{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SEAL_KEYS" "key" "seal-keys") }}
 {{- range $name, $key := .Values.models.keys }}
 {{ include "a5s.secretEnv" (dict "root" $ "name" $name "key" $key "optional" true) }}
 {{- end }}
@@ -52,6 +58,7 @@
 
 {{- define "a5s.env.channels" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-channels-url") }}
+{{ include "a5s.teamEnv" . }}
 {{ include "a5s.environmentEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}

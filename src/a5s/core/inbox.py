@@ -233,7 +233,8 @@ def create_app(gw: Any) -> FastAPI:
                   redoc_url="/redoc" if explorer else None)
 
     @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
-    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+    async def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md),
+        # on the event loop, never queued behind the calls that wait for models (round 17, A13)
         return {"ok": True}
 
     app.add_middleware(Small)

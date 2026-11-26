@@ -45,6 +45,12 @@ groups:
         annotations:
           summary: An approved change stopped part way through being made.
           runbook: docs/runbooks.md#changes-wait-or-stop-part-way
+      - alert: A5sDenialsSpike
+        expr: max(a5s_denied_hour) >= 20 and max(a5s_denied_hour) > 5 * max(a5s_denied_usual)
+        labels: {when: now}
+        annotations:
+          summary: More calls were denied in the last hour than five times the usual for that hour.
+          runbook: docs/runbooks.md#calls-are-denied
 
   - name: a5s-working-hours  # the rest waits: people carry on without a5s, and it catches up
     rules:
@@ -63,11 +69,11 @@ groups:
           summary: The core can't read its status, which is the database.
           runbook: docs/runbooks.md#the-database-is-away
       - alert: A5sSchedulerAway
-        expr: max(a5s_scheduler_seen_age_seconds) > 180
+        expr: max(a5s_scheduler_seen_age_seconds) > 180 or absent(a5s_scheduler_seen_age_seconds)
         for: 5m
         labels: {when: working hours}
         annotations:
-          summary: The scheduler hasn't asked the core to record its status for three minutes.
+          summary: The scheduler hasn't asked the core to record its status for three minutes, or never has.
           runbook: docs/runbooks.md#messages-are-waiting
       - alert: A5sMessagesWaiting
         expr: max(a5s_queue_oldest_seconds) > 300

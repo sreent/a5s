@@ -71,10 +71,30 @@ def test_each_alert_says_when_and_names_a_runbook_section_thats_there():
 
 
 def test_what_pages_out_of_hours_is_what_the_on_call_section_says_pages():
-    """The ledger's copies failing to copy, lock or verify, and a change stopped part way
-    (docs/runbooks.md#on-call): those alone, in the group that pages."""
+    """The ledger's copies failing to copy, lock or verify, a change stopped part way, and
+    denials in an hour beyond five times their usual (docs/runbooks.md#on-call): those alone,
+    in the group that pages, as the status says them (round 17, A5)."""
     paging = {rule["annotations"]["runbook"] for rule in rules() if rule["group"] == "a5s-now"}
     assert paging == {"docs/runbooks.md#the-ledgers-copies-stop",
-                      "docs/runbooks.md#changes-wait-or-stop-part-way"}
+                      "docs/runbooks.md#changes-wait-or-stop-part-way",
+                      "docs/runbooks.md#calls-are-denied"}
     assert all(rule["labels"]["when"] == ("now" if rule["group"] == "a5s-now" else "working hours")
                for rule in rules())
+
+
+def test_no_panel_counts_a_figure_sent_as_one_zero_when_nothing_is_so():
+    """The breakers open, and the instances not active, come as one zero when none is: a panel
+    that counts their series reads one where there are none, so each sums them (round 17,
+    A11)."""
+    calm = {"queue": {"waiting": 0, "oldest_seconds": None}, "runs": [], "denied": [],
+            "turned_away": 0, "tokens": [], "deliveries": {"retrying": 0, "left_in_inbox": 0,
+                                                          "kept_back": 0},
+            "urgent_held": {"messages": 0}, "changes": {"waiting": 0, "oldest_seconds": None,
+                                                        "stuck": 0, "not_made": 0, "lapsed": 0},
+            "samples": {"to_grade": 0, "lapsed": 0, "on_its_own": [], "caps_lowered": 0},
+            "unsealed": 0, "missing": 0, "copies": None, "not_active": [], "breakers_open": [],
+            "objectives": {"replies": {"answered": 0, "p90_seconds": None},
+                           "chases": {"on_time": None}},
+            "questions": {"answered": 0, "unanswered": 0}, "notebook": {"kept": 0}}
+    assert metrics.figures(calm)["a5s.breakers.open"] == [(0.0, {})]
+    assert not [e for e in exprs() if re.search(r"count\(a5s_(breakers_open|instances_not_active)", e)]

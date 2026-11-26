@@ -17,7 +17,7 @@ import { t } from "../i18n";
 import { Icon } from "../icons";
 import { Publish } from "../Publish";
 import { go, Link, type Route } from "../router";
-import { mayUse, shellOf } from "../Sidebar";
+import { markWithin, mayUse, shellOf } from "../Sidebar";
 import { TryIt } from "../TryIt";
 import { plural, useLoad, Waiting, when } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
@@ -253,6 +253,12 @@ function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said;
 
 export function DraftPage({ id }: { id: string }) {
   const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
+  const changes = loaded.data?.changes;
+  useEffect(() => {  // the sidebar marks Agents for a change to one released here, else New agent
+    if (changes === undefined) return undefined;
+    markWithin(changes ? ["agents"] : ["new", "agents"]);
+    return () => markWithin(null);
+  }, [changes]);
   const tools = useLoad(() => get<Offer>("/studio/api/tools"), []);
   const [files, setFiles] = useState<Files | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);  // for its first instance, beside its files

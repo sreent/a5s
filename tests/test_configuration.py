@@ -323,7 +323,8 @@ def test_the_charts_pods_are_given_no_service_links():
 
 def test_helm_test_runs_the_doctor_with_the_cores_settings():
     """`helm test` runs `a5s doctor` in a pod of its own, with the core's settings, account and
-    models, reaching the core where the other parts do, which lets it in (docs/runbooks.md)."""
+    models, reaching the core where the other parts do, which lets it in (docs/runbooks.md):
+    all but the seal keys, which the core alone holds (round 17, D4)."""
     docs = rendered("ci-values.yaml")
     [doctor] = [d for d in docs if d["kind"] == "Pod" and d["metadata"]["name"] == "a5s-doctor"]
     [gateway] = [d for d in docs if d["kind"] == "Deployment"
@@ -334,6 +335,8 @@ def test_helm_test_runs_the_doctor_with_the_cores_settings():
     assert spec["serviceAccountName"] == pod(gateway)["serviceAccountName"] == "a5s-gateway"
     env = {e["name"]: e for e in container["env"]}
     core = {e["name"]: e for c in containers(gateway) if c["name"] == "gateway" for e in c["env"]}
+    assert "A5S_SEAL_KEYS" in core and "A5S_SEAL_KEYS" not in env  # the core's alone (D4)
+    core.pop("A5S_SEAL_KEYS")
     assert set(core) <= set(env) and all(env[n] == e for n, e in core.items()
                                          if n != "A5S_GATEWAY_URL")
     assert env["A5S_GATEWAY_URL"]["value"] == "http://a5s-gateway:8700"
@@ -385,3 +388,61 @@ def test_the_chart_gives_the_core_alone_the_tokens_of_mcp_servers_and_repositori
         for container in containers(doc):
             assert not [e for e in container.get("env") or []
                         if e["name"].startswith(("A5S_MCP_", "A5S_REPOSITORY_"))]
+
+
+def test_compose_gives_the_channels_the_team_and_the_deployment_as_the_core_has_them():
+    """The channels app serves the team's own pages, such as the Status page, and the band
+    across every page: it reads the team that runs a5s and which deployment this is, as the
+    core does (round 17, A6 and B10)."""
+    stack = yaml.safe_load((ROOT / "deploy" / "compose.yaml").read_text(encoding="utf-8"))
+    for part in ("gateway", "channels"):
+        env = stack["services"][part]["environment"]
+        assert {"A5S_TEAM", "A5S_ENVIRONMENT", "A5S_ENVIRONMENT_NAME"} <= set(env), part
+
+
+def test_the_chart_gives_the_channels_the_team_as_the_core_has_it():
+    """A team the values name is the channels' as much as the core's (round 17, A6)."""
+    named = {}
+    for doc in rendered("ci-values.yaml", sets=("team=it-ops",)):
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] in ("a5s-gateway",
+                                                                       "a5s-channels"):
+            named[doc["metadata"]["name"]] = {e["name"]: e.get("value") for c in containers(doc)
+                                              for e in c.get("env") or []}.get("A5S_TEAM")
+    assert named == {"a5s-gateway": "it-ops", "a5s-channels": "it-ops"}
+
+
+def test_development_is_refused_where_a_deployment_says_its_production_or_staging():
+    """A5S_DEVELOPMENT takes people's word for who they are and runs any release: never where
+    the deployment says it's production or staging, whose pages say so (round 17, D3)."""
+    for kind, refused in (("production", True), ("staging", True), ("test", False)):
+        problems, _ = config.check({"A5S_ENVIRONMENT": kind, "A5S_DEVELOPMENT": "true"})
+        assert any("A5S_DEVELOPMENT" in p and kind in p for p in problems) == refused, kind
+
+
+def test_a_quoted_password_stays_masked_whole():
+    """libpq takes a password in quotes, spaces and all: masked, none of it shows (D6)."""
+    shown = config.masked("host=db user=a5s password='ab cdsecret' dbname=a5s")
+    assert "cdsecret" not in shown and shown.endswith("password=••• dbname=a5s")
+    assert "s3cret" not in config.masked("postgresql://a5s@db/a5s?password=s3cret&sslmode=require")
+
+
+def test_production_refuses_keys_a5s_publishes_with_its_own_scenarios(monkeypatch, tmp_path):
+    """The private keys of the people in a5s's own scenarios are in its repository: a
+    deployment that says it's production or staging won't start on them, as anyone could sign
+    as them; a test may (round 17, D3)."""
+    from a5s.core import environment
+
+    sample = ROOT / "scenarios" / "sample"
+    assert "ana" in environment.published_keys_in(sample, ROOT)
+    own = tmp_path / "keys"
+    own.mkdir()
+    (own / "ana.pub").write_text("an organisation's own key\n", encoding="utf-8")
+    assert environment.published_keys_in(tmp_path, ROOT) == []
+    for kind, refused in (("production", True), ("staging", True), ("test", False), ("", False)):
+        monkeypatch.setenv("A5S_ENVIRONMENT", kind)
+        assert bool(environment.published_refused(sample, ROOT)) == refused, kind
+    monkeypatch.setenv("A5S_ENVIRONMENT", "production")
+    assert "`a5s keygen`" in environment.published_refused(sample, ROOT)
+    assert environment.published_refused(tmp_path, ROOT) is None
+    shipped = {k.parent.parent.name for k in (ROOT / "scenarios").glob("*/keys/*.pub")}
+    assert shipped <= set(environment.SHIPPED)  # every scenario a5s ships with keys is named

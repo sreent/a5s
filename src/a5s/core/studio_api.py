@@ -69,7 +69,7 @@ from a5s.core import (
 )
 from a5s.core import home as homes  # the studio's home: `home` is the site's
 from a5s.core import studio_models as shapes  # what each route answers
-from a5s.core.releases import ENGINEER, agent_owner
+from a5s.core.releases import agent_owner
 
 STUDIO = web.WEBCHAT / "studio"  # as `npm run build` in studio/ builds it, which the image does
 STUDIO_UNBUILT = ("The studio isn't built here. Build it from the repository with "
@@ -140,7 +140,7 @@ def may_study(gw: Any, person: Person) -> bool:
     with db.transaction(gw.url) as conn:
         theirs = studio.instances(conn, person)
     return (bool(theirs) or any(r.startswith("agent-owner:") for r in person.roles)
-            or drafts.authors(person))
+            or drafts.authors(person, gw.cfg.team))
 
 
 class RunCaseAsked(BaseModel):
@@ -227,10 +227,12 @@ def router(gw: Any) -> APIRouter:
         return person
 
     def drafting(person: Annotated[Person, Depends(someone)]) -> Person:
-        """Who signed in to make agents: an agent's owner or named author, or an engineer."""
-        if not drafts.authors(person):
+        """Who signed in to make agents: an agent's owner or named author, or an engineer,
+        anyone in the team that runs a5s (round 17, C3)."""
+        if not drafts.authors(person, gw.cfg.team):
             raise HTTPException(403, "making agents is for their owners, the people the "
-                                     "organisation names their authors, and engineers")
+                                     "organisation names their authors, and the team that "
+                                     "runs a5s")
         return person
 
     pages = APIRouter(dependencies=[Depends(available)])  # the page alone, which holds no data
@@ -291,6 +293,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/undo", include_in_schema=False)
     @pages.get("/studio/handovers", include_in_schema=False)
     @pages.get("/studio/shadows", include_in_schema=False)
+    @pages.get("/studio/status", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -315,7 +318,8 @@ def router(gw: Any) -> APIRouter:
             return {"you": person.name,
                     "waiting": homes.waiting(conn, gw, person, languages.of(person)),
                     "drafts": drafts.mine(conn, person),
-                    "authoring": drafts.may_author(person, None),  # a new agent, as the catalogue says
+                    # a new agent, as the catalogue says
+                    "authoring": drafts.may_author(person, None, gw.cfg.team),
                     "changes": sorted(a for a in gw.definitions if drafts.may_author(person, a))}
 
     @api.get("/studio/api/you", **shapes.answers(shapes.You))
@@ -332,8 +336,12 @@ def router(gw: Any) -> APIRouter:
     def studio_shadows(person: Annotated[Person, Depends(someone)]) -> dict:
         """What new versions answered beside those at work, for whoever signed in to grade, as
         for samples, those whose records they may all see; and how each shadow they may see did,
-        in counts (core/shadows.py)."""
+        in counts (core/shadows.py). Refused where no shadow is theirs to grade or follow, as
+        their sidebar leaves the page out (round 17, C5)."""
         with db.transaction(gw.url) as conn:
+            if not shadows.theirs(conn, gw.scenario, person):
+                raise HTTPException(403, "no new version answers beside an instance for you to "
+                                         "grade or follow")
             choices = gw.data_protection(conn)
             pairs = shadows.gradeable(conn, gw.scenario, person, may=choices.shadow_runs,
                                       names=choices.studio_names, fewest=choices.fewest_people)
@@ -367,8 +375,12 @@ def router(gw: Any) -> APIRouter:
     @api.get("/studio/api/handovers", **shapes.answers(shapes.Handovers))
     def studio_handovers(person: Annotated[Person, Depends(someone)]) -> dict:
         """The conversations handed over to the teams whoever signed in is in, still open
-        (core/handover.py): each record they may not see, as such."""
+        (core/handover.py): each record they may not see, as such. Refused to anyone in none of
+        the teams agents hand to, as their sidebar leaves the page out (round 17, C5)."""
         with db.transaction(gw.url) as conn:
+            if not handover.answers_any(conn, gw.scenario, person):
+                raise HTTPException(403, "conversations handed over are for the teams agents "
+                                         "hand them to, and you're in none of them")
             return {"handovers": handover.waiting(conn, gw.scenario, person)}
 
     @api.get("/studio/api/handovers/{handover_id}", **shapes.answers(shapes.Handover))
@@ -496,7 +508,8 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             return {"you": person.name, "agents": studio.catalogue(
                 conn, gw.scenario, gw.definitions, gw.scenario.tools(), person),
-                    "authoring": {"new": drafts.may_author(person, None),  # what they may make
+                    "authoring": {"new": drafts.may_author(  # what they may make
+                        person, None, gw.cfg.team),
                                   "agents": sorted(a for a in gw.definitions
                                                    if drafts.may_author(person, a))}}
 
@@ -831,7 +844,10 @@ def router(gw: Any) -> APIRouter:
                                    "('active', 'suspended') limit 1", (draft["agent"],)).fetchone()
         return {"released": drafts.released(draft["agent"], draft["files"], draft.get("based_on"),
                                             gw.cfg.agents_dir, gw.definitions),
-                "at_work": at_work is not None}
+                "at_work": at_work is not None,
+                # a change to an agent the release here has, not a new one, for the sidebar
+                # to mark Agents for, not New agent (round 17, C8)
+                "changes": draft["agent"] in gw.definitions}
 
     def offer(person: Person) -> dict:
         """What a draft may be given, and what follows from it, for this person."""
@@ -940,7 +956,7 @@ def router(gw: Any) -> APIRouter:
                 files = run_cases.cleared(conn, files)
             based_on = f"{body.agent} {gw.definitions[body.agent].release_id}"
         elif body.name and body.describe and not (body.template or body.agent):
-            if not drafts.may_author(person, None):
+            if not drafts.may_author(person, None, gw.cfg.team):
                 raise HTTPException(403, "a new agent is for the people who own one, and engineers")
             if body.name in gw.definitions:
                 raise HTTPException(409, f"there's an agent {body.name} already: draft a change "
@@ -977,7 +993,7 @@ def router(gw: Any) -> APIRouter:
             name, base, based_on = body.name, {}, f"a description, on {said.get('model')}"
             described = {"words": words, "model": str(said.get("model")), "notes": notes}
         elif body.name and body.template and not body.agent:
-            if not drafts.may_author(person, None):
+            if not drafts.may_author(person, None, gw.cfg.team):
                 raise HTTPException(403, "a new agent is for the people who own one, and engineers")
             if body.name in gw.definitions:
                 raise HTTPException(409, f"there's an agent {body.name} already: draft a change "
@@ -1032,9 +1048,11 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(404, "you have no such draft")
             agent = found["agent"]
             roles = ([agent_owner(agent), drafts.agent_author(agent)] if agent in gw.definitions
-                     else [ENGINEER] + [agent_owner(a) for a in gw.definitions])
+                     else [agent_owner(a) for a in gw.definitions])
             holders = {h["id"]: h["name"] for row in administration.held(gw.scenario, conn, roles)
                        for h in row["held_by"]}
+            if agent not in gw.definitions:  # a new agent's, which the engineers may make too
+                holders.update({p.id: p.name for p in gw.scenario.team(gw.cfg.team)})
             busy = {r["person"] for r in conn.execute(
                 "select person from agent_drafts where agent = %s", (agent,))}
         return {"people": [{"id": pid, "name": name} for pid, name
@@ -1053,7 +1071,7 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(404, "you have no such draft")
             agent = found["agent"]
             if taker is None or taker.id == person.id or not drafts.may_author(
-                    taker, agent if agent in gw.definitions else None):
+                    taker, agent if agent in gw.definitions else None, gw.cfg.team):
                 raise HTTPException(400, f"{named(body.to)} may not author the {agent}")
             if len(drafts.mine(conn, taker)) >= drafts.MOST_DRAFTS:
                 raise HTTPException(409, f"{taker.name} keeps {drafts.MOST_DRAFTS} drafts already")
@@ -1280,7 +1298,7 @@ def router(gw: Any) -> APIRouter:
                                      "up a5s's GitHub App for it (A5S_GITHUB_CLIENT_ID and "
                                      "A5S_GITHUB_REPO)")
         new = found["agent"] not in gw.definitions
-        if not drafts.may_author(person, None if new else found["agent"]):
+        if not drafts.may_author(person, None if new else found["agent"], gw.cfg.team):
             raise HTTPException(403, f"publishing {found['agent']} is for its owners and the "
                                      "people the organisation names its authors")
         shown = checked(found)

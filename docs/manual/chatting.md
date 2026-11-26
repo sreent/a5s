@@ -4,7 +4,7 @@ For everyone who asks an agent for help: in a5s's web chat, Teams, Slack or Matr
 
 ## Start a conversation
 
-**In the web chat**, at `/chat/`, sign in with your organisation's sign-in, then choose the agent under **Agent**. The list holds only the agents that serve you. If none does yet, the chat says so, and the studio lists the agents you may ask for: open one's page there and choose **Ask for it**, and its owners decide ([running an agent](running.md#answer-someone-who-asks-for-an-agent)).
+**In the web chat**, at `/chat/`, sign in with your organisation's sign-in, then choose the agent under **Agent**. The list holds only the agents that serve you. If none does yet, the chat says so, and sends you to the studio's **Agents**, `/studio/agents`, which lists the agents you may ask for, those their owners list for anyone: open one's page there and choose **Ask for it**, and its owners decide ([running an agent](running.md#answer-someone-who-asks-for-an-agent)). If it lists none, ask your manager, or whoever runs a5s in your organisation, which agent would serve you.
 
 Write in the box at the bottom: **Enter** sends, and **Shift+Enter** starts a new line. If nothing comes back within ten minutes, the chat says so, and the answer appears in your conversation when it comes. What a5s and your agents send without being asked, such as reminders, comes into whichever chat you have open: one about another of your agents starts *(about the {agent})*, and one from a5s about them all, such as your day from a5s, starts *(about the agents)*.
 

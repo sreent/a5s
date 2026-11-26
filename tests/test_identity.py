@@ -14,7 +14,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from a5s import db
+from a5s import cli, db
 from a5s.core import inbox
 from a5s.core.gateway import create_app
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
@@ -210,7 +210,8 @@ def test_suspending_and_resuming_go_by_sign_in_and_the_first_suspender_decides(s
 
         assert change("suspend", None, by="ben").status_code == 401  # a typed name isn't enough
         assert change("suspend", "ana", by="ben").status_code == 403
-        assert change("suspend", "ben").json() == {"suspended": "assistant-finance", "by": "ben"}
+        assert change("suspend", "ben").json() == {"suspended": "assistant-finance", "by": "ben",
+                                                   "serves": 2}  # Ana and Ben (round 17, B9)
         assert change("suspend", "ana").status_code == 200  # it stays Ben's suspension
         refused = change("resume", "ana")
         assert refused.status_code == 403 and "only ben can resume" in refused.json()["detail"]
@@ -219,6 +220,20 @@ def test_suspending_and_resuming_go_by_sign_in_and_the_first_suspender_decides(s
                for e in stack.ledger() if e["action"] in ("suspend", "resume")]
     assert changes == [("suspend", "ben", "verified"), ("suspend", "ana", "verified"),
                        ("resume", "ben", "verified")]
+
+
+def test_suspending_on_the_command_line_says_whom_it_reaches():
+    """`a5s suspend` and `a5s resume` say whom they reach, as the instance's page in the studio
+    says before it's done, not the core's bare answer (round 17, B9)."""
+    assert cli._status_said({"suspended": "assistant-finance", "by": "ben", "serves": 2}) == (
+        "assistant-finance is suspended: it starts no runs, and the 2 people it serves hear "
+        "nothing from it but that it's suspended, until whoever suspended it, or the release "
+        "approver, resumes it.")
+    assert cli._status_said({"resumed": "assistant-finance", "by": "ben", "serves": 1}) == (
+        "assistant-finance is resumed: it answers the one person it serves again, and works on "
+        "its own as its settings say, from its next message.")
+    assert cli._status_said({"suspended": "lonely", "by": "ben", "serves": 0}) == (
+        "lonely is suspended: it starts no runs, and serves no one.")
 
 
 def test_without_sign_in_only_development_takes_a_typed_name(stack):

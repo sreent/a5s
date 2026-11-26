@@ -243,6 +243,11 @@ def migrating(before: bytes | None, raw: bytes) -> str | None:
     if before is None or before == raw:
         return None
     new = [m for m in migrations_in(raw) if m not in set(migrations_in(before))]
+    gone = [m for m in migrations_in(before) if m not in set(migrations_in(raw))]
+    if gone:  # back past what the release it replaces migrated (round 17, A3)
+        return (f"It goes back past {', '.join(gone)}, which the release it replaces migrated "
+                "the database with: it won't start on that database, so restore the database "
+                f"from a backup taken before them first ({ROLLING_BACK}).")
     if not new:
         return "It adds no migration, so rolling back is reverting the merge that deploys it."
     return (f"It migrates the database, with {', '.join(new)}: the release before won't start "
@@ -460,12 +465,21 @@ class Verdict:
     needs: tuple[Need, ...] = ()
     missing: tuple[str, ...] = ()
     signed_by: tuple[str, ...] = ()
+    back: bool = False  # a rollback, to the release the one an environment runs followed
 
 
 def _inside(scenario: Scenario, team: str) -> set[str]:
     """The team that runs a5s, and everyone above them in their reporting lines."""
     return {p.id for p in scenario.team(team)} | {
         boss for member in scenario.team(team) for boss in _line(scenario, member)}
+
+
+def engineer(person: Person, team: str) -> bool:
+    """Whether someone is an engineer: anyone in the team that runs a5s, as a release counts
+    the engineers who sign it (`Signer.can`). It's no role a directory or a group gives, so the
+    studio asks the same of whoever starts a new agent or reads the models' health (round 17,
+    C3)."""
+    return person.team == team
 
 
 @dataclass(frozen=True)
@@ -712,6 +726,17 @@ def verify(raw: bytes, signatures: list[Signature], scenario: Scenario, team: st
         need = [Need(RELEASE_APPROVER, why), Need(ASSURANCE, why)]
         return judge(need, raw, signatures, scenario, team, old, approval)
     follows = hashlib.sha256(previous).hexdigest() if previous else None
+    if previous is not None and ran is not None and ran.follows == hashlib.sha256(raw).hexdigest():
+        # back to the release the one it runs followed, which this environment approved and
+        # ran before it, as reverting the merge that deployed it does (round 17, A3)
+        if ran.advisory or ran.baseline:
+            why = (f"fixes {ran.advisory}, which rolling back to it brings back" if ran.advisory
+                   else "is a baseline, past which rolling back brings back who signed before")
+            return Verdict(False, missing=(
+                (f"it's the release before {_short(follows)}, which the environment runs and "
+                 f"which {why}: promote it again, as following the release it runs, and have it "
+                 "signed again"),))
+        return Verdict(True, back=True)
     if approval.follows != follows:
         return Verdict(False, missing=(
             (f"its approval follows {_short(approval.follows)}, and the environment runs "
@@ -831,7 +856,14 @@ def record(conn: db.Connection, raw: bytes, signatures: list[Signature], scenari
 
 
 def following(conn: db.Connection) -> str | None:
-    """The release the next one a deployment approves follows: the last it approved."""
+    """The release the next one a deployment approves follows: the one whose signatures it
+    recorded last, which is the one it runs, the release before included, once it rolled back
+    to it (round 17, A3); or the last it approved, if the ledger records none."""
+    row = conn.execute("select (entry::jsonb) -> 'args' ->> 'release' as release from ledger "
+                       "where kind = 'admin' and action = 'approve-release' and "
+                       "decision = 'record' order by seq desc limit 1").fetchone()
+    if row and row["release"]:
+        return row["release"]
     row = conn.execute("select digest from releases where approved_at is not null "
                        "order by approved_at desc limit 1").fetchone()
     return row["digest"] if row else None

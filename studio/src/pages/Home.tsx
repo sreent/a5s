@@ -34,7 +34,7 @@ function Build({ data }: { data: Home }) {
                      next={<Link to={{ page: "new" }} className="button primary" id="start-agent">{t("Start a new agent")}</Link>} />
       ) : (
         <>
-          <p>{t("A new agent is started by an agent's owner or an engineer, and you're neither. To build one, ask whoever runs a5s in your organisation to make you an agent's owner or an engineer, or ask an agent's owner to make you one of its authors, to change that agent.")}</p>
+          <p>{t("A new agent is started by an agent's owner or someone in the team that runs a5s, and you're neither. To build one, ask whoever runs a5s in your organisation to make you an agent's owner, or ask an agent's owner to make you one of its authors, to change that agent.")}</p>
           {data.changes.length > 0 && (
             <p>{t("You may change the agents you author, each from its page:")}{" "}
               {data.changes.map((agent, i) => (
@@ -86,13 +86,6 @@ export function HomePage() {
             </section>
           )}
           <Build data={data} />
-          <section className="card" id="next">
-            <h2>{t("In the studio")}</h2>
-            <ul className="plain">
-              <li><Link to={{ page: "agents" }}>{t("The agents you may know of")}</Link>{t(": what each does, and how those you watch are doing")}</li>
-              <li><Link to={{ page: "you" }}>{t("What you may do in a5s")}</Link>{t(", and which group gave you each role")}</li>
-            </ul>
-          </section>
         </>
       )}
     </>

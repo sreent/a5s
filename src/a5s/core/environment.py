@@ -9,16 +9,22 @@ what's done there as real, and `a5s doctor` says to name it (A5S_ENVIRONMENT).""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from a5s import config
 
+# The scenarios a5s ships, whose people's private keys are in a5s's repository beside their
+# public keys, so anyone with it can sign as them: fine for a test with made-up records, never
+# where a deployment says it's production or staging (round 17, D3)
+SHIPPED = ("sample", "master-data", "service-desk", "software-delivery", "procure-to-pay")
+REAL = ("production", "staging")
+
 # What each kind of deployment means for whoever's on its pages, as its band says it
 ABOUT = {
     "production": "Real people and records: what you do here reaches them.",
-    "staging": "Before production: what you do here reaches the people and records it's set up "
-               "with alone.",
-    "test": "A test: what you do here reaches its test accounts and made-up records alone.",
+    "staging": "Before production, for the people and records it's set up with.",
+    "test": "A test, for test accounts and made-up records.",
     "development": "On this machine, for development: a5s takes people's word for who they are.",
 }
 UNNAMED = "Unnamed deployment"
@@ -34,3 +40,27 @@ def here(development: bool) -> dict[str, Any]:
         return {"kind": "production", "name": UNNAMED, "about": UNNAMED_ABOUT, "named": False}
     return {"kind": kind, "name": config.ENVIRONMENT_NAME.read() or kind.capitalize(),
             "about": ABOUT[kind], "named": True}
+
+
+def published_keys_in(scenario_dir: Path, root: Path) -> list[str]:
+    """Whom the directory gives a key a5s publishes with its own scenarios, by their ids:
+    anyone with a5s's repository holds the private key, so could sign as them."""
+    shipped = {key.read_text(encoding="utf-8").strip() for name in SHIPPED
+               for key in (root / "scenarios" / name / "keys").glob("*.pub")}
+    return sorted(key.stem for key in (scenario_dir / "keys").glob("*.pub")
+                  if key.read_text(encoding="utf-8").strip() in shipped)
+
+
+def published_refused(scenario_dir: Path, root: Path) -> str | None:
+    """Why a deployment that says it's production or staging can't run on the keys its
+    directory gives, if it can't: some are keys a5s publishes."""
+    kind = config.ENVIRONMENT.read()
+    if kind not in REAL or not (published := published_keys_in(scenario_dir, root)):
+        return None
+    named = ", ".join(published[:5]) + (f" and {len(published) - 5} more" if len(published) > 5
+                                         else "")
+    return (f"this deployment says it's {kind}, and its directory gives {named} keys a5s "
+            "publishes with its own scenarios, whose private keys anyone with a5s's repository "
+            "holds, so anyone could approve, decide and sign releases as them: give each a key "
+            "of their own, made with `a5s keygen`, or name the deployment a test "
+            "(A5S_ENVIRONMENT; docs/first-day.md)")

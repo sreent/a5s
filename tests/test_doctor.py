@@ -65,8 +65,8 @@ def test_a_working_deployment_has_nothing_to_fix(long_token, stack, monkeypatch,
     states = {f.check: f.state for f in doctor.checked()}
     assert states == {"Settings": "ok", "The database": "ok", "The release": "look",
                       "The settings in force": "ok", "The core": "ok", "Signing in": "look",
-                      "The models": "ok", "The ledger's copies": "look", "Credentials": "ok",
-                      "This deployment": "ok"}, said
+                      "The models": "ok", "The ledger's copies": "look", "The core's status": "ok",
+                      "Credentials": "ok", "This deployment": "ok"}, said
     assert "The database: The database at a5s_gateway@" in said and "as a5s_gateway" in said
     assert "with 1 instance active" in said
     assert "The models: Each model the agents at work use has its key here: fake " \
@@ -180,3 +180,86 @@ def test_the_copiers_record_is_read_where_the_store_isnt_named_as_the_charts_cor
     anchor.stuck(stack.admin, "the store refused to lock entry 7", stopped=True)
     [copies] = found("The ledger's copies")
     assert copies.state == "fix" and "the store refused to lock entry 7" in copies.said
+
+
+def test_settings_in_force_that_stop_counting_are_to_fix(long_token, stack, monkeypatch):
+    """The core refuses every run with a version of the settings whose approval no longer
+    counts, such as once its only approver moves on: the doctor says so, from the core's own
+    answer, rather than that a version is in force (round 17, A1)."""
+    deployed(monkeypatch, stack)
+    people = stack.gateway.scenario._people
+    monkeypatch.setitem(people, "ana", replace(people["ana"], roles=()))
+    [in_force] = found("The settings in force")
+    assert in_force.state == "fix" and "refuses every run with it" in in_force.said
+    assert "aren't approved" in in_force.said
+
+
+def test_the_copies_are_judged_as_the_status_judges_them(long_token, stack, monkeypatch):
+    """What pages in the status, such as the copier's daily check finding the history
+    changed, or its last try failing, is to fix here too, never all right (round 17, A2)."""
+    from a5s.core import anchor
+
+    monkeypatch.setattr(stack.gateway, "cfg", replace(stack.gateway.cfg, development=False))
+    deployed(monkeypatch, stack, A5S_DEVELOPMENT=None)
+    with db.transaction(stack.admin) as conn:
+        anchor.went(conn, 0)  # the copier copies, each minute
+        anchor.checked(conn, 0, ["the ledger's chain breaks at entry 3"])  # and its daily check
+    [copies] = found("The ledger's copies")
+    assert copies.state == "fix" and "chain breaks at entry 3" in copies.said
+    with db.transaction(stack.admin) as conn:
+        anchor.checked(conn, 0, [])
+    anchor.stuck(stack.admin, "ConnectionError, as the copier's log says", stopped=False)
+    [copies] = found("The ledger's copies")
+    assert copies.state == "fix" and copies.said.startswith("The copier's last try failed")
+
+
+def test_what_else_the_cores_status_needs_is_said_too(long_token, stack, monkeypatch):
+    """The core's status says what needs someone beyond what the doctor reads for itself, such
+    as a scheduler that never asked the core to record it: so the doctor never says nothing
+    is wrong where the status and the alerts say something is (round 17, A2)."""
+    monkeypatch.setattr(stack.gateway, "cfg", replace(stack.gateway.cfg, development=False))
+    deployed(monkeypatch, stack, A5S_DEVELOPMENT=None)
+    [needs] = found("The core's status")
+    assert needs.state == "look" and needs.said.startswith("The scheduler has never asked")
+    assert needs.said.endswith("(docs/runbooks.md#messages-are-waiting)")
+    stack.scheduler().seen()
+    assert [f.state for f in found("The core's status")] == ["ok"]
+
+
+def test_the_models_are_those_the_settings_in_force_put_instances_on(long_token, stack,
+                                                                     monkeypatch):
+    """An approved version may put an instance on another model than the image's file says:
+    the doctor reads the instances at work, so a model they use with no key is to fix
+    (round 17, A8)."""
+    deployed(monkeypatch, stack)
+    with db.transaction(stack.admin) as conn:  # as a version approved since put it there
+        conn.execute("update instances set model = 'nowhere' where id = 'assistant-finance'")
+    said = [f.said for f in found("The models") if f.state == "fix"]
+    assert any(s.startswith("nowhere, which the assistant uses, isn't one config/models.yaml "
+                            "approves") for s in said), said
+
+
+def test_production_on_keys_a5s_publishes_is_to_fix(long_token, stack, monkeypatch):
+    """A deployment that says it's production, on the sample's people, whose private keys are
+    in a5s's repository, is to fix: the core won't start on them (round 17, D3)."""
+    deployed(monkeypatch, stack, A5S_ENVIRONMENT="production", A5S_DEVELOPMENT=None)
+    [deployment] = found("This deployment")
+    assert deployment.state == "fix" and "keys a5s publishes" in deployment.said
+
+
+def test_a_test_deployment_whose_data_isnt_made_up_is_worth_a_look(long_token, stack,
+                                                                  monkeypatch):
+    """A deployment named a test keeps its band amber once the team's own data is in it: where
+    the settings in force class its data as anything but made-up, the doctor says to name it
+    production (round 17, B3)."""
+    deployed(monkeypatch, stack, A5S_ENVIRONMENT="test")
+    [made_up] = found("This deployment")
+    assert made_up.state == "ok"  # the sample's records are made up
+    with db.transaction(stack.admin) as conn:
+        raw = conn.execute("select serial, raw from settings_versions order by serial desc "
+                           "limit 1").fetchone()
+        conn.execute("update settings_versions set raw = %s where serial = %s",
+                     (bytes(raw["raw"]).replace(b"data_class: synthetic", b"data_class: personal"),
+                      raw["serial"]))
+    [real] = found("This deployment")
+    assert real.state == "look" and "class its data as personal" in real.said

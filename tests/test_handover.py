@@ -94,7 +94,8 @@ def test_the_agent_hands_the_conversation_to_a_team_which_answers_until_it_hands
     shell = as_person(approving, provider, "chen", "GET", "/shell/api").json()["pages"]
     assert any(p["page"] == "handovers" for p in shell)
     # Nobody outside the team reads it, nor Ben's own team
-    assert as_person(approving, provider, "ana", "GET", "/studio/api/handovers").json() == {"handovers": []}
+    refused = as_person(approving, provider, "ana", "GET", "/studio/api/handovers")
+    assert refused.status_code == 403  # as her sidebar leaves the page out (round 17, C5)
     assert as_person(approving, provider, "ana", "GET",
                      f"/studio/api/handovers/{row['id']}").status_code == 404
     assert not any(p["page"] == "handovers" for p in
@@ -400,3 +401,44 @@ def test_a_teams_words_steer_no_change_at_level_2_nor_one_taken_as_the_persons(s
     [asked] = [e for e in stack.ledger() if e["kind"] == "tool"
                and e["action"] == "change_due_date"]
     assert asked["decision"] == "hold" and asked["steered_by"] == ["dana"]
+
+
+def test_a_team_members_erasure_takes_their_answers_and_their_id_with_them(stack, approving,
+                                                                          provider):
+    """What someone of the team answered in a conversation handed to it is their own words, in
+    that person's conversation: erasing them erases those words, as sent and as the handover
+    keeps them, and leaves no id of theirs where they took it or handed it back; leaving puts
+    each under their archive's name, so whoever holds the id next isn't named for it
+    (round 17, D1)."""
+    from datetime import UTC, datetime
+
+    from a5s import db
+    from a5s.core import departures, erasure, export
+
+    assert not stack.settle(hands_to=["operations"]).refused
+    row = handed(stack)
+    path = f"/studio/api/handovers/{row['id']}"
+    as_person(approving, provider, "chen", "POST", f"{path}/take")
+    as_person(approving, provider, "chen", "POST", f"{path}/answer", {"text": "On it, Ben."})
+    swept(stack)
+    as_person(approving, provider, "chen", "POST", f"{path}/back")
+    swept(stack)
+    with db.transaction(stack.admin) as conn:  # leaving first: their archive's name stands in
+        name = departures.rename(conn, "chen", datetime.now(UTC))
+        assert [r["by_person"] for r in conn.execute("select by_person from handover_replies")] == [name]
+        assert [tuple(r.values()) for r in conn.execute(
+            "select taken_by, ended_by from handovers")] == [(name, name)]
+        assert [r["written_by"] for r in conn.execute(
+            "select written_by from outbox where written_by is not null")] == [name]
+        conn.rollback()
+    with db.transaction(stack.admin) as conn:
+        gone, _ = erasure.erase(conn, "chen", datetime.now(UTC), here=True)
+    assert gone["handover_answers"] == 1 and "said_in_groups" not in gone
+    with db.transaction(stack.admin) as conn:
+        assert not conn.execute("select 1 from handover_replies").fetchone()
+        assert not conn.execute("select 1 from outbox where written_by is not null or "
+                                "text like '%%Chen Wei%%'").fetchone()
+        assert not conn.execute("select 1 from turns where content like '%%Chen Wei%%'").fetchone()
+        [kept] = conn.execute("select taken_by, ended_by from handovers").fetchall()
+        assert kept["taken_by"].startswith(departures.FORMER) and kept["ended_by"] == kept["taken_by"]
+        assert export.gather(conn, "chen")["handover_answers"] == 0

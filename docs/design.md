@@ -93,19 +93,22 @@ A page makes it as hard to do something as it is to undo it, and no harder, as [
 
 - **Where you are.** The band across the top of every page, the sign-in's too, says which deployment this is: production in the change's colour, filled, a test, a staging or a developer's own machine in amber ([naming it](first-day.md#6-install)).
 - **Whose power you use.** A page that changes things says first which of your roles its acts count as, while it holds one, by the rules that let you ([`core/acting.py`](../src/a5s/core/acting.py)).
-- **What a press does**, by its tier. Every act in the studio, and the command line's one that loosens a5s, is in one of three:
+- **What a press does**, by its tier. Every act in the studio, and the command line's that loosen a5s, is in one of three:
 
 | Act | Where | Its tier, and what it asks |
 | --- | --- | --- |
 | Chat; start, change or cancel your own task; save, try, drop or publish a draft; ask for an agent, or for a version of the settings; connect or disconnect your own account; keep a run as a test case; say an answer was wrong; grade a new version's answers; answer a conversation handed to your team; take a note out of a notebook | Their own pages | **Everyday**: a button where the work is. What nothing brings back, though it reaches nobody else, such as dropping a draft or taking a note out, asks first |
-| Decide a held change, alone or with others ticked | Decisions | **Consequential**: in a zone at the card's foot, or the list's, saying first what approving and rejecting do; a fresh sign-in |
+| Export a period of the ledger, as an auditor | Audit | **Everyday**: a button where the work is, as it changes nothing and reaches nobody; it's there only once the data protection officer agrees to names, and the ledger notes each export |
+| Decide a held change a5s can undo, alone or with others ticked | Decisions | **Consequential**: in a zone at the card's foot, or the list's, saying first what approving and rejecting do; a fresh sign-in |
+| Decide a held change a5s can't undo, as its tool says no way to | Decisions | **Can't be undone**: its zone, and the list's while it's ticked, marked so and saying so; a fresh sign-in for exactly that change, but nothing typed, as the card itself names it |
 | Send grades | Grading | **Consequential**: in a zone saying what they count towards; a fresh sign-in |
 | Approve a version of the settings | Settings to approve | **Consequential**: in a zone saying when it comes into force, and which instances it retires; a fresh sign-in |
 | Suspend or resume an instance | Its page | **Consequential**: in a zone right below its head, saying how many people it stops answering, or answers again; a fresh sign-in, with a second factor to resume |
 | Undo a change | Its page | **Consequential**: in a zone saying what goes back, and who hears of it; a fresh sign-in |
 | Export someone's data | Data protection | **Consequential**: in a zone saying what an export holds; a fresh sign-in |
 | Put a stopped model back | `a5s health --restore` | **Consequential**: `a5s health` and the health page name the instances it reaches first, and the command says so again once it's back; the release approver's own sign-in |
-| Erase someone's data | Data protection | **Can't be undone**: in a zone of its own, marked so; their id typed again, which the channels app checks too; a fresh sign-in |
+| Resume an instance, or end a change a5s stopped part way through making | `a5s resume`, `a5s proposals end` | **Consequential**: the command says what it did and whom it reaches, as `a5s suspend` does; a sign-in of your own, with a second factor where the deployment asks for one |
+| Erase someone's data | Data protection | **Can't be undone**: in a zone of its own, marked so, which says what goes and what stays; whose the id is, named first; their id typed again, never shown, which the channels app checks too; a fresh sign-in |
 
 A consequential act asks no dialog besides its sign-in, so a dialog, met only where nothing brings it back, keeps meaning that; and a zone holds nothing everyday, so its edge always means the press reaches beyond you. The browser tests check that each consequential act sits in its zone, saying whom it reaches, that the pages that only show, or whose acts are everyday, have none, and that an erasure without the id typed again erases nobody ([`tests/test_safety.py`](../tests/test_safety.py), [`tests/test_officer.py`](../tests/test_officer.py)).
 

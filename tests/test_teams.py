@@ -17,7 +17,7 @@ from jwt.algorithms import RSAAlgorithm
 from a5s import db
 from a5s.core import groups, inbox, teams
 from a5s.core.identity import IdentityConfig, Verifier
-from a5s.core.teams import Bot, Teams, TeamsConfig
+from a5s.core.teams import Bot, Refused, Teams, TeamsConfig
 from conftest import CLIENT, eventually, free_port, serve
 
 APP_ID, TENANT = "a5s-bot-app", "0a5a7e17-0000-4000-8000-000000000001"
@@ -426,3 +426,17 @@ def test_an_instance_approver_gets_a_card_that_opens_the_cores_page(stack, bot, 
     assert "- assistant-finance serves Chen Wei as well." in [b["text"] for b in content["body"]]
     [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
     assert delivered["outcome"] == {"status": "ok", "channel": "teams"}
+
+
+def test_a_bots_app_id_mistyped_names_the_teams_setting_never_the_sign_ins():
+    """A token for a bot whose app id the settings mistype names A5S_TEAMS_BOTS, where the
+    bots' ids are, never the settings for people's sign-in (round 17, A9)."""
+    fake = FakeBotFramework()
+    cfg = TeamsConfig(bots=(Bot("assistant", "a5s-bot-app-TYPO", "bot-secret"),),
+                      tenant_id=TENANT, service_hosts=("smba.test",), login_url="https://login.test",
+                      metadata_url="https://login.botframework.test/v1/.well-known/openidconfiguration")
+    teams = Teams(cfg, httpx.Client(transport=httpx.MockTransport(fake.handler)))
+    with pytest.raises(Refused) as refused:
+        teams.check(activity(), f"Bearer {fake.token()}")  # Teams' token, for the real app id
+    assert "A5S_TEAMS_BOTS" in refused.value.reason
+    assert "A5S_OIDC" not in refused.value.reason and "A5S_WEBCHAT" not in refused.value.reason

@@ -65,9 +65,10 @@ def stopped(conn: db.Connection, scenario: str, alias: str) -> bool:
 
 def running_on(conn: db.Connection, alias: str) -> list[dict[str, Any]]:
     """The instances at work whose own model it is, and whom each serves, as the settings name
-    them: what putting it back reaches first."""
-    return conn.execute("select id, serves from instances where model = %s and status <> "
-                        "'retired' order by id", (alias,)).fetchall()
+    them: what putting it back reaches first. One suspended runs nothing till it's resumed, and
+    a shadow answers nobody, so neither reaches anyone (round 17, B8)."""
+    return conn.execute("select id, serves from instances where model = %s and status = "
+                        "'active' order by id", (alias,)).fetchall()
 
 
 def reach(conn: db.Connection, scenario: Any, alias: str) -> tuple[list[str], int]:

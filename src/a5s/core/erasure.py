@@ -80,6 +80,7 @@ WORDS = {
     "waiting": "what they said they were waiting on",
     "owed": "what they owed that's done",
     "said_in_groups": "what they said in group chats",
+    "handover_answers": "what they answered, as one of a team, in conversations handed to it",
     "group_summaries": "group chats' summaries that held what they said",
     "questions": "questions agents asked each other for them alone",
     "tasks": "tasks they asked for, with what each did",
@@ -163,7 +164,13 @@ def erase(conn: db.Connection, person: str, now: datetime,
         delete(table, f"delete from {table} where person = any(%s)" + (  # but an agent's
             " and not coalesce(route ? 'members', false)" if table == "outbox" else ""),  # answer
                (names,))  # in a group chat is the group's, with what others said of it (E3)
-    delete("said_in_groups", "delete from turns where speaker = any(%s)", (names,))
+    delete("said_in_groups", "delete from turns where speaker = any(%s) and person like "
+           "'group:%%'", (names,))
+    # what they answered, as one of a team, in someone's conversation handed to it: their own
+    # words, in that person's conversation, as it was sent and as the handover keeps it (D1)
+    delete("handover_answers", "delete from handover_replies where by_person = any(%s)", (names,))
+    conn.execute("delete from turns where speaker = any(%s)", (names,))
+    conn.execute("delete from outbox where written_by = any(%s)", (names,))
     delete("shadow_answers", "delete from shadow_answers where acts_for && %s",  # in a group's
            ([*names, person],))  # too: what a shadow answered is only ever for graders
     delete("shadow_grades", "update shadow_answers set graded_by = null where graded_by = "

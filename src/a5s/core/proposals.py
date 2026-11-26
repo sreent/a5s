@@ -88,6 +88,17 @@ def roles(part: str | None) -> list[str]:
     return [f"{PART_OWNER}:{part}", f"{PART_DELEGATE}:{part}"] if part else [INSTANCE_APPROVER]
 
 
+def decides_here(conn: db.Connection, person: Person) -> bool:
+    """Whether the Decisions page is someone's: they decide changes, in a part or in none, or a
+    change that waits was escalated to them, as a decider's manager. Their sidebar lists it,
+    and its API lets them in, by this alone (round 17, C5)."""
+    if INSTANCE_APPROVER in person.roles or any(
+            r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in person.roles):
+        return True
+    return conn.execute("select 1 from proposals where status = 'waiting' and %s = any(escalated) "
+                        "limit 1", (person.id,)).fetchone() is not None
+
+
 def deciders(scenario: Scenario, records: list[str],
              acts_for: list[str]) -> dict[str | None, list[Person]]:
     """Who may decide a change to these records, for each part they're in: its owners and

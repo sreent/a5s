@@ -140,6 +140,13 @@ def rename(conn: db.Connection, person: str, now: datetime) -> str:
     # In group chats: what they said, and that they were there to hear it
     unsummarise(conn, [person])
     conn.execute("update turns set speaker = %s where speaker = %s", (name, person))
+    # and where they answered someone's conversation handed to their team, which stays that
+    # person's: whoever holds their id next isn't named for it (round 17, D1)
+    conn.execute("update handover_replies set by_person = %s where by_person = %s", (name, person))
+    conn.execute("update handovers set taken_by = case when taken_by = %(p)s then %(n)s else "
+                 "taken_by end, ended_by = case when ended_by = %(p)s then %(n)s else ended_by "
+                 "end where %(p)s in (taken_by, ended_by)", {"p": person, "n": name})
+    conn.execute("update outbox set written_by = %s where written_by = %s", (name, person))
     conn.execute("update turns set heard_by = array_replace(heard_by, %s, %s) "
                  "where heard_by @> array[%s]::text[]", (person, name, person))
     conn.execute("update inbound set members = array_replace(members, %s, %s) "

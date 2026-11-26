@@ -34,7 +34,9 @@ def _bin(name: str) -> str:
     found = shutil.which(name)
     if found:
         return found
-    candidates = sorted(glob.glob(f"/usr/lib/postgresql/*/bin/{name}"))
+    candidates = sorted(glob.glob(f"/usr/lib/postgresql/*/bin/{name}")) or sorted(  # Debian's,
+        glob.glob(f"/opt/homebrew/opt/postgresql@*/bin/{name}")  # or Homebrew's, kept apart
+        + glob.glob(f"/usr/local/opt/postgresql@*/bin/{name}"))  # from PATH (round 17, A7)
     if not candidates:
         raise Missing(f"`a5s up` runs Postgres from its own programs, and can't find {name} "
                       "here: install Postgres 16, such as with `apt install postgresql-16` or "

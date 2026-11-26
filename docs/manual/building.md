@@ -6,7 +6,7 @@ For the people who make agents in the studio: an agent's owners, the authors the
 
 Choose **New agent** in the sidebar, under Build, or **Start a new agent** under *Build an agent* on your home, which shows the way from a new agent to one at work. The Agents page has **New agent** too.
 
-If you see none of these, your roles don't let you start an agent: your home says who may, an agent's owner or an engineer, and what to ask whoever runs a5s in your organisation. An agent's author may still change that agent, from its page.
+If you see none of these, your roles don't let you start an agent: your home says who may, an agent's owner or anyone in the team that runs a5s, and what to ask whoever runs a5s in your organisation. An agent's author may still change that agent, from its page.
 
 - **From a template.** Give it a name, in lower-case letters and digits with single hyphens between, choose what to start from, and choose **Make the draft**. A template that needs tools your organisation hasn't got says so.
 - **Or describe it.** Where your organisation has a sandbox, say what it's for and for whom, choose a model, and choose **Draft it from my words**. Code builds the draft from what the organisation offers, giving it the least each part of the job needs, and says, for each tool, why it was given or left out. A described agent starts by reading only, or asking first where anything it was given writes, never by acting on its own.
@@ -49,7 +49,7 @@ When nothing stops its release, choose **Publish it**.
 - With your organisation's GitHub app, choose **Publish as a pull request**, and confirm at GitHub's sign-in: a5s opens the pull request as you. **Publish again** adds your later changes to it.
 - Without one, download its folder and the pull request's title and description, and open it yourself.
 
-Before you publish, the draft says who must sign its release: for a new agent, the release approver, from outside the team that runs a5s, and its owner; for a change to its instructions alone, its owner and an engineer of the team that runs a5s; and the release approver for anything that lets it do more. Signing happens outside the studio ([signing a release](approving.md#sign-a-release)).
+Before you publish, the draft says who must sign its release: for a new agent, the release approver, from outside the team that runs a5s, and its owner; for a change to its instructions alone, its owner and an engineer, anyone in the team that runs a5s; and the release approver for anything that lets it do more. A new agent's owner signs as the directory names them, so its release can't be signed until whoever runs a5s in your organisation has the directory give someone the agent's owner role: the draft says when nobody holds it yet. Signing happens outside the studio ([signing a release](approving.md#sign-a-release)).
 
 ![Before publishing, the draft says who must sign its release](../guides/sample/05-before-she-publishes-it-the-draft-says-who-must.png)
 

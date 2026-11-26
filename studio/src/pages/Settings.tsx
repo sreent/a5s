@@ -153,6 +153,9 @@ function Refused({ id, said }: { id: string; said: string }) {
   );
 }
 
+/** What the page is, said the same as it loads, if it can't, and once it has. */
+const ABOUT = "The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do.";
+
 export function SettingsPage() {
   const toast = useToast();
   const [now, setNow] = useState<SettingsNow>();
@@ -231,8 +234,8 @@ export function SettingsPage() {
     setFocus(undefined);
   }, [focus]);
 
-  if (error) return <><PageHead title={t("Settings")} about={t("The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do.")} /><Waiting error={error} /></>;
-  if (!now) return <><PageHead title={t("Settings")} about={t("The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do.")} /><Waiting /></>;
+  if (error) return <><PageHead title={t("Settings")} about={t(ABOUT)} /><Waiting error={error} /></>;
+  if (!now) return <><PageHead title={t("Settings")} about={t(ABOUT)} /><Waiting /></>;
   const settings = now;
   const w = working.current;
   const inForce = settings.in_force?.data as Data | null | undefined;
@@ -682,7 +685,7 @@ export function SettingsPage() {
   return (
     <>
       <PageHead title={t("Settings")}
-                about={t("The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do.")} />
+                about={t(ABOUT)} />
       <p id="status" role="status" className="note">{status}</p>
       {settings.in_force && (
         <section className="card" id="in-force">

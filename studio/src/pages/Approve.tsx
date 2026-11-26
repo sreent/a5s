@@ -118,7 +118,12 @@ export function ApprovePage({ version }: { version: string }) {
               <ul id="whole" className="plain well">{found.whole.map((line) => <li key={line}>{line}</li>)}</ul>
             </div>
             {found.impact && <ImpactPreview impact={found.impact} />}
-            {found.status === "waiting" && !found.you_approved && (  /* what agents may do, for everyone they serve */
+            {found.status === "waiting" && !found.you_approved && !found.needs_you && (  /* it counts for nothing */
+              <p id="not-yours" className="note">{found.needs.length
+                ? t("It needs nothing of yours: what's missing is {needs}.", { needs: found.needs.join("; ") })
+                : t("It needs nothing of yours, and nothing more of anyone: a5s puts it in force.")}</p>
+            )}
+            {found.status === "waiting" && !found.you_approved && found.needs_you && (  /* what agents may do, for everyone they serve */
               <ActionZone title={t("Approve it")} level={3} reach={[
                 t("Your approval counts towards version {serial}: once every approval it needs is in, a5s puts it in force, and each instance it names works as it says from its next message.", { serial: found.serial }),
                 (found.retires ?? []).length > 0 && t("It retires {instances}, which stop answering the people they serve at once, until a later version puts them back.", { instances: (found.retires ?? []).join(", ") }),

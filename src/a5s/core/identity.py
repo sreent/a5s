@@ -12,6 +12,7 @@ sender itself, so no service can claim that a message came from someone else.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -47,9 +48,20 @@ class UnknownPerson(IdentityError):
     """The token checks out, but names nobody the directory knows."""
 
 
+log = logging.getLogger(__name__)
+UNREACHED = ("a5s can't check sign-ins just now, as the identity provider doesn't answer it: "
+             "try again in a minute")
+
+
 class IdentityUnavailable(IdentityError):
     """The identity provider couldn't be reached, or answered nothing a5s could read, so a5s
-    couldn't check the token just now: neither that it checks out, nor that it doesn't."""
+    couldn't check the token just now: neither that it checks out, nor that it doesn't. Whoever
+    sent the token hears only that; where the provider was, and what to check, is `detail`, for
+    the operators' log and `a5s doctor`, as it may name an address inside (round 17, D7)."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(UNREACHED)
+        self.detail = detail
 
 
 @dataclass(frozen=True)
@@ -68,9 +80,23 @@ class IdentityConfig:
     # The claim a sign-in shows a second factor by, and the values that do, if the deployment
     # asks for one for what counts (A5S_OIDC_MFA): such as amr holding mfa, for Entra ID
     mfa: tuple[str, tuple[str, ...]] | None = None
+    # Whether the deployment says its provider's tokens show no second factor (A5S_OIDC_MFA=none):
+    # a5s asks none, as with none set, but the status and the doctor take it as said (round 17, A10)
+    mfa_said_none: bool = False
+    # The settings a refusal names as what decides the issuer and audiences it takes: people's
+    # sign-in's, unless the verifier is another's, such as Teams', whose bots name their own
+    # (round 17, A9); None where no setting decides it
+    issuer_setting: str | None = "A5S_OIDC_ISSUER"
+    audience_setting: str = "A5S_OIDC_AUDIENCE, with A5S_WEBCHAT_CLIENT_ID,"
     # The claim a sign-in shows its groups by, for the roles the settings give them
     # (A5S_OIDC_GROUPS_CLAIM, groups if not set, and none if set empty): core/memberships.py
     groups_claim: str | None = "groups"
+
+    @property
+    def second_factor_asked(self) -> tuple[str, tuple[str, ...]] | None:
+        """The second factor what counts asks for, as the status says it: none, where the
+        deployment says its provider's tokens show none, and None where nobody set it."""
+        return config.NO_SECOND_FACTOR if self.mfa_said_none else self.mfa
 
     @classmethod
     def from_env(cls) -> IdentityConfig | None:
@@ -85,7 +111,8 @@ class IdentityConfig:
             person_claim=config.OIDC_PERSON_CLAIM.read(),
             metadata_url=config.OIDC_METADATA_URL.read(),
             directory_prefix=config.OIDC_DIRECTORY_PREFIX.read(),
-            mfa=config.OIDC_MFA.read(),
+            mfa=None if (mfa := config.OIDC_MFA.read()) == config.NO_SECOND_FACTOR else mfa,
+            mfa_said_none=mfa == config.NO_SECOND_FACTOR,
             groups_claim=config.OIDC_GROUPS_CLAIM.read(),
         )
 
@@ -96,7 +123,8 @@ def second_factor_of(given: str | None) -> tuple[str, tuple[str, ...]] | None:
     if not given or not given.strip():
         return None
     try:
-        return config.second_factor(given)
+        found = config.second_factor(given)
+        return None if found == config.NO_SECOND_FACTOR else found
     except ValueError:
         raise ValueError("A5S_OIDC_MFA names the claim a sign-in shows a second factor by, and "
                          "the values that do, such as amr:mfa") from None
@@ -183,11 +211,12 @@ class Verifier:
                 fetched = self._fetch()
             except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
                 where = self.cfg.metadata_url or self.cfg.issuer
-                raise IdentityUnavailable(
-                    f"the identity provider at {where} couldn't be reached, or answered nothing "
-                    f"a5s could read ({type(exc).__name__}): check that the core reaches it, and "
-                    "that A5S_OIDC_ISSUER, or A5S_OIDC_METADATA_URL where its metadata is "
-                    "elsewhere, names it") from exc
+                detail = (f"the identity provider at {where} couldn't be reached, or answered "
+                          f"nothing a5s could read ({type(exc).__name__}): check that the core "
+                          "reaches it, and that A5S_OIDC_ISSUER, or A5S_OIDC_METADATA_URL where "
+                          "its metadata is elsewhere, names it")
+                log.warning("%s", detail)
+                raise IdentityUnavailable(detail) from exc
             (self._keys, self._published), self._fetched_at = fetched, time.monotonic()
         return self._keys
 
@@ -232,14 +261,17 @@ class Verifier:
         except jwt.PyJWTError:
             said = {}
         if isinstance(exc, jwt.InvalidIssuerError):
+            if self.cfg.issuer_setting is None:  # a5s's own, such as the Bot Framework's
+                return (f"it's from the issuer {shown(said.get('iss'))}, not "
+                        f"{shown(self.cfg.issuer)}, whose tokens alone a5s takes here")
             return (f"it's from the issuer {shown(said.get('iss'))}, and a5s takes sign-ins from "
-                    f"{shown(self.cfg.issuer)}, as A5S_OIDC_ISSUER sets it: set that to exactly "
-                    "what the provider's tokens name")
+                    f"{shown(self.cfg.issuer)}, as {self.cfg.issuer_setting} sets it: set that to "
+                    "exactly what the provider's tokens name")
         if isinstance(exc, jwt.InvalidAudienceError):
             ours = [self.cfg.audience] if isinstance(self.cfg.audience, str) else self.cfg.audience
             return (f"it's for {shown(said.get('aud'))}, and a5s takes tokens for "
-                    f"{', '.join(map(shown, ours)) or 'none'}: A5S_OIDC_AUDIENCE, with "
-                    "A5S_WEBCHAT_CLIENT_ID, names the client ids a5s takes tokens for")
+                    f"{', '.join(map(shown, ours)) or 'none'}: {self.cfg.audience_setting} "
+                    "names the client ids a5s takes tokens for")
         if isinstance(exc, jwt.ExpiredSignatureError):
             return "it has expired: sign in again"
         if isinstance(exc, jwt.ImmatureSignatureError):

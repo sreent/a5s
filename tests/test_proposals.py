@@ -236,7 +236,7 @@ def test_the_page_shows_a_decider_what_waits_for_them_and_nobody_else(stack, app
     assert (shown["key"], shown["status"], shown["sensitive"]) == ("P-1", "waiting", False)
     ben = httpx.post(f"{approving}/decide/review",
                      headers={"Authorization": f"Bearer {provider.id_token(person='ben')}"})
-    assert ben.json()["proposals"] == []
+    assert ben.status_code == 403  # no decider, so no Decisions in his sidebar (round 17, C5)
 
 
 def test_a_decider_who_no_longer_owns_the_part_decides_nothing(stack, approving, provider,

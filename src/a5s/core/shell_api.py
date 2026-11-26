@@ -5,6 +5,7 @@ would refuse them. a5s has no administrator's mode: what anyone sees follows fro
 which the sidebar's foot names, so nobody need guess.
 """
 
+from collections.abc import Iterable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header
@@ -12,10 +13,6 @@ from fastapi import APIRouter, Depends, Header
 from a5s import db
 from a5s.contract import (
     DATA_PROTECTION,
-    INSTANCE_APPROVER,
-    PART_DELEGATE,
-    PART_OWNER,
-    RELEASE_APPROVER,
     Person,
 )
 from a5s.core import (
@@ -24,7 +21,10 @@ from a5s.core import (
     drafts,
     environment,
     handover,
+    health_api,
+    home,
     notebook_api,
+    proposals,
     registry,
     samples,
     shadows,
@@ -32,7 +32,6 @@ from a5s.core import (
     web,
 )
 from a5s.core import studio_models as shapes
-from a5s.core.releases import ENGINEER
 
 # Each page, in the order the sidebars show it: its key, its name, its icon, the heading it's
 # under, and its address, in the studio for most. The studio's sidebar and its palette, and every
@@ -64,11 +63,14 @@ PAGES = (
 TEAM_NAME = "The team that runs a5s"  # as the studio's own page, What you may do, names it (core/home.py)
 
 
-def held(person: Person, team: str) -> list[str]:
+def held(person: Person, team: str, runs: Iterable[tuple[str, str]] = ()) -> list[str]:
     """The roles someone holds, in words, as What you may do names them, for the foot of every
-    sidebar: the team that runs a5s first, if they're in it, and none if they hold none."""
+    sidebar: the team that runs a5s first, if they're in it; then each instance they run, as
+    its owner or deputy (`home.runs`); and none if they hold none."""
     named = [TEAM_NAME] if person.team == team else []
-    return list(dict.fromkeys(named + [administration.named(role) for role in person.roles]))
+    named += [administration.named(role) for role in person.roles]
+    named += [home.RUNS[kind].format(instance=inst) for inst, kind in runs]
+    return list(dict.fromkeys(named))
 
 
 def router(gw: Any) -> APIRouter:
@@ -84,23 +86,21 @@ def router(gw: Any) -> APIRouter:
         """Who signed in, the roles they hold, and the pages they may use, for the sidebar every
         page shows, in its order."""
         roles = set(person.roles)
-        decides = INSTANCE_APPROVER in roles or any(
-            r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in roles)
         found = {"chat": True, "tasks": True, "notebook": bool(notebook_api.kept(gw, person)),
-                 "home": True, "agents": True, "new": drafts.may_author(person, None),
-                 "map": True, "decide": decides, "grade": samples.GRADER in roles,
+                 "home": True, "agents": True, "new": drafts.may_author(person, None, gw.cfg.team),
+                 "map": True, "grade": samples.GRADER in roles,
                  "settings": registry.approves(person), "audit": audit.reads(person),
                  "admin": administration.administers(person, gw.cfg.team),
                  "spending": spending.sees_any(gw.url, person),
                  "officer": DATA_PROTECTION in roles,
                  "status": person.team == gw.cfg.team,  # as `a5s status` is theirs
-                 "health": bool(roles & {RELEASE_APPROVER, ENGINEER}) or any(
-                     r.startswith(ENGINEER + ":") for r in roles)}
+                 "health": health_api.reads(person, gw.cfg.team)}  # as its page asks
         with db.transaction(gw.url) as conn:
             found["handovers"] = handover.answers_any(conn, gw.scenario, person)
-            found["shadows"] = shadows.exists(conn) and (  # a new version's answers to grade,
-                samples.GRADER in roles or bool(shadows.figures(conn, gw.scenario, person)))
-        return {"you": person.name, "roles": held(person, gw.cfg.team), "pages": [
+            found["shadows"] = shadows.theirs(conn, gw.scenario, person)  # as its page asks
+            found["decide"] = proposals.decides_here(conn, person)  # and this one
+            running = home.runs(conn, person)
+        return {"you": person.name, "roles": held(person, gw.cfg.team, running), "pages": [
             {"page": key, "name": name, "icon": icon, "group": group, "at": at}
             for key, name, icon, group, at in PAGES if found[key]]}
 

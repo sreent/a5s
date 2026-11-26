@@ -1519,7 +1519,8 @@ def create_app(gw: Gateway) -> FastAPI:
                   redoc_url="/redoc" if explorer else None)
 
     @app.get("/healthz", include_in_schema=False)  # for the cluster's probes: the part answers,
-    def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md)
+    async def healthz() -> dict:  # and says nothing else, with no token (docs/runbooks.md),
+        # on the event loop, never queued behind the calls that wait for models (round 17, A13)
         return {"ok": True}
 
     @app.exception_handler(psycopg.OperationalError)
@@ -2432,11 +2433,16 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             found = status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
                                   gw.data_protection(conn).flag_rubber_stamps,
-                                  gw.identity.cfg.mfa if gw.identity else False,
+                                  gw.identity.cfg.second_factor_asked if gw.identity else False,
                                   scenario=gw.scenario.name)
             found["release"] = gw.release_status(conn)
-        found["expiring"] = status.expiring(config.EXPIRES.read(),  # credentials, as noted
-                                            datetime.now(UTC).date())
+            # whether the settings in force count, as every run checks them (round 17, A1)
+            found["settings"] = {"problem": gw.settings_in_force(conn, seal=False)[1]}
+        try:
+            found["expiring"] = status.expiring(config.EXPIRES.read(),  # credentials, as noted
+                                                datetime.now(UTC).date())
+        except config.ConfigError as exc:  # a note mistyped, which stops nothing (A12)
+            found["expiring"], found["expires_unread"] = [], str(exc)
         here = config.set_here()  # what the core runs with, as its environment gives it
         found["configuration"] = {"set": here, "defaults": len(config.VARS) - len(here),
                                   # as `a5s dev` runs it, taking people's word and running
@@ -2657,7 +2663,7 @@ def create_app(gw: Gateway) -> FastAPI:
         records it, in counts."""
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
-        if body.confirm != person:
+        if not officer.typed_again(body.confirm, person):
             raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
                                      "nobody")
         here = gw.scenario.person(person) is not None
@@ -2808,23 +2814,31 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(400, "say who you are, as someone in the directory")
         return body.by, "unverified (development)"
 
+    def serving(conn: db.Connection, instance: str) -> int:
+        """How many people an instance serves, as the directory says now: whom suspending or
+        resuming it reaches, which `a5s suspend` and `a5s resume` say (round 17, B9)."""
+        row = conn.execute("select serves from instances where id = %s", (instance,)).fetchone()
+        return len(registry.served(gw.scenario, (row and row["serves"]) or []))
+
     @services.post("/instances/{instance}/suspend")
     def suspend(instance: str, body: StatusChange) -> dict:
         by, identity = who_asks(body)
         with db.transaction(gw.url) as conn:
             problem = registry.set_status(conn, instance, by=by, suspend=True, identity=identity)
+            serves = serving(conn, instance)
         if problem:
             raise HTTPException(404, problem)
-        return {"suspended": instance, "by": by}
+        return {"suspended": instance, "by": by, "serves": serves}
 
     @services.post("/instances/{instance}/resume")
     def resume(instance: str, body: StatusChange) -> dict:
         by, identity = who_asks(body, loosens=True)
         with db.transaction(gw.url) as conn:
             problem = registry.set_status(conn, instance, by=by, suspend=False, identity=identity)
+            serves = serving(conn, instance)
         if problem:
             raise HTTPException(403, problem)
-        return {"resumed": instance, "by": by}
+        return {"resumed": instance, "by": by, "serves": serves}
 
     @services.post("/models/{alias}/restore")
     def restore_model(alias: str, body: StatusChange) -> dict:
@@ -4723,9 +4737,16 @@ def create_app(gw: Gateway) -> FastAPI:
                 return "failed"
             undoing.end(conn, row["id"], "undone", "undone", by=row["asked_by"])
             graded = samples.undone(conn, gw.cfg.seal_keys, gw.scenario.name, row, gw.clock())
+            # its words are a held change's: marked where a run that read content from outside
+            # chose what they say, as the notice that it was made was, or where a5s can no
+            # longer tell, its held change gone (round 17, D2)
+            held = conn.execute("select * from proposals where id = %s",
+                                (row["proposal_id"],)).fetchone() if row["proposal_id"] else None
+            marked = (held is None or proposals.carries(held, gw.scenario)) if row[
+                "proposal_id"] else False
             for person in row["acts_for"]:  # their conversation: the agent's next run knows
                 noted(conn, person, row["definition"], f"{name} undid the change a5s made: "
-                      f"{row['said']}", row["record"])
+                      f"{row['said']}", row["record"], marked=marked)
             inst = conn.execute("select owner, deputy from instances where id = %s",
                                 (row["instance_id"],)).fetchone()
             told = [p for p in (*row["acts_for"], *((inst["owner"], inst["deputy"]) if inst else ()))
@@ -4958,7 +4979,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "decision": "record", "args": {"proposal": key, "by": by,
                                                                 "identity": identity}})
         push(going["sends"])
-        return {"ended": key, "by": by}
+        return {"ended": key, "by": by,  # and whom it reaches, which the command says (B9)
+                "told": [q.name if (q := gw.scenario.person(i)) else i for i in p["acts_for"]]}
 
     @services.post("/caps/lower")
     def lower_cap(body: CapChange) -> dict:
@@ -5153,10 +5175,13 @@ def create_app(gw: Gateway) -> FastAPI:
                     "gen_ai.operation.name": "chat", "gen_ai.provider.name": fallback.provider,
                     "gen_ai.request.model": candidate, "a5s.run.id": row["run"],
                     "a5s.instance": row["id"]}) as current:
-                started = time.perf_counter()
+                started, unkeyed = time.perf_counter(), False
                 try:
                     status, data = models.forward(fallback, forwarded, gw.http, timeout=min(
                         config.PROVIDER_TIMEOUT.read(), left))
+                except models.KeyMissing as exc:  # nobody set its key: no call was made, so
+                    unkeyed = True  # nothing of the model's to count (round 17, A4)
+                    status, data = 503, models.error_body(api, str(exc), "model_unavailable")
                 except models.ModelTimedOut as exc:
                     timed_out.add(candidate)
                     status, data = 503, models.error_body(api, str(exc), "model_unavailable")
@@ -5171,6 +5196,13 @@ def create_app(gw: Gateway) -> FastAPI:
                     "gen_ai.usage.output_tokens": (usage or {}).get("completion_tokens",
                                                                     (usage or {}).get("output_tokens")),
                     "error.type": str(status) if status >= 400 else None}.items() if v is not None})
+            if unkeyed:  # skipped, as an open breaker's call is: in the ledger, not its health
+                record({"kind": "model", "action": candidate, "run": row["run"],
+                        "instance": row["id"], "decision": "record", "of": seq,
+                        "outcome": {"status": 503, "reported_model": None, "usage": None,
+                                    "skipped": "no key"}})
+                tried_here.append(candidate)
+                continue
             reported = data.get("model") if isinstance(data, dict) else None
             expected = fallback.reported_model or fallback.model
             if status < 400 and reported != expected:

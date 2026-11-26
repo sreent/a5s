@@ -41,14 +41,19 @@ def recorded(stack, action: str) -> list[dict]:
 
 
 def test_who_may_author_what():
-    def who(*roles: str) -> Person:
-        return Person(id="p", name="P", team="t", roles=roles)
-    owner, author, engineer = who("agent-owner:assistant"), who("agent-author:assistant"), who("engineer")
+    def who(*roles: str, team: str = "t") -> Person:
+        return Person(id="p", name="P", team=team, roles=roles)
+    owner, author = who("agent-owner:assistant"), who("agent-author:assistant")
+    engineer = who(team="platform")  # anyone in the team that runs a5s, as a release counts them
     assert drafts.may_author(owner, "assistant") and drafts.may_author(author, "assistant")
     assert not drafts.may_author(owner, "watcher") and not drafts.may_author(engineer, "assistant")
-    assert drafts.may_author(owner, None) and drafts.may_author(engineer, None)
-    assert not drafts.may_author(author, None)  # named for one agent, not to start new ones
-    assert drafts.authors(author) and not drafts.authors(who("part-owner:billing"))
+    assert drafts.may_author(owner, None) and drafts.may_author(engineer, None, "platform")
+    assert not drafts.may_author(engineer, None, "sales")  # outside the team, no engineer
+    # and no role makes one, as none a directory or group gives does (round 17, C3)
+    assert not drafts.may_author(who("engineer"), None, "platform")
+    assert not drafts.may_author(author, None, "platform")  # named for one agent, not new ones
+    assert drafts.authors(author, "platform")
+    assert not drafts.authors(who("part-owner:billing"), "platform")
 
 
 def test_a_draft_is_released_once_a_later_release_here_holds_it_as_it_is(tmp_path):

@@ -84,7 +84,7 @@ What an agent has learned from records, checked against them, for its later runs
 
 ### Part
 
-A piece of the business with one owner, such as billing or payables. Every record an agent changes belongs to one part, and its owner decides how far agents may act there.
+A piece of the business with one owner, such as billing or payables. A record an agent changes belongs to one part, whose owner decides how far agents may act there, or to none, where the instance approvers decide its changes.
 
 ### Reads only
 
@@ -100,7 +100,7 @@ The person who approves whatever loosens a5s, such as a release that gives an ag
 
 ### Role
 
-What a5s lets someone do, such as a part's owner, an instance approver, an agent's owner or author, or a grader, given by your organisation's directory or one of its groups. a5s has no administrator's mode: what anyone sees, and may do, follows from the roles they hold, which the foot of every sidebar names, and *What you may do* explains.
+What a5s lets someone do, such as a part's owner, an instance approver, an agent's owner or author, or a grader, given by your organisation's directory or one of its groups. Being in the team that runs a5s, and running an instance as its owner or deputy, which the signed settings name, aren't roles, but count beside them. a5s has no administrator's mode: what anyone sees, and may do, follows from these, which the foot of every sidebar names, and *What you may do* explains.
 
 ### Sample
 

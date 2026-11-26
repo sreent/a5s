@@ -4,7 +4,7 @@
 // with the roles they hold: a5s has no administrator's mode, only roles, and its foot says which
 // someone holds, leading to the page that says what each lets them do.
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import { get, type Place, type Shell } from "./api";
 import { FindButton } from "./Find";
 import { t } from "./i18n";
@@ -32,7 +32,7 @@ export const mayUse = (found: Shell | null | undefined, page: string): boolean =
 /** A way to one of a5s's pages: one in the studio opens without leaving it, and is marked if
  * it's here; the rest are pages of their own. */
 function To({ place, here, label, title, children }: {
-  place: Place; here: string; label?: string; title?: string; children: ReactNode;
+  place: Place; here: string | undefined; label?: string; title?: string; children: ReactNode;
 }) {
   const route = inside(place.at);
   return route
@@ -56,11 +56,27 @@ const initials = (name: string) =>
 
 /** A page that's one of a sidebar page's own, such as one conversation handed over, which
  * marks that page, the first of them this person may use: an agent's, an instance's and a run's
- * mark Agents, and a draft New agent, or Agents for an author who may change an agent but not
- * start one. Any other page marks Home. */
+ * mark Agents. A draft marks what it says it is, once it's loaded (`markWithin`): Agents for a
+ * change to an agent released here, New agent for a new one's. Any other page in no sidebar,
+ * such as What you may do, marks none, as a screen reader would otherwise hear it's Home (round
+ * 17, C8). */
 const WITHIN: Record<string, string[]> = {
   handover: ["handovers"], approve: ["settings"], agent: ["agents"], instance: ["agents"],
-  run: ["agents"], draft: ["new", "agents"],
+  run: ["agents"], draft: [],
+};
+
+let within: string[] | null = null;  // what the page on view says it's within, once it knows
+const marking = new Set<() => void>();
+
+/** What the page on view is one of, as it learns which: null as it leaves. */
+export function markWithin(pages: string[] | null) {
+  within = pages;
+  marking.forEach((then) => then());
+}
+
+const watchWithin = (then: () => void) => {
+  marking.add(then);
+  return () => { marking.delete(then); };
 };
 
 /** The roles someone holds, as the foot says them: none is said too, as it's an answer. */
@@ -70,9 +86,10 @@ const rolesOf = (found: Shell) =>
 export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: boolean }) {
   const [found, setFound] = useState<Shell | null>(null);
   const page = useRoute().page;
-  // the page it marks: the one whose address this is, or whose own page this is, or else Home
+  const said = useSyncExternalStore(watchWithin, () => within);
+  // the page it marks: the one whose address this is, or whose own page this is, or else none
   const marks = (key: string) => found?.pages.find((place) => inside(place.at)?.page === key)?.page;
-  const here = (WITHIN[page] ?? [page]).map(marks).find(Boolean) ?? "home";
+  const here = (said ?? WITHIN[page] ?? [page]).map(marks).find(Boolean);
   useEffect(() => {
     if (!signedIn) return;
     shellOf().then(setFound).catch(() => setFound(null));

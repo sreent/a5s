@@ -1001,6 +1001,7 @@ class Draft(Shape):
     # an instance of its agent is at work, or paused
     released: bool
     at_work: bool
+    changes: bool  # an agent the release here has, rather than a new one
 
 
 class Named(Shape):
@@ -1592,6 +1593,7 @@ class HeldChange(Shape):
     status: str
     yours: str | None  # the viewer's decision, if they made one that counts
     may_decide: bool
+    undoable: bool  # whether a5s can reverse it once it's made, as its tool says
     outcome: str | None
     proposed_at: str
     lapses_at: str
@@ -1678,6 +1680,7 @@ class VersionReview(Shape):
     impact: Impact | SkipJsonSchema[None] = None  # while it waits: what it would do differently
     acting: Acting | SkipJsonSchema[None] = None  # while it waits for their approval
     retires: list[str] = []  # the instances in force that it leaves out, which it retires
+    needs_you: bool = False  # whether it waits for their approval, which counts towards it
 
 
 class Approved(Shape):
@@ -1698,6 +1701,15 @@ class OfficerNow(Shape):
 
     you: str
     acting: Acting
+
+
+class OfficerWhom(Shape):
+    """Whose an id is, for the officer before they ask about it: someone in the directory, by
+    name and team, an archive, an address, a group chat, or nobody it knows by it now."""
+
+    kind: str  # person, archive, address, group or nobody
+    said: str
+    name: str | SkipJsonSchema[None] = None  # theirs in the directory, for a person
 
 
 class OfficerAsked(Shape):

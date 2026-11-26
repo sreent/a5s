@@ -24,6 +24,7 @@ from a5s import db
 from a5s.contract import Tool, Undo
 from a5s.core import languages, samples, undoing
 from conftest import CLIENT, SEAL_KEY, accessible
+from test_events import system  # noqa: F401  (the fixture: a system that sends events)
 from test_levels import asked, due_of, levelled
 from test_proposals import decide, held
 from test_proposals import sweep as decided
@@ -268,3 +269,34 @@ def test_whoever_a_change_was_for_reads_until_when_by_their_own_clock(stack, app
                      headers={"Authorization": f"Bearer {provider.id_token(person='ben')}"}).json()
     [mine] = [w for w in home["waiting"] if w["kind"] == "undo"]
     assert until in mine["what"]
+
+
+def test_the_undo_notice_is_marked_where_the_changes_words_came_from_outside(
+        stack, system, approving, provider):  # noqa: F811
+    """A held change whose words a run that read content from outside chose says so, marked,
+    when a5s makes it, and again when it's undone: so a run given the undo's notice, after a
+    fresh start too, is marked, and never makes the change again at level 2 with the value the
+    content chose (round 17, D2)."""
+    from test_events import send
+    from test_outside import FORM
+
+    levelled(stack)  # change-due-date in billing at level 2
+    assert send(system, {"id": "Q-1002-updated", "type": "question-opened",
+                         "records": ["Q-1002"], "person": "ben"}).status_code == 202
+    stack.model.reply(None, ("get_messages", {"key": "Q-1002"}))
+    stack.model.reply(json.dumps(FORM))  # a5s's reader
+    stack.model.reply(None, ("change_due_date", {"key": "Q-1002", "due": "2026-11-13"}))
+    stack.model.reply("A change waits for Ana.")
+    assert stack.scheduler().work_due() == 1
+    [p] = held(stack)
+    assert p["read_outside"] and p["status"] == "waiting"  # held, as a marked run's
+    assert decide(approving, provider, [p["digest"]]).status_code == 200
+    decided(stack)
+    made = kept(stack)
+    stack.say("start afresh", person="ben")
+    assert undo(approving, provider, made["id"], "ben").status_code == 200
+    assert swept(stack)["undone"] == 1 and due_of(stack) == "2026-11-06"
+    with db.transaction(stack.admin) as conn:
+        [note] = conn.execute("select marked from turns where person = 'ben' and role = 'notice' "
+                              "and content like '%%undid the change%%'").fetchall()
+    assert note["marked"]

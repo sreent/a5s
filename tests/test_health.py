@@ -171,8 +171,6 @@ def test_an_operator_puts_a_model_back_with_their_token_as_the_release_approver(
 
 def test_the_health_report_and_page_say_whom_putting_a_stopped_model_back_reaches(
         stack, approving, provider, monkeypatch, capsys):
-    from dataclasses import replace
-
     from a5s import cli
     from test_agent_asks import send
 
@@ -183,13 +181,12 @@ def test_the_health_report_and_page_say_whom_putting_a_stopped_model_back_reache
     cli.main(["health"])
     said = capsys.readouterr().out.splitlines()
     assert said[0].startswith("fake ") and said[0].endswith(": stopped")
-    assert said[1] == ("  Putting it back, as the release approver, with a5s health --restore fake, "
-                       "reaches assistant-finance, which calls it again from its next run.")
+    assert said[1] == ("  Putting it back, as the release approver, with a5s health --restore "
+                       f"fake: {REACHES}")  # as the page says it, in one sentence (round 17)
     [model] = send(approving, provider, "rosa", "GET", "/health/api").json()["models"]
     assert model["reaches"] == REACHES  # on the page the release approver reads first
-    people = dict(stack.gateway.scenario._people)  # an engineer may read the page, not whom
-    people["tomas"] = replace(people["tomas"], roles=("engineer",))  # putting it back reaches
-    monkeypatch.setattr(stack.gateway.scenario, "_people", people)
+    # an engineer, anyone in the team that runs a5s, may read the page, not whom putting it
+    # back reaches (round 17, C3)
     [seen] = send(approving, provider, "tomas", "GET", "/health/api").json()["models"]
     assert seen["gated_at"] and "reaches" not in seen
     with db.transaction(stack.admin) as conn:
@@ -204,3 +201,33 @@ def test_whom_putting_a_model_back_reaches_reads_as_a_sentence():
         "assistant-finance calls it again from its next run, for the one person it serves.")
     assert health.reached(["a", "b", "c"], 12) == (
         "a, b and c call it again from their next run, for the 12 people they serve.")
+
+
+def test_a_key_never_set_is_a_skipped_call_never_the_models_stall(stack, monkeypatch):
+    """A model whose key nobody set was never called: each such call is in the ledger as
+    skipped, as one an open breaker skips, never counted against how the model did, so setting
+    the key, as a5s says to, is all it takes (round 17, A4)."""
+    import conftest
+
+    monkeypatch.setattr(stack.gateway.breakers, "allow", lambda model: True)  # no breaker skips
+    monkeypatch.delenv("A5S_TEST_PROVIDER_KEY")  # nobody set the key yet
+    for n in range(11):
+        stack.say(f"Hello {n}")
+    with db.transaction(stack.admin) as conn:
+        kept = conn.execute("select coalesce(sum(calls), 0) as calls, coalesce(bool_or(gated_at "
+                            "is not null), false) as gated from model_health where model = "
+                            "'fake'").fetchone()
+        skipped = conn.execute("select count(*) as n from ledger where kind = 'model' and "
+                               "(entry::jsonb) -> 'outcome' ->> 'skipped' = 'no key'").fetchone()
+    assert (kept["calls"], kept["gated"]) == (0, False) and skipped["n"] >= 11
+    monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", conftest.PROVIDER_KEY)  # the named fix
+    stack.model.reply("Hello, Ana.")
+    assert stack.say("Are you there now?") == "Hello, Ana."
+
+
+def test_putting_a_model_back_reaches_no_instance_that_runs_nothing(stack):
+    """A suspended instance runs nothing till it's resumed, and a shadow answers nobody: neither
+    is among whom putting a stopped model back reaches (round 17, B8)."""
+    stack.suspend(by="ben")  # assistant-finance, the one instance on fake
+    with db.transaction(stack.admin) as conn:
+        assert health.reach(conn, stack.gateway.scenario, "fake") == ([], 0)

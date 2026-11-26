@@ -45,16 +45,20 @@ def agent_author(agent: str) -> str:
     return f"{AGENT_AUTHOR}:{agent}"
 
 
-def may_author(person: Person, agent: str | None) -> bool:
-    """Whether someone may draft a change to `agent`, or, with None, a new agent."""
+def may_author(person: Person, agent: str | None, team: str = "") -> bool:
+    """Whether someone may draft a change to `agent`, its owners and named authors; or, with
+    None, a new agent: any agent's owner, and the engineers, anyone in `team`, the team that
+    runs a5s, as a release counts them (`releases.engineer`)."""
     if agent is not None:
         return bool({agent_owner(agent), agent_author(agent)} & set(person.roles))
-    return ENGINEER in person.roles or any(r.startswith("agent-owner:") for r in person.roles)
+    return (bool(team) and releases.engineer(person, team)) or any(
+        r.startswith("agent-owner:") for r in person.roles)
 
 
-def authors(person: Person) -> bool:
+def authors(person: Person, team: str) -> bool:
     """Whether someone may author anything at all."""
-    return may_author(person, None) or any(r.startswith("agent-author:") for r in person.roles)
+    return may_author(person, None, team) or any(r.startswith("agent-author:")
+                                                 for r in person.roles)
 
 
 def folder_files(folder: Path) -> dict[str, str]:

@@ -107,8 +107,9 @@ def test_no_sign_in_but_the_officers_own_for_this_asks_for_anything(stack, appro
 
 def test_an_erasure_asks_for_the_id_typed_again_and_the_server_checks_it(stack, approving,
                                                                          provider):
-    """What can't be undone asks for the thing's name typed, and the server checks it too, so
-    no script skips it (docs/design.md): a sign-in for the erasure alone isn't enough."""
+    """What can't be undone asks for the thing's name typed again, and the server checks it
+    too, letter case aside, by the rule the core checks the id the team sends again by
+    (docs/design.md): a sign-in for the erasure alone isn't enough."""
     token, salt = sign_in(approving, provider, "erase", "ben")
     for typed in ("", "ana", "be"):
         r = ask(approving, "erase", "ben", token, salt, confirm=typed)
@@ -153,13 +154,16 @@ def test_the_officer_asks_in_the_browser(stack, approving, provider, browser):
     accessible(page)
     shot(page, "officer")
     page.fill("#person", "ben")
+    page.wait_for_selector("#whose >> text=Ben Okafor, of the finance team", timeout=30000)
     erasing = page.locator(".action-zone.cant-undo")  # in a zone of its own, marked so
-    assert "Can't be undone" in erasing.inner_text() and "ben" in erasing.inner_text()
+    assert "Can't be undone" in erasing.inner_text() and "Ben Okafor (ben)" in erasing.inner_text()
+    assert "the runs that acted for them" in erasing.inner_text()  # what stays, said first
     erasing.locator("button:text-is('Erase it')").click()
     dialog = page.wait_for_selector("dialog[open]", timeout=30000)
-    assert "Erase all a5s keeps about ben?" in dialog.inner_text()
+    assert "Erase all a5s keeps about Ben Okafor?" in dialog.inner_text()
+    assert page.inner_text("dialog[open] label") == "Type their id again"  # never the id itself
     erase_it = page.locator("dialog[open] button.danger")
-    assert erase_it.is_disabled()  # until the id is typed, letter case aside
+    assert erase_it.is_disabled()  # until the id is typed again, letter case aside
     assert page.evaluate("document.activeElement.tagName") == "INPUT"  # the field has the focus
     page.fill("dialog[open] input", "be")
     assert erase_it.is_disabled()
@@ -179,3 +183,32 @@ def test_a_request_goes_a_day_after_it_was_asked(stack, approving, provider):
         conn.execute("update officer_requests set asked_at = now() - interval '25 hours'")
     with stack.client() as c:
         assert c.post("/retention/sweep").json()["deleted"]["requests"] == 1
+
+
+def test_the_officer_reads_whose_an_id_is_before_asking(stack, approving, provider, browser):
+    """An id mistyped as someone else's shows as theirs, by name and team, before the officer
+    asks to erase it, and the dialog never shows the id to copy back (round 17, B1)."""
+    token = provider.id_token(person="noor")
+    told = {person: httpx.get(f"{approving}/officer/whom", params={"person": person},
+                              headers={"Authorization": f"Bearer {token}"}).json()
+            for person in ("ana", " ana ", "former:0123456789abcdef", "jo@customer.example",
+                           "group:finance-room", "nobody-here")}
+    assert told["ana"] == told[" ana "] == {"kind": "person", "name": "Ana Ortiz",
+                                             "said": "Ana Ortiz, of the finance team, in the directory."}
+    assert [told[p]["kind"] for p in ("former:0123456789abcdef", "jo@customer.example",
+                                      "group:finance-room", "nobody-here")] == [
+        "archive", "address", "group", "nobody"]
+    other = httpx.get(f"{approving}/officer/whom", params={"person": "ana"},
+                      headers={"Authorization": f"Bearer {provider.id_token(person='ben')}"})
+    assert other.status_code == 403  # the officer's alone
+    provider.person = "noor"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/officer")
+    page.wait_for_selector("#whom", state="visible", timeout=30000)
+    page.fill("#person", "ana")  # they meant ben
+    page.wait_for_selector("#whose >> text=Ana Ortiz, of the finance team", timeout=30000)
+    assert "Ana Ortiz (ana)" in page.inner_text(".action-zone.cant-undo")
+    page.locator(".action-zone.cant-undo button:text-is('Erase it')").click()
+    dialog = page.wait_for_selector("dialog[open]", timeout=30000)
+    assert "Erase all a5s keeps about Ana Ortiz?" in dialog.inner_text()
+    assert "ana" not in page.inner_text("dialog[open] label")

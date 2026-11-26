@@ -16,10 +16,12 @@ def admin(url: str, provider, person: str, *groups: str) -> httpx.Response:
     return httpx.get(f"{url}/admin/api", headers={"Authorization": f"Bearer {token}"}, timeout=30)
 
 
-def test_only_someone_with_a_role_or_who_runs_a5s_sees_it(stack, approving, provider):
+def test_only_those_who_own_approve_decide_or_oversee_see_it(stack, approving, provider):
     assert httpx.get(f"{approving}/admin/api", timeout=30).status_code == 401
-    refused = admin(approving, provider, "chen")  # who holds no role of a5s's
-    assert refused.status_code == 403 and "roles" in refused.json()["detail"]
+    for nobody in ("chen", "dana"):  # who holds no role of a5s's, and a grader, who holds one
+        refused = admin(approving, provider, nobody)
+        assert refused.status_code == 403
+        assert "own, approve, decide or oversee" in refused.json()["detail"]  # whose it is
     for who in ("ana", "priya", "kofi"):  # an approver, the team that runs a5s, assurance
         assert admin(approving, provider, who).status_code == 200
     served = httpx.get(f"{approving}/admin/", timeout=30)

@@ -113,3 +113,27 @@ def test_the_status_says_whether_what_counts_needs_one(stack, approving):
     assert "aren't checked for a second factor: set A5S_OIDC_MFA" in status.told(unchecked)
     assert checked["sign_ins"] == {"second_factor": "amr:mfa", "refused": {}}
     assert "count with a second factor only: amr:mfa" in status.told(checked)
+
+
+def test_a_deployment_may_say_its_provider_shows_no_second_factor(monkeypatch):
+    """Where the provider's tokens show none, such as Google's, A5S_OIDC_MFA=none says so: a5s
+    asks none, as with none set, and the status and the doctor take it as said, rather than
+    asking for ever to set it (round 17, A10)."""
+    from a5s import config
+    from a5s.core import status
+
+    assert config.second_factor("none") == config.NO_SECOND_FACTOR
+    assert second_factor_of(" None ") is None
+    monkeypatch.setenv("A5S_OIDC_ISSUER", "https://accounts.example")
+    monkeypatch.setenv("A5S_OIDC_MFA", "none")
+    cfg = IdentityConfig.from_env()
+    assert cfg is not None and cfg.mfa is None and cfg.mfa_said_none
+    assert second_factor(cfg, PASSWORD)  # nothing asked of anyone
+    assert cfg.second_factor_asked == config.NO_SECOND_FACTOR
+    assert config.check()[0] == []  # a part starts with it
+    told = {"sign_ins": {"second_factor": "none"}, "changes": {"stuck": 0}, "queue": {
+        "waiting": 0, "oldest_seconds": None}, "deliveries": {"left_in_inbox": 0},
+        "samples": {"lapsed": 0}, "objectives": {"replies": {"met": None},
+                                                 "chases": {"met": None}},
+        "configuration": {"development": True}, "scheduler_seen_seconds": 1}
+    assert status.needs(told) == []

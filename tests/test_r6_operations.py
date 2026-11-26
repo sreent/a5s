@@ -3,7 +3,7 @@ changes that wait or that a5s stopped part way through making, end one of the la
 they've checked the records system, and lower a cap, which anyone with the role may do alone:
 only graded samples raise one. The status says what's stuck, not made, lapsed or lowered."""
 
-from a5s import db
+from a5s import cli, db
 from a5s.core import status
 from test_levels import asked, due_of, levelled
 from test_proposals import held
@@ -47,6 +47,10 @@ def test_a_change_stopped_part_way_is_listed_and_ended_by_hand(stack, approving,
     [p] = held(stack)
     assert p["status"] == "stopped"
     assert any("stopped part way through making P-1" in m["text"] for m in stack.inbox("ben"))
+    # and `a5s proposals end` says whom it reached, not the core's bare answer (round 17, B9)
+    assert ended.json()["told"] == ["Ben Okafor"]
+    assert cli._ended_said(ended.json()) == (
+        "P-1 is ended, as a change a5s stopped part way through making: Ben Okafor is told.")
 
 
 def test_a_threshold_needs_its_parts_owner(stack):

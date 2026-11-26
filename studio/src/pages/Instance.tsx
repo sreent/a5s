@@ -245,6 +245,9 @@ function Runs({ instance }: { instance: string }) {
 // The viewer's own time zone, for which days the runs fall on
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
+/** What the page is, said the same if it's refused and once it's loaded. */
+const ABOUT = "One agent at work: whom it serves, how far it may act in each part, what waits on it, and how its runs have gone.";
+
 export function InstancePage({ id }: { id: string }) {
   const toast = useToast();
   const [days, setDays] = useState(30);
@@ -275,7 +278,7 @@ export function InstancePage({ id }: { id: string }) {
   const head = Boolean(inst && standing.data && (shell.data || shell.error));
   if (standing.error) {  // refused, or none: said once, not by each part of the page (round 13, C10)
     return <><PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } }]} title={t("An instance")}
-                       about={t("One agent at work: whom it serves, how far it may act in each part, what waits on it, and how its runs have gone.")} />
+                       about={t(ABOUT)} />
       <Waiting error={standing.error} /></>;
   }
   return (
@@ -284,7 +287,7 @@ export function InstancePage({ id }: { id: string }) {
       <PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } },
                          ...(inst ? [{ label: inst.agent, to: { page: "agent" as const, agent: inst.agent } }] : [])]}
                 title={inst?.id ?? t("An instance")} badges={inst && <StatusBadge status={inst.status} />}
-                about={t("One agent at work: whom it serves, how far it may act in each part, what waits on it, and how its runs have gone.")}>
+                about={t(ABOUT)}>
         {head && inst ? (
           <>
             <div className="meta"><span>{aboutInstance(inst)}</span><span>{t("run by {runners}", { runners: runners(inst) })}</span><Link to={{ page: "map", at: `instance:${inst.id}` }} id="on-the-map">{t("What it depends on")}</Link>{standing.data?.suspended_by && <span>{t("suspended by {person}", { person: standing.data.suspended_by })}</span>}{!inst.current && <span className="badge warn">{t("still on release {release}", { release: inst.release })}</span>}</div>

@@ -97,7 +97,8 @@ class Teams:
         self.verifier = Verifier(  # a token for any of a5s's bots, as the Bot Framework asks
             IdentityConfig(issuer=BOT_FRAMEWORK, audience=tuple(self.bots),
                            metadata_url=cfg.metadata_url, required=("exp", "iss", "aud"),
-                           leeway=300),
+                           leeway=300, issuer_setting=None,  # the Bot Framework's own
+                           audience_setting="A5S_TEAMS_BOTS, each bot's app_id,"),
             self.http)
         self._tokens: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()

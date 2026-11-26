@@ -24,12 +24,15 @@ import psycopg
 from a5s import build, config, db, definitions
 from a5s.client import Client, Refused
 from a5s.config import Config, load_models
+from a5s.contract import parse_settings
 from a5s.core import anchor, environment, health, releases, status
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 
 State = Literal["ok", "look", "fix", "skip"]
 SHOWN: dict[State, str] = {"ok": "ok", "look": "look at", "fix": "fix", "skip": "not checked"}
-COPIES_LATE = 30 * 60  # seconds the ledger's newest copy may be old before it's worth a look
+# The runbook's sections the checks here read for themselves, so the core's status adds the rest
+READ_HERE = (status.COPYING, "credentials-that-expire", "settings-or-the-release-dont-check-out",
+             "sign-ins-refused-for-want-of-a-second-factor")
 
 
 @dataclass(frozen=True)
@@ -56,7 +59,8 @@ def checked() -> list[Found]:
         return [*found, *(Found(name, "skip", "Not checked, as a setting above can't be read.")
                           for name in ("The database", "The release", "The settings in force",
                                        "The core", "Signing in", "The models",
-                                       "The ledger's copies", "Credentials", "This deployment"))]
+                                       "The ledger's copies", "The core's status",
+                                       "Credentials", "This deployment"))]
     if not problems and not warnings:
         found.append(Found("Settings", "ok", "Every setting a5s reads here can be used: "
                                              "`a5s config --set` shows those set."))
@@ -79,7 +83,7 @@ def checked() -> list[Found]:
                   for name in ("The release", "The settings in force")]
     else:
         found += _release(cfg, scenario, development)
-        found += _in_force(cfg, scenario)
+        found += _in_force(cfg, scenario, told)
     found += core
     found += _signing_in(development)
     found += _models(cfg, scenario) if scenario is not None else [
@@ -87,28 +91,54 @@ def checked() -> list[Found]:
     found += _copies(cfg, development) if usable else [
         Found("The ledger's copies", "skip", "Not checked, as a5s can't read the database "
                                              "here: see above.")]
+    found += _needs(told)
     found += _credentials(date.today())
-    found += _deployment(development)
+    found += _deployment(development, cfg)
     return found
 
 
-def _deployment(development: bool) -> list[Found]:
-    """Which deployment this is, as the band across the top of every page says it: unnamed
-    outside development, every page says to treat it as production, which is worth naming
-    (core/environment.py)."""
+def _deployment(development: bool, cfg: Config | None = None) -> list[Found]:
+    """Which deployment this is, as the core's settings here name it, which the band across the
+    top of every page says from the channels' own: unnamed outside development, every page says
+    to treat it as production, which is worth naming (core/environment.py)."""
     try:
         here = environment.here(development)
     except config.ConfigError:  # the settings' check names it
         return [Found("This deployment", "skip", "Not checked, as A5S_ENVIRONMENT can't be read: "
                                                  "see above.")]
-    if not here["named"]:
+    if cfg is not None and (why := environment.published_refused(cfg.scenario_dir, cfg.root)):
+        return [Found("This deployment", "fix", _sentence(f"The core won't start: {why}"))]
+    if here["named"] and here["kind"] in ("test", "staging") and cfg is not None and (
+            held := _classed(cfg)) not in (None, "synthetic"):  # real data, on a test's band (B3)
+        return [Found("This deployment", "look",
+                      f"The core's settings here name this {here['name']}, a {here['kind']} "
+                      f"deployment, and the settings in force class its data as {held}, not "
+                      "made-up: once real people's data is in it, name it production "
+                      "(A5S_ENVIRONMENT, or the chart's environment.kind), so every page says "
+                      "so.")]
+    if not here["named"]:  # as the core's settings here have it, as the channels' should
         return [Found("This deployment", "look",
                       "Nobody has named this deployment, so the band across the top of every "
                       "page says to treat it as production: set A5S_ENVIRONMENT to production, "
                       "staging or test, and A5S_ENVIRONMENT_NAME to its name if you like, as the "
                       "chart's environment.kind and environment.name do.")]
-    return [Found("This deployment", "ok", f"Every page's band says this is {here['name']}, "
-                                           f"a {here['kind']} deployment.")]
+    return [Found("This deployment", "ok", f"The core's settings here name this {here['name']}, "
+                                           f"a {here['kind']} deployment. The band across every "
+                                           "page says what the channels' own settings name it, "
+                                           "which the chart and deploy/compose.yaml set from the "
+                                           "same values (round 17, B10).")]
+
+
+def _classed(cfg: Config) -> str | None:
+    """The class of data the settings in force give the scenario's records, if a5s can read
+    them here."""
+    try:
+        with db.transaction(cfg.database_url) as conn:
+            row = conn.execute("select raw from settings_versions order by serial desc "
+                               "limit 1").fetchone()
+        return parse_settings(bytes(row["raw"])).data_class if row else None
+    except (psycopg.Error, ValueError):  # the database's, or the settings', own check says why
+        return None
 
 
 def _credentials(today: date) -> list[Found]:
@@ -211,8 +241,9 @@ def _release(cfg: Config, scenario: Any, development: bool) -> list[Found]:
     return [Found("The release", "fix", said)]
 
 
-def _in_force(cfg: Config, scenario: Any) -> list[Found]:
-    """Whether a version of the settings is in force, and whether any agent is at work."""
+def _in_force(cfg: Config, scenario: Any, told: dict | None = None) -> list[Found]:
+    """Whether a version of the settings is in force, whether it counts, as the core checks it
+    at every run, against the directory as it is now, and whether any agent is at work."""
     with db.transaction(cfg.database_url) as conn:
         version = conn.execute("select serial from settings_versions where scenario = %s "
                                "order by serial desc limit 1", (scenario.name,)).fetchone()
@@ -223,6 +254,12 @@ def _in_force(cfg: Config, scenario: Any) -> list[Found]:
                       f"No version of {scenario.name}'s settings is in force here, so no agent "
                       "is at work: `a5s apply` applies the scenario's signed settings, or its "
                       "approvers approve a version where they work.")]
+    if told is not None and (problem := (told.get("settings") or {}).get("problem")):
+        return [Found("The settings in force", "fix",  # every run is refused (round 17, A1)
+                      f"Version {version['serial']} of the settings is the latest, and the core "
+                      f"refuses every run with it: {problem}. Its approvers approve it again, or "
+                      "a version that counts, where they work "
+                      "(docs/runbooks.md#settings-or-the-release-dont-check-out).")]
     active = counts.get("active", 0)
     others = ", ".join(f"{n} {status}" for status, n in sorted(counts.items())
                        if status not in ("active", "retired") and n)
@@ -282,11 +319,16 @@ def _signing_in(development: bool) -> list[Found]:
                       "sign in with (docs/first-day.md).")]
     try:
         Verifier(given).endpoints()
-    except IdentityError as exc:
-        return [Found("Signing in", "fix", _sentence(f"a5s can't check sign-ins: {exc}"))]
+    except IdentityError as exc:  # where, and what to check, as the operators read it
+        return [Found("Signing in", "fix",
+                      _sentence(f"a5s can't check sign-ins: {getattr(exc, 'detail', exc)}"))]
     found = [Found("Signing in", "ok", f"The identity provider at {given.issuer} answers, as "
                                        "A5S_OIDC_ISSUER names it, and publishes its keys.")]
-    if given.mfa is None:
+    if given.mfa_said_none:  # as the deployment says its provider's tokens show (round 17, A10)
+        found.append(Found("Signing in", "ok",
+                           "A5S_OIDC_MFA is none, as the provider's tokens show no second factor: "
+                           "a5s asks none of anyone, even to approve, decide or grade."))
+    elif given.mfa is None:
         found.append(Found("Signing in", "look",
                            "A5S_OIDC_MFA isn't set, so a5s asks no second factor of anyone, "
                            "even to approve, decide or grade: set it to the claim and values "
@@ -296,22 +338,29 @@ def _signing_in(development: bool) -> list[Found]:
 
 
 def _models(cfg: Config, scenario: Any) -> list[Found]:
-    """Whether each model the agents at work use, or fall back to, has its key here, and
-    whether any is stopped."""
+    """Whether each model the instances at work use, as the settings in force put them on
+    them, or fall back to, has its key here, and whether any is stopped: the settings in force,
+    which the database holds, not the image's file, as an approved version may put an instance
+    on another model (round 17, A8)."""
     try:
         approved = load_models(cfg.models_file)
         found = definitions.load_all(cfg.agents_dir)
-        instances = scenario.settings().instances
+        with db.transaction(cfg.database_url) as conn:
+            instances = conn.execute("select definition, model from instances where status <> "
+                                     "'retired' order by id").fetchall()
+    except psycopg.Error:  # the database's own check says why
+        return [Found("The models", "skip", "Not checked, as a5s can't read the instances at "
+                                            "work here: see above.")]
     except Exception as exc:  # noqa: BLE001 - its own refusal, such as a definition that doesn't check out
         return [Found("The models", "fix", _sentence(f"The agents or their models can't be read "
                                                      f"({type(exc).__name__}: {exc})"))]
     using: dict[str, set[str]] = {}  # each model, and the agents that use it
     for instance in instances:
-        definition = found.get(instance.definition)
+        definition = found.get(instance["definition"])
         if definition is None:
             continue
-        for model in [instance.model or definition.model, *definition.fallbacks]:
-            using.setdefault(model, set()).add(instance.definition)
+        for model in [instance["model"] or definition.model, *definition.fallbacks]:
+            using.setdefault(model, set()).add(instance["definition"])
     told: list[Found] = []
     unkeyed: dict[str, list[str]] = {}  # each key that isn't set, and the models that need it
     for model in sorted(using):
@@ -367,31 +416,41 @@ def _copies(cfg: Config, development: bool) -> list[Found]:
     if lacking:
         return [Found("The ledger's copies", "fix", _sentence(anchor.RESTORED.format(
             first=lacking[0], last=lacking[1])))]
-    if state is None:
-        if store is None and development:  # which copies nothing to locked storage
-            return [Found("The ledger's copies", "look",
-                          "The ledger isn't copied to locked storage, as no copier has run "
-                          "here: a deployment sets A5S_ANCHOR_STORE, such as s3://bucket/a5s, "
-                          f"and runs the copier, `a5s anchor --every` {copying}.")]
+    if state is None and not (store is None and development):  # setting it up's to fix here
         return [Found("The ledger's copies", "fix",
                       "No copier has run here, so the ledger has no locked copies: run "
                       "`a5s anchor --every` with A5S_ANCHOR_STORE, as the chart's anchor part "
                       f"does {copying}.")]
-    if state["stopped"]:
-        return [Found("The ledger's copies", "fix",
-                      _sentence(f"The copier has stopped, until someone acts: {state['problem']} "
-                                f"{copying}"))]
-    age = state["copied_seconds_ago"]
-    if state["problem"] or (age is not None and age > COPIES_LATE and state["behind"]):
-        why = state["problem"] or f"the newest copy is {age / 60:.0f} minutes old"
+    if state is None:  # in development, which copies nothing to locked storage
         return [Found("The ledger's copies", "look",
-                      _sentence(f"The copier is behind: {why} {copying}"))]
+                      "The ledger isn't copied to locked storage, as no copier has run "
+                      "here: a deployment sets A5S_ANCHOR_STORE, such as s3://bucket/a5s, "
+                      f"and runs the copier, `a5s anchor --every` {copying}.")]
+    if told := status.copies_needs(state, development):  # as the status judges them (A2)
+        return [Found("The ledger's copies", "fix" if when == status.NOW else "look",
+                      _sentence(f"{said} {copying}")) for when, said in told]
+    age = state["copied_seconds_ago"]
     copied = "nothing to copy yet" if age is None else f"copied {age / 60:.0f} minutes ago"
     where = (f"its copies at {cfg.anchor_store} can be read from here" if store is not None
              else "it records that here, and copies to the store the copier's settings name")
     return [Found("The ledger's copies", "ok",
                   f"The copier is at work, {copied}, {state['behind']} entries behind: "
                   f"{where}.")]
+
+
+def _needs(told: dict | None) -> list[Found]:
+    """What the core's own status says needs someone, beyond what the checks above read for
+    themselves: what pages out of hours, to fix, and what waits for working hours, to look at,
+    so the doctor passes nothing the status and the alerts say is wrong (round 17, A2)."""
+    if told is None:
+        return [Found("The core's status", "skip", "Not checked, as the core didn't answer: see "
+                                                   "above.")]
+    rest = [n for n in told.get("needs") or [] if n["runbook"].rpartition("#")[2] not in READ_HERE]
+    if not rest:
+        return [Found("The core's status", "ok", "Nothing else the core's status reads needs "
+                                                 "anyone: `a5s status` says how the last day went.")]
+    return [Found("The core's status", "fix" if n["when"] == status.NOW else "look",
+                  f"{_sentence(n['said'])} ({n['runbook']})") for n in rest]
 
 
 def _agents(names: set[str]) -> str:
