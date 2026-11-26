@@ -34,7 +34,8 @@ def typed_again(typed: str | None, person: str) -> bool:
     """Whether an erasure's id, typed again, is the one named, letter case aside: the one rule
     the officer's page, the channels app and the core each check it by (docs/design.md), so a
     mistyped id erases nobody."""
-    return bool(typed and typed.strip()) and typed.strip().casefold() == person.strip().casefold()
+    given = (typed or "").strip()
+    return bool(given) and given.casefold() == person.strip().casefold()
 
 
 def nonce(action: str, person: str, salt: str) -> str:
