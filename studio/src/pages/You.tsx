@@ -128,7 +128,7 @@ export function YouPage() {
   return (
     <>
       <PageHead crumbs={[{ label: t("Home"), to: { page: "home" } }]} title={t("What you may do")}
-                about={t("Each of your roles in a5s, what gave it you, and what it lets you do. a5s has no administrator's mode to switch into: the pages in your sidebar, and what you may do on them, follow from these roles alone. Your organisation manages its groups in its identity provider, and a5s's signed settings say what each group may do: a role you lose there stops working at your next sign-in.")} />
+                about={t("Each of your roles in a5s, and each instance you run, what gave it you, and what it lets you do. a5s has no administrator's mode to switch into: the pages in your sidebar, and what you may do on them, follow from these alone. Your organisation manages its groups in its identity provider, and a5s's signed settings say what each group may do, and who runs each instance: a role you lose there stops working at your next sign-in.")} />
       {!data && <Waiting error={error} />}
       {data && (
         <>

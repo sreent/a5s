@@ -180,7 +180,7 @@ def watched_and_audited(walk: Walk, url: str, day: str) -> None:
                    "Its runs, one by one, stay hidden while it serves so few people, since each "
                    "would say what Ben did.", page):
         page.wait_for_selector(f"table >> text={INSTANCE}", timeout=30000)
-        page.click(f"a:has-text('{INSTANCE}')")
+        page.click(f"table a:has-text('{INSTANCE}')")  # not the sidebar's foot, which names it
         page.wait_for_selector(".tiles .tile", timeout=30000)
         page.wait_for_selector("text=It serves fewer than", timeout=30000)
     page = walk.as_("kofi", f"{url}/audit/")

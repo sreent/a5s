@@ -14,7 +14,7 @@ import yaml
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
-from a5s import db
+from a5s import config, db
 from a5s.core import groups, inbox, teams
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.teams import Bot, Refused, Teams, TeamsConfig
@@ -439,4 +439,5 @@ def test_a_bots_app_id_mistyped_names_the_teams_setting_never_the_sign_ins():
     with pytest.raises(Refused) as refused:
         teams.check(activity(), f"Bearer {fake.token()}")  # Teams' token, for the real app id
     assert "A5S_TEAMS_BOTS" in refused.value.reason
-    assert "A5S_OIDC" not in refused.value.reason and "A5S_WEBCHAT" not in refused.value.reason
+    for sign_in in (config.OIDC_AUDIENCE, config.WEBCHAT_CLIENT_ID):  # people's, not a bot's
+        assert sign_in.name not in refused.value.reason
