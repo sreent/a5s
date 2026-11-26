@@ -117,7 +117,7 @@ seccompProfile:
 {{- if and $p.oidcIssuer (not $p.oidcMfa) }}
 {{- fail "set people.oidcMfa to how your identity provider shows a second factor, such as amr:mfa or acr:<level>, or to none if its tokens show none (docs/first-day.md)" }}
 {{- end }}
-{{- $mfa := ternary "" $p.oidcMfa (eq $p.oidcMfa "none") }}
+{{- $mfa := $p.oidcMfa }}{{/* none too, said so: a5s then asks none, and doesn't ask to set it */}}
 {{- range $name, $value := dict "A5S_OIDC_ISSUER" $p.oidcIssuer "A5S_OIDC_AUDIENCE" $p.oidcAudience "A5S_OIDC_PERSON_CLAIM" $p.oidcPersonClaim "A5S_OIDC_DIRECTORY_PREFIX" $p.oidcDirectoryPrefix "A5S_OIDC_METADATA_URL" $p.oidcMetadataUrl "A5S_OIDC_MFA" $mfa "A5S_OIDC_GROUPS_CLAIM" $p.oidcGroupsClaim "A5S_WEBCHAT_CLIENT_ID" $p.webchatClientId "A5S_PUBLIC_URL" $p.publicUrl "A5S_MATRIX_HOMESERVER" $.Values.matrix.homeserver "A5S_MATRIX_SERVER_NAME" $.Values.matrix.serverName }}
 {{- if $value }}
 - name: {{ $name }}

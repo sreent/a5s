@@ -151,10 +151,14 @@ def test_the_doctor_says_whats_expired_to_fix_and_whats_soon_to_look_at(monkeypa
 
 
 def test_a_day_the_doctor_cant_read_is_named_among_the_settings_not_a_crash(monkeypatch):
+    """A note of when a credential expires, mistyped, is worth a look, never a part that won't
+    start, as it's only a note (round 17, A12)."""
     monkeypatch.setenv("A5S_EXPIRES", "registry-secret=May 2027")
     found = doctor.checked()
-    assert any(f.check == "Settings" and f.state == "fix" and "A5S_EXPIRES" in f.said
+    assert any(f.check == "Settings" and f.state == "look" and "A5S_EXPIRES" in f.said
                for f in found)
+    assert not any(f.check == "Settings" and f.state == "fix" and "A5S_EXPIRES" in f.said
+                   for f in found)
     assert [f.state for f in found if f.check == "Credentials"] == ["skip"]
 
 

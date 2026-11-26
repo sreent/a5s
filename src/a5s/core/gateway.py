@@ -2432,11 +2432,16 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             found = status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
                                   gw.data_protection(conn).flag_rubber_stamps,
-                                  gw.identity.cfg.mfa if gw.identity else False,
+                                  gw.identity.cfg.second_factor_asked if gw.identity else False,
                                   scenario=gw.scenario.name)
             found["release"] = gw.release_status(conn)
-        found["expiring"] = status.expiring(config.EXPIRES.read(),  # credentials, as noted
-                                            datetime.now(UTC).date())
+            # whether the settings in force count, as every run checks them (round 17, A1)
+            found["settings"] = {"problem": gw.settings_in_force(conn, seal=False)[1]}
+        try:
+            found["expiring"] = status.expiring(config.EXPIRES.read(),  # credentials, as noted
+                                                datetime.now(UTC).date())
+        except config.ConfigError as exc:  # a note mistyped, which stops nothing (A12)
+            found["expiring"], found["expires_unread"] = [], str(exc)
         here = config.set_here()  # what the core runs with, as its environment gives it
         found["configuration"] = {"set": here, "defaults": len(config.VARS) - len(here),
                                   # as `a5s dev` runs it, taking people's word and running

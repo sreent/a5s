@@ -155,9 +155,15 @@ def _matching(pattern: str) -> Parse:
     return parse
 
 
+NO_SECOND_FACTOR = ("none", ())  # A5S_OIDC_MFA=none: the provider's tokens show none, said so
+
+
 def second_factor(given: str) -> tuple[str, tuple[str, ...]]:
     """The claim a sign-in shows a second factor by, and the values that do, from
-    `claim:value,value`, such as amr:mfa, or acr:gold for a provider's step-up level."""
+    `claim:value,value`, such as amr:mfa, or acr:gold for a provider's step-up level; or none,
+    where the provider's tokens show none, as the deployment says so (round 17, A10)."""
+    if given.strip().casefold() == "none":
+        return NO_SECOND_FACTOR
     claim, _, values = given.partition(":")
     accepted = tuple(v.strip() for v in values.split(",") if v.strip())
     if not claim.strip() or not accepted:
@@ -342,7 +348,8 @@ OIDC_DIRECTORY_PREFIX = Var("A5S_OIDC_DIRECTORY_PREFIX", "what to put before the
 OIDC_MFA = Var("A5S_OIDC_MFA", "the second factor what counts needs a sign-in to show, as the "
                "claim and the values that show it: a level (`acr`) or an authentication context "
                "(`acrs`) the pages ask the provider for", None, second_factor,
-               "claim:value,value, such as amr:mfa, acr:gold or acrs:c1", area=SIGN_IN)
+               "claim:value,value, such as amr:mfa, acr:gold or acrs:c1, or none where the "
+               "provider's tokens show none", area=SIGN_IN)
 OIDC_GROUPS_CLAIM = Var("A5S_OIDC_GROUPS_CLAIM", "the claim sign-ins show groups in, for the "
                         "roles the settings give them; set empty for none", "groups",
                         area=SIGN_IN, empty=None, empty_is_default=False)
@@ -610,11 +617,12 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     serves (`serving`), and is only warned of otherwise, as at the command line."""
     env = os.environ if env is None else env
     problems: list[str] = []
+    noted: list[str] = []  # what a part starts with all the same, as it's only noted
     for var in VARS:
         try:
             var.read(env)
-        except ConfigError as e:
-            problems.append(str(e))
+        except ConfigError as e:  # an expiry note mistyped stops nothing (round 17, A12)
+            (noted if var is EXPIRES else problems).append(str(e))
     for name, where in MOVED.items():
         if name in env:
             problems.append(f"{name} has moved to {where}: unset it here")
@@ -702,7 +710,7 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
         like = difflib.get_close_matches(name, BY_NAME, n=1, cutoff=0.8)
         strangers.append(f"{name} isn't one of a5s's settings"
                          + (f": did you mean {like[0]}?" if like else ""))
-    return (problems + strangers, []) if serving else (problems, strangers)
+    return (problems + strangers, noted) if serving else (problems, strangers + noted)
 
 
 _PASSWORD = re.compile(r"(?i)((?:^|[?&\s])(?:ssl)?password=)[^&\s]*")

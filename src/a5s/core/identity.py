@@ -68,9 +68,18 @@ class IdentityConfig:
     # The claim a sign-in shows a second factor by, and the values that do, if the deployment
     # asks for one for what counts (A5S_OIDC_MFA): such as amr holding mfa, for Entra ID
     mfa: tuple[str, tuple[str, ...]] | None = None
+    # Whether the deployment says its provider's tokens show no second factor (A5S_OIDC_MFA=none):
+    # a5s asks none, as with none set, but the status and the doctor take it as said (round 17, A10)
+    mfa_said_none: bool = False
     # The claim a sign-in shows its groups by, for the roles the settings give them
     # (A5S_OIDC_GROUPS_CLAIM, groups if not set, and none if set empty): core/memberships.py
     groups_claim: str | None = "groups"
+
+    @property
+    def second_factor_asked(self) -> tuple[str, tuple[str, ...]] | None:
+        """The second factor what counts asks for, as the status says it: none, where the
+        deployment says its provider's tokens show none, and None where nobody set it."""
+        return config.NO_SECOND_FACTOR if self.mfa_said_none else self.mfa
 
     @classmethod
     def from_env(cls) -> IdentityConfig | None:
@@ -85,7 +94,8 @@ class IdentityConfig:
             person_claim=config.OIDC_PERSON_CLAIM.read(),
             metadata_url=config.OIDC_METADATA_URL.read(),
             directory_prefix=config.OIDC_DIRECTORY_PREFIX.read(),
-            mfa=config.OIDC_MFA.read(),
+            mfa=None if (mfa := config.OIDC_MFA.read()) == config.NO_SECOND_FACTOR else mfa,
+            mfa_said_none=mfa == config.NO_SECOND_FACTOR,
             groups_claim=config.OIDC_GROUPS_CLAIM.read(),
         )
 
@@ -96,7 +106,8 @@ def second_factor_of(given: str | None) -> tuple[str, tuple[str, ...]] | None:
     if not given or not given.strip():
         return None
     try:
-        return config.second_factor(given)
+        found = config.second_factor(given)
+        return None if found == config.NO_SECOND_FACTOR else found
     except ValueError:
         raise ValueError("A5S_OIDC_MFA names the claim a sign-in shows a second factor by, and "
                          "the values that do, such as amr:mfa") from None

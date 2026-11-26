@@ -8,7 +8,7 @@ import hashlib
 import time
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 
 from a5s import db
@@ -84,11 +84,13 @@ def router(gw: Any) -> APIRouter:
         person, found = the_officer(authorization)
         return {"you": person.name, "acting": found}
 
-    @pages.get("/officer/whom", **shapes.answers(shapes.OfficerWhom))
-    def officer_whom(person: Annotated[str, Query(min_length=1, max_length=320)],
-                     authorization: str | None = Header(default=None)) -> dict:
+    def officer_only(authorization: str | None = Header(default=None)) -> None:
+        the_officer(authorization)  # before anything it's asked is read
+
+    @pages.get("/officer/whom", dependencies=[Depends(officer_only)],
+               **shapes.answers(shapes.OfficerWhom))
+    def officer_whom(person: Annotated[str, Query(min_length=1, max_length=320)]) -> dict:
         """Whose the id the officer typed is, before they ask about it, for the officer alone."""
-        the_officer(authorization)
         return whose(gw, person)
 
     @pages.post("/officer/requests", **shapes.answers(shapes.OfficerAsked))

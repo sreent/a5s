@@ -52,6 +52,7 @@
 
 {{- define "a5s.env.channels" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-channels-url") }}
+{{ include "a5s.teamEnv" . }}
 {{ include "a5s.environmentEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}

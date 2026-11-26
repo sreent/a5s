@@ -291,6 +291,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/undo", include_in_schema=False)
     @pages.get("/studio/handovers", include_in_schema=False)
     @pages.get("/studio/shadows", include_in_schema=False)
+    @pages.get("/studio/status", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""

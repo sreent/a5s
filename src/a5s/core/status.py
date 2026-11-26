@@ -196,7 +196,8 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "seals_waiting": moving,
         "seal_keys_leaked": leaked_held,
         "sign_ins": None if sign_ins is False else {  # what counts, with a second factor
-            "second_factor": f"{sign_ins[0]}:{','.join(sign_ins[1])}" if sign_ins else None,
+            "second_factor": (f"{sign_ins[0]}:{','.join(sign_ins[1])}" if sign_ins[1]
+                              else sign_ins[0]) if sign_ins else None,  # none, said so (A10)
             "refused": {r["doing"]: int(r["n"]) for r in refused}},
         "tasks": {"at_work": tasked["at_work"], "lapsed": tasked["lapsed"], "due": tasked["due"],
                   "oldest_due_seconds": _number(tasked["oldest_due"]),
@@ -261,6 +262,37 @@ def expiry(credential: dict[str, Any]) -> str:
             "where a5s takes it before then, and note when that one expires")
 
 
+COPYING = "the-ledgers-copies-stop"  # the runbook's section on the ledger's copies
+
+
+def copies_needs(copies: dict[str, Any] | None, development: bool) -> list[tuple[str, str]]:
+    """What the ledger's copies need of someone, and when, as the copier records them: the one
+    rule the status and `a5s doctor` each judge them by, so neither passes what the other
+    pages (round 17, A2)."""
+    found: list[tuple[str, str]] = []
+    if copies is None:
+        if not development:  # which copies nothing to locked storage
+            found.append((LATER, ("No copier has run here, so the ledger has no locked copies: "
+                                  "run `a5s anchor --every`, as the chart's anchor part does")))
+        return found
+    if copies["stopped"]:
+        return [(NOW, f"The ledger's copies have stopped until someone acts: {copies['problem']}")]
+    if copies["problem"]:
+        found.append((NOW, f"The copier's last try failed: {copies['problem']}"))
+    age = copies.get("copied_seconds_ago")
+    if age is not None and age > COPIES_LATE and copies.get("behind"):
+        found.append((NOW, (f"The ledger's newest copy is {age / 60:.0f} minutes old, with "
+                            f"{copies['behind']} entries waiting to be copied")))
+    full = copies.get("checked")
+    if full and full["problems"]:
+        found.append((NOW, "The copier's check of the whole ledger found: "
+                      + "; ".join(full["problems"])))
+    elif full and full["seconds_ago"] > CHECK_LATE:
+        found.append((LATER, (f"The copier last checked the whole ledger "
+                              f"{full['seconds_ago'] / 86400:.0f} days ago")))
+    return found
+
+
 def needs(status: dict[str, Any]) -> list[dict[str, str]]:
     """What in the status needs someone, what pages out of hours first: each `when`, now or
     in working hours, what it is, in a sentence, and the runbook section on what to do."""
@@ -270,36 +302,21 @@ def needs(status: dict[str, Any]) -> list[dict[str, str]]:
         found.append({"when": when, "said": said, "runbook": f"docs/runbooks.md#{section}"})
 
     development = bool((status.get("configuration") or {}).get("development"))
-    copies, copying = status.get("copies"), "the-ledgers-copies-stop"
-    if copies is None:
-        if not development:  # which copies nothing to locked storage
-            need(LATER, "No copier has run here, so the ledger has no locked copies: run "
-                        "`a5s anchor --every`, as the chart's anchor part does", copying)
-    elif copies["stopped"]:
-        need(NOW, f"The ledger's copies have stopped until someone acts: {copies['problem']}",
-             copying)
-    else:
-        if copies["problem"]:
-            need(NOW, f"The copier's last try failed: {copies['problem']}", copying)
-        age = copies.get("copied_seconds_ago")
-        if age is not None and age > COPIES_LATE and copies.get("behind"):
-            need(NOW, f"The ledger's newest copy is {age / 60:.0f} minutes old, with "
-                      f"{copies['behind']} entries waiting to be copied", copying)
-        full = copies.get("checked")
-        if full and full["problems"]:
-            need(NOW, "The copier's check of the whole ledger found: "
-                      + "; ".join(full["problems"]), copying)
-        elif full and full["seconds_ago"] > CHECK_LATE:
-            need(LATER, f"The copier last checked the whole ledger "
-                        f"{full['seconds_ago'] / 86400:.0f} days ago", copying)
+    for when, said in copies_needs(status.get("copies"), development):
+        need(when, said, COPYING)
     if stuck := status["changes"]["stuck"]:
         need(NOW, f"{stuck} {'change' if stuck == 1 else 'changes'} stopped part way through "
                   "being made: `a5s proposals` lists them", "changes-wait-or-stop-part-way")
     for credential in status.get("expiring") or []:  # expired first, as the soonest
         need(LATER, expiry(credential), "credentials-that-expire")
+    if unread := status.get("expires_unread"):  # a note mistyped stops nothing (round 17, A12)
+        need(LATER, unread, "credentials-that-expire")
     release = status.get("release") or {}
     if release.get("problems"):
         need(LATER, _sentence("; ".join(release["problems"])) + " So the core opens no run.",
+             "settings-or-the-release-dont-check-out")
+    if problem := (status.get("settings") or {}).get("problem"):  # as each run finds them (A1)
+        need(LATER, _sentence(problem) + " So the core opens no run.",
              "settings-or-the-release-dont-check-out")
     for model in status.get("breakers_open") or []:
         need(LATER, f"{model}'s breaker is open after three failures in a row: a5s tries it "
@@ -313,6 +330,11 @@ def needs(status: dict[str, Any]) -> list[dict[str, str]]:
         need(LATER, f"The scheduler last asked the core to record how a5s is doing "
                     f"{heard / 60:.0f} minutes ago, as it does each minute, so it may be away: "
                     "nothing is answered or swept while it is", "messages-are-waiting")
+    elif heard is None and not development:  # it never has: its token, or its way here (D5)
+        need(LATER, "The scheduler has never asked the core to record how a5s is doing, as it "
+                    "does each minute once it runs, so it may not be running, or not reach the "
+                    "core with its token: nothing is answered or swept until it does",
+             "messages-are-waiting")
     queue = status["queue"]
     if queue["waiting"] and (queue["oldest_seconds"] or 0) > QUEUE_LATE:
         need(LATER, f"{queue['waiting']} messages are waiting, the oldest for "

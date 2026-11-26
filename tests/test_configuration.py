@@ -385,3 +385,24 @@ def test_the_chart_gives_the_core_alone_the_tokens_of_mcp_servers_and_repositori
         for container in containers(doc):
             assert not [e for e in container.get("env") or []
                         if e["name"].startswith(("A5S_MCP_", "A5S_REPOSITORY_"))]
+
+
+def test_compose_gives_the_channels_the_team_and_the_deployment_as_the_core_has_them():
+    """The channels app serves the team's own pages, such as the Status page, and the band
+    across every page: it reads the team that runs a5s and which deployment this is, as the
+    core does (round 17, A6 and B10)."""
+    stack = yaml.safe_load((ROOT / "deploy" / "compose.yaml").read_text(encoding="utf-8"))
+    for part in ("gateway", "channels"):
+        env = stack["services"][part]["environment"]
+        assert {"A5S_TEAM", "A5S_ENVIRONMENT", "A5S_ENVIRONMENT_NAME"} <= set(env), part
+
+
+def test_the_chart_gives_the_channels_the_team_as_the_core_has_it():
+    """A team the values name is the channels' as much as the core's (round 17, A6)."""
+    named = {}
+    for doc in rendered("ci-values.yaml", sets=("team=it-ops",)):
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] in ("a5s-gateway",
+                                                                       "a5s-channels"):
+            named[doc["metadata"]["name"]] = {e["name"]: e.get("value") for c in containers(doc)
+                                              for e in c.get("env") or []}.get("A5S_TEAM")
+    assert named == {"a5s-gateway": "it-ops", "a5s-channels": "it-ops"}

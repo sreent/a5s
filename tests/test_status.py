@@ -90,6 +90,7 @@ def test_what_pages_comes_first_then_what_waits_for_working_hours(stack, monkeyp
     from a5s.core import anchor, releases
 
     stack.suspend(by="ben")
+    stack.scheduler().seen()  # the scheduler at work, as it is
     with db.transaction(stack.admin) as conn:  # a model the health gate stopped
         conn.execute("insert into model_health (scenario, model, day, calls, stalls, gated_at) "
                      "values ('sample', 'fake', current_date, 20, 11, now())")
@@ -136,3 +137,50 @@ def test_a_scheduler_that_stopped_asking_is_heard_of(stack):
     [late] = now["needs"]
     assert late["when"] == "working hours" and late["runbook"] == "docs/runbooks.md#messages-are-waiting"
     assert late["said"].startswith("The scheduler last asked the core to record how a5s is doing 7 minutes ago")
+
+
+def test_settings_in_force_that_stop_counting_need_someone(stack, monkeypatch):
+    """Once the settings in force stop counting, such as when their only approver moves on, the
+    core refuses every run: the status says so too, where it said nothing (round 17, A1)."""
+    from dataclasses import replace
+
+    people = stack.gateway.scenario._people
+    monkeypatch.setitem(people, "ana", replace(people["ana"], roles=()))
+    with stack.client() as c:
+        now = c.get("/status").json()
+    [need] = [n for n in now["needs"]
+              if n["runbook"] == "docs/runbooks.md#settings-or-the-release-dont-check-out"]
+    assert "aren't approved" in need["said"] and need["said"].endswith("So the core opens no run.")
+    assert status.verdict(now) != "Nothing needs anyone."
+
+
+def test_a_scheduler_that_never_asked_is_heard_of_and_its_record_never_runs_ahead(stack,
+                                                                                monkeypatch):
+    """A scheduler that never reached the core, such as with another token, leaves no record,
+    which outside development needs someone too; and the record is never ahead of the
+    database's clock, so nobody hides the scheduler's being away (round 17, D5)."""
+    from dataclasses import replace
+
+    monkeypatch.setattr(stack.gateway, "cfg", replace(stack.gateway.cfg, development=False))
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert any(n["runbook"] == "docs/runbooks.md#messages-are-waiting"
+               and n["said"].startswith("The scheduler has never asked") for n in now["needs"])
+    stack.scheduler().seen()
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update status_seen set at = now() + interval '10 years'")
+        assert conn.execute("select at <= now() as held from status_seen").fetchone()["held"]
+
+
+def test_an_expiry_note_mistyped_stops_nothing_and_is_said(stack, monkeypatch):
+    """A5S_EXPIRES is only a note of when credentials expire: one mistyped is a warning as a
+    part starts, and a line in the status, never a core that won't start (round 17, A12)."""
+    from a5s import config
+
+    monkeypatch.setenv("A5S_EXPIRES", "teams-secret-assistant=2027-5-1")
+    problems, warnings = config.check()
+    assert not [p for p in problems if "A5S_EXPIRES" in p]
+    assert [w for w in warnings if "A5S_EXPIRES" in w]
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert [n["runbook"] for n in now["needs"]] == ["docs/runbooks.md#credentials-that-expire"]

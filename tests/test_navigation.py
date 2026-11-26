@@ -96,3 +96,14 @@ def test_an_agents_pages_mark_agents_and_the_foot_leads_to_what_you_may_do(stack
     assert "no administrator's mode" in page.inner_text(".page-head")
     page.locator("aside.sidebar a.brand").click()  # the mark leads home
     page.wait_for_selector("#waiting", timeout=30000)
+
+
+def test_every_page_a_sidebar_lists_is_served_at_its_own_address(stack, approving):
+    """Each page the sidebars list opens at its own address, as a reload or a plain link from
+    the web chat's sidebar asks for it, with the band across its top as every page has it:
+    the Status page did not (round 17, B6)."""
+    from a5s.core.shell_api import PAGES
+
+    for _, _, _, _, at in PAGES:
+        found = httpx.get(f"{approving}{at}", timeout=30, follow_redirects=True)
+        assert found.status_code == 200 and "text/html" in found.headers["content-type"], at

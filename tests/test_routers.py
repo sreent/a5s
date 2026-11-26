@@ -38,6 +38,7 @@ ACTS = {  # each act, with a body of the shape it takes, so it's refused for wan
     ("get", "/approve/settings/{version}"): None,  # what an approver reads before approving
     ("post", "/approve/settings/{version}"): {"salt": "s"},
     ("get", "/officer/api"): None,
+    ("get", "/officer/whom"): None,
     ("post", "/officer/requests"): {"action": "export", "person": "ben", "salt": "s"},
     ("post", "/decide/review"): None,
     ("post", "/decide/proposals"): {"proposals": [DIGEST], "decision": "approve", "salt": "s"},

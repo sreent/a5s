@@ -35,6 +35,13 @@ x-publishing: &publishing
   A5S_GITHUB_URL:  # a GitHub Enterprise server's, if not github.com's
   A5S_GITHUB_API_URL:  # and its API, such as https://github.example.com/api/v3
 
+# Which deployment this is, for the band across the top of every page, and the directory's team
+# that runs a5s, if not a5s's default: the core and the channels each read both.
+x-deployment: &deployment
+  A5S_TEAM:
+  A5S_ENVIRONMENT:  # production, staging or test: unnamed, every page says to treat it as production
+  A5S_ENVIRONMENT_NAME:  # its name, such as Pilot test
+
 x-people: &people
   A5S_OIDC_ISSUER:  # the identity provider people sign in with
   A5S_OIDC_AUDIENCE:
@@ -93,14 +100,13 @@ services:
     <<: *a5s
     command: ["gateway", "--host", "0.0.0.0"]
     environment:
-      <<: [*people, *scenario]
+      <<: [*people, *scenario, *deployment]
       A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_OPERATOR_TOKEN:  # operators' own, for `a5s status` and the like: the scheduler's token then does none of it
       A5S_SEAL_KEYS:  # the core's own, sealing what people approve, decide and grade: the gateway alone holds it
       # and a5s's client secret in each system A5S_DELEGATION names, as A5S_DELEGATION_<NAME>_SECRET,
       # and, where the scenario names mailboxes, A5S_MAIL_TENANT, A5S_MAIL_CLIENT_ID and A5S_MAIL_CLIENT_SECRET
-      A5S_TEAM:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
     networks: [data, work, work-assistant, work-watcher, egress]
@@ -111,7 +117,7 @@ services:
     <<: *a5s
     command: ["channels", "--host", "0.0.0.0"]
     environment:
-      <<: [*people, *scenario, *publishing]
+      <<: [*people, *scenario, *publishing, *deployment]
       A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
     networks: [data, egress, edge]
     ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # behind your ingress, for people and Teams
