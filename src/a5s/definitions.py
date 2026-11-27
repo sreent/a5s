@@ -338,6 +338,19 @@ _FRONT = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)  # as Deep Agents re
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # as Agent Skills names one: such as sign-in-help
 
 
+def front_matter(text: str) -> tuple[dict | None, str]:
+    """What a SKILL.md says of its skill in the YAML between its first lines of ---, as a5s and
+    Deep Agents read it, None if nothing there reads as a mapping, and what follows it."""
+    head = _FRONT.match(text)
+    if not head:
+        return None, text
+    try:
+        meta = yaml.safe_load(head.group(1))
+    except yaml.YAMLError:
+        meta = None
+    return meta if isinstance(meta, dict) else None, text[head.end():]
+
+
 def skills_of(folder: Path) -> dict[str, str]:
     """A definition's Agent Skills: each a folder with a SKILL.md, whose YAML front matter
     names it, as its folder is named, and says what it's for, which is all a run sees of it
@@ -350,11 +363,7 @@ def skills_of(folder: Path) -> dict[str, str]:
         told = skill / "SKILL.md"
         if not told.is_file():
             raise ValueError(f"the skill {skill.name} has no SKILL.md")
-        head = _FRONT.match(told.read_text(encoding="utf-8"))
-        try:
-            meta = yaml.safe_load(head.group(1)) if head else None
-        except yaml.YAMLError:
-            meta = None
+        meta, _ = front_matter(told.read_text(encoding="utf-8"))
         about = str(meta.get("description") or "").strip() if isinstance(meta, dict) else ""
         if not isinstance(meta, dict) or meta.get("name") != skill.name or not about:
             raise ValueError(f"the skill {skill.name}'s SKILL.md must begin with front matter, "

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 import yaml
@@ -146,3 +148,111 @@ def test_the_command_line_makes_and_checks_agents(tmp_path, monkeypatch, capsys)
         with pytest.raises(SystemExit, match="no template nowhere|is there already"):
             cli.main(argv)
     shutil.rmtree(tmp_path / "finance-helper")
+
+
+# Skills: a new one, and one published elsewhere, brought in as its text alone (docs/manual/skills.md)
+
+ABOUT = "How to answer a question about a refund: when it's paid, step by step."
+PUBLISHED = """---
+name: refunds
+description: How to answer a question about a refund, step by step.
+license: MIT
+---
+
+# Refunds
+
+Check the refund's record first, then say when it's paid, as `reference.md` and `scripts/paid_by.py` say.
+"""
+
+
+def published(where: Path, remote: str | None = None) -> Path:
+    """A skill as another organisation publishes it, with a script, a picture and a licence, in
+    a git checkout of theirs if it has a `remote`."""
+    skill = where / "skills" / "refunds"
+    (skill / "scripts").mkdir(parents=True)
+    (skill / "SKILL.md").write_text(PUBLISHED, encoding="utf-8")
+    (skill / "reference.md").write_text("# When refunds are paid\n", encoding="utf-8")
+    (skill / "scripts" / "paid_by.py").write_text("print('2026-11-11')\n", encoding="utf-8")
+    (skill / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (skill / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    if remote:
+        for argv in (["init", "-q"], ["add", "."], ["-c", "user.name=Them", "-c", "user.email=them@example.com",
+                                                    "commit", "-q", "-m", "Refunds"],
+                     ["remote", "add", "origin", remote]):
+            subprocess.run(["git", "-C", str(where), *argv], check=True, capture_output=True)
+    return skill
+
+
+def test_a_new_skill_is_a_folder_a5s_loads_saying_what_its_for(tmp_path):
+    folder = made(tmp_path)
+    authoring.new_skill(folder, "refunds", ABOUT)
+    loaded = definitions.skills_of(folder / "skills")
+    meta, body = definitions.front_matter(loaded["/skills/refunds/SKILL.md"])
+    assert meta == {"name": "refunds", "description": ABOUT}  # its colon read as written
+    assert body.startswith("# Refunds\n")
+    for name, about, says in [("Refunds", ABOUT, "as Agent Skills names a skill"),
+                              ("refunds", ABOUT, "has a skill refunds already"),
+                              ("payments", " \n ", "say what the skill is for"),
+                              ("payments", "x" * 1025, "1,024 characters at most")]:
+        with pytest.raises(ValueError, match=says):
+            authoring.new_skill(folder, name, about)
+    with pytest.raises(ValueError, match="isn't an agent's folder"):
+        authoring.new_skill(tmp_path, "payments", ABOUT)
+
+
+def test_a_skill_from_elsewhere_comes_in_as_its_text_alone_saying_where_from(tmp_path):
+    skill = published(tmp_path / "theirs", "https://someone:not-a-real-token@example.com/org/skills.git")
+    folder = made(tmp_path / "ours")
+    added = authoring.add_skill(folder, skill)
+    assert added.left_out == ["logo.png", "scripts/paid_by.py"]  # nothing a run can't read
+    assert added.source == "https://example.com/org/skills.git skills/refunds"  # nobody's credentials
+    assert added.commit and len(added.commit) == 40
+    loaded = definitions.skills_of(folder / "skills")
+    assert set(loaded) == {"/skills/refunds/SKILL.md", "/skills/refunds/reference.md",
+                           "/skills/refunds/LICENSE.txt"}  # its terms, kept as text
+    meta, body = definitions.front_matter(loaded["/skills/refunds/SKILL.md"])
+    assert meta and meta["license"] == "MIT" and meta["metadata"] == {"source": added.source,
+                                                                     "commit": added.commit}
+    assert body == PUBLISHED.split("---\n", 2)[2].lstrip("\n")  # what it says, as it says it
+    assert "\n---\n\n# Refunds\n" in loaded["/skills/refunds/SKILL.md"]  # a line between, as it had
+    assert "someone" not in str(loaded) and "not-a-real-token" not in str(loaded)
+    with pytest.raises(ValueError, match="has a skill refunds already"):
+        authoring.add_skill(folder, skill)
+
+
+def test_a_skill_from_elsewhere_must_be_one_a5s_loads(tmp_path):
+    folder = made(tmp_path / "ours")
+    skill = published(tmp_path / "theirs")
+    assert authoring.add_skill(folder, skill).source is None  # no checkout to say where from
+    for text, says in [("# Refunds\n", "front matter naming it refunds"),
+                       (PUBLISHED.replace("name: refunds", "name: payments"), "naming it refunds")]:
+        other = published(tmp_path / f"theirs-{len(text)}")
+        (other / "SKILL.md").write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError, match=says):
+            authoring.add_skill(made(tmp_path / f"ours-{len(text)}"), other)
+    long = published(tmp_path / "theirs-long")
+    (long / "SKILL.md").write_text(PUBLISHED.replace("step by step.", "x" * 1100), encoding="utf-8")
+    target = made(tmp_path / "ours-long")
+    with pytest.raises(ValueError, match="1,024 characters"):
+        authoring.add_skill(target, long)
+    assert not (target / "skills" / "refunds").exists()  # nothing left half brought in
+
+
+def test_the_command_line_gives_an_agent_a_skill(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("A5S_ROOT", str(ROOT))
+    monkeypatch.setenv("A5S_AGENTS_DIR", str(tmp_path / "agents"))
+    made(tmp_path / "agents")
+    cli.main(["skill", "new", "finance-helper", "refunds", "--about", ABOUT])
+    said = capsys.readouterr().out
+    assert "skills/refunds/SKILL.md" in said and "its owner and an engineer sign it" in said
+    with pytest.raises(SystemExit, match="has a skill refunds already"):
+        cli.main(["skill", "new", "finance-helper", "refunds", "--about", ABOUT])
+    other = published(tmp_path / "theirs")
+    (other.parent / "chargebacks").mkdir()
+    (other.parent / "chargebacks" / "SKILL.md").write_text(
+        PUBLISHED.replace("name: refunds", "name: chargebacks"), encoding="utf-8")
+    cli.main(["skill", "add", "finance-helper", str(other.parent / "chargebacks")])
+    said = capsys.readouterr().out
+    assert "Say in its pull request where it came from" in said
+    cli.main(["agent", "check"])
+    assert capsys.readouterr().out == "finance-helper: ready to release\n"

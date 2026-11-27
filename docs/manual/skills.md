@@ -37,6 +37,8 @@ description: How to help someone who can't sign in, step by step, whether they f
 People who can't sign in rarely say which kind of trouble it is. Find out first, then start the one self-service that fits, on their own account alone.
 ```
 
+From the command line, `a5s skill new <agent> <name> --about "<what it's for>"` makes its folder and its `SKILL.md`, for you to write its steps in. In the studio, its draft's **Files** does the same ([below](#try-it-and-keep-a-test-case)).
+
 - **What it's for**, its `description`, is all a run sees of it until it reads it. Say what it does and when it's needed, in 1,024 characters at most.
 - **The rest** is how to do the work, in steps or short rules, naming the agent's tools as its instructions do.
 - **Beside it**, a skill may bring more for a run to read: a template, a table, a longer reference. Name each in `SKILL.md`, as supplier-replies names its template, or no run knows to read it.
@@ -70,10 +72,10 @@ A skill is part of its agent's release, pinned by the release's digest, so chang
 
 Agent Skills are shared as folders, mostly in git repositories. To use one another organisation's agents use:
 
-1. **Copy its folder** into the agent's `skills/`, with its licence.
-2. **Take out what a5s refuses**, such as its scripts. What a script did becomes a tool, if anyone builds it ([adding a tool](tools.md)).
+1. **Bring it in**, from a clone of where it's published: `a5s skill add <agent> <its folder>`. It takes the skill's text alone: its `SKILL.md`, the Markdown, text, CSV, JSON and YAML beside it, and its licence, as `LICENSE.txt`. It says what it left out, such as its scripts, and refuses a skill a5s wouldn't load. Where the folder is in a git checkout, it writes the repository and the commit it came from into the skill's `metadata`, without anyone's credentials, so its signers can compare it with what was published.
+2. **Make what its scripts did a tool**, if the agent needs it ([adding a tool](tools.md)), and take out what its `SKILL.md` says of them.
 3. **Name the agent's own tools** where the skill names others', so it never tells a run to use what it hasn't got.
 4. **Read all of it**, as you would instructions you didn't write. A run follows what a skill says, so look for anything that would have the agent do what its instructions don't let it, or tell anyone what it shouldn't.
-5. **Say where it came from** in the pull request, and at which commit, so its signers can compare.
+5. **Say where it came from** in the pull request, if `a5s skill add` couldn't: it says when.
 
 Then release it as any other.

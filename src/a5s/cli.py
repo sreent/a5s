@@ -219,6 +219,63 @@ def _agent(cfg: Config, args: argparse.Namespace) -> None:
             sys.exit(1)
 
 
+def _skill(cfg: Config, args: argparse.Namespace) -> None:
+    """Giving an agent a skill: a new one, or one published elsewhere, as its text alone
+    (authoring.py, docs/manual/skills.md)."""
+    agent = cfg.agents_dir / args.agent
+    signers = ("Release it as a change to its instructions: its owner and an engineer sign it, "
+               "and the release approver too, for an agent that may act on its own.")
+    if args.what == "new":
+        try:
+            made = authoring.new_skill(agent, args.name, args.about)
+        except ValueError as e:
+            sys.exit(f"Can't make the skill {args.name}: {e}.")
+        print(f"Made {made / 'SKILL.md'}. Write its steps there, naming {args.agent}'s tools, "
+              f"check it with `a5s agent check {agent}`. " + signers)
+        return
+    try:
+        added = authoring.add_skill(agent, args.folder)
+    except ValueError as e:
+        sys.exit(f"Can't bring in {args.folder}: {e}.")
+    print(f"Brought in {added.folder}, as its text alone.")
+    if added.left_out:
+        print("Left out, since no run reads it: " + ", ".join(added.left_out) + ". If its "
+              "SKILL.md names any, say so there, or make what it did a tool.")
+    print(f"From {added.source}, at {added.commit}, as its SKILL.md's metadata says." if added.source
+          else "Say in its pull request where it came from, and at which commit: its folder "
+               "isn't in a git checkout that says.")
+    print("Read all of it before its release, as instructions you didn't write, and name "
+          f"{args.agent}'s own tools where it names others'. Check it with `a5s agent check "
+          f"{agent}`. " + signers)
+
+
+def _declare(args: argparse.Namespace) -> None:
+    """The first draft of an MCP server's declaration, from what it lists of its tools, for its
+    author to put in a5s's words before any of it goes in a scenario's mcp.yaml
+    (connectors/declaring.py): printed, or written to a new file of its own."""
+    from a5s.connectors import declaring, mcp
+    from a5s.connectors.rest import ConnectorError
+
+    if not mcp.NAME.fullmatch(args.server):
+        sys.exit(f"Name the server in lowercase letters, digits and _, such as itsm: not {args.server}.")
+    if args.out and (args.out.name == mcp.FILE or args.out.exists()):
+        sys.exit(f"Write the draft to a new file of its own, not {args.out}: what's in a "
+                 "scenario's mcp.yaml is its author's, in a5s's words.")
+    token_env = f"A5S_MCP_{args.server.upper()}_TOKEN"  # sent only if it's set, and never shown
+    token_env = token_env if os.environ.get(token_env) else None
+    try:
+        listed = mcp.Session(args.server, args.url, token_env).tools()
+        said = declaring.draft(args.server, args.url, listed, token_env, args.tools)
+    except (ConnectorError, ValueError, OSError, httpx.HTTPError) as e:
+        sys.exit(f"Can't draft {args.server}'s declaration: {e}.")
+    if not args.out:
+        print(said, end="")
+        return
+    args.out.write_text(said, encoding="utf-8")
+    print(f"Wrote {args.out}. Put each tool you keep in a5s's words, choose the fields it passes "
+          "on, and only then move it into the scenario's mcp.yaml, where a release approves it.")
+
+
 def _sandbox(cfg: Config, host: str, port: int) -> None:
     """The sandbox: a deployment of its own, where people try the agents they're making, on
     its own database, with the deployment's scenario's made-up records (a5s/sandbox.py)."""
@@ -913,6 +970,31 @@ def _main(argv: list[str] | None = None) -> None:
     checked = agent_sub.add_parser("check", help="what stops agents from being released here")
     checked.add_argument("folders", nargs="*", type=Path,
                          help="their folders (default: every agent in the agents folder)")
+    skill = sub.add_parser("skill", help="give an agent a skill: a new one, or one published "
+                                         "elsewhere (docs/manual/skills.md)")
+    skill_sub = skill.add_subparsers(dest="what", required=True)
+    begun = skill_sub.add_parser("new", help="make a skill's folder in an agent's, with its SKILL.md")
+    begun.add_argument("agent", help="the agent's, such as desk-assistant")
+    begun.add_argument("name", help="the skill's, such as sign-in-help")
+    begun.add_argument("--about", required=True, help="what it's for, and when it's needed")
+    brought = skill_sub.add_parser("add", help="bring in a skill published elsewhere, as its text "
+                                               "alone")
+    brought.add_argument("agent", help="the agent's, such as desk-assistant")
+    brought.add_argument("folder", type=Path, help="the skill's folder, with its SKILL.md, such "
+                                                   "as in a clone of where it's published")
+    servers = sub.add_parser("mcp", help="a scenario's MCP servers (docs/connectors.md)")
+    servers_sub = servers.add_subparsers(dest="what", required=True)
+    declare = servers_sub.add_parser("declare", help="draft a server's declaration from its list "
+                                                     "of tools, for its author to put in a5s's "
+                                                     "words")
+    declare.add_argument("url", help="its Streamable HTTP endpoint")
+    declare.add_argument("--server", required=True, help="a5s's name for it, such as itsm: its "
+                                                         "token, if it takes one, is in "
+                                                         "A5S_MCP_<SERVER>_TOKEN")
+    declare.add_argument("--tool", dest="tools", action="append",
+                         help="only this tool of the server's, by its name there: again for more")
+    declare.add_argument("--out", type=Path, help="a new file to write the draft to, never a "
+                                                  "scenario's mcp.yaml (default: print it)")
     keygen = sub.add_parser("keygen", help="make a signing key for a person")
     keygen.add_argument("person")
     keygen.add_argument("--out", type=Path, default=Path("keys"))
@@ -1187,6 +1269,10 @@ def _main(argv: list[str] | None = None) -> None:
         _pin(cfg, args.agent)
     elif args.command == "agent":
         _agent(cfg, args)
+    elif args.command == "skill":
+        _skill(cfg, args)
+    elif args.command == "mcp":
+        _declare(args)
     elif args.command == "sign":
         _sign(cfg, args.person, args.key)
     elif args.command == "setup":

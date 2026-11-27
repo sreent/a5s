@@ -24,6 +24,8 @@ The token's variable is named for its server, `A5S_MCP_<SERVER>_TOKEN`, and only
 
 ## Declare each tool, in a5s's words
 
+Start from a draft: `a5s mcp declare <url> --server <name>` asks the server for its tools and prints a draft of their declaration, or writes it with `--out` to a new file of its own, never the scenario's `mcp.yaml`. `--tool` drafts only the tools you name. The draft takes what the server says as a start, never as a5s's word: each description is the server's, marked for you to put in a5s's words; the flags are at least what its hints say, and a tool that says nothing of itself is drafted as writing; and it names none of the fields a5s passes on, so a5s refuses it until you've chosen them.
+
 Then, under `tools`, each of the server's tools an agent may use: its name in a5s and on the server, what it's for, in words the model reads, what it takes, which fields of its answer a5s passes on, and what it does, as [adding a tool](tools.md) says. A tool the declaration leaves out is never offered, whatever the server offers. The desk's ITSM, in [`scenarios/service-desk/mcp.yaml`](../../scenarios/service-desk/mcp.yaml), gives four, such as:
 
 ```yaml
@@ -61,4 +63,4 @@ The service desk scenario connects three systems this way, each with a made-up s
 
 ## Not yet
 
-a5s doesn't yet write a declaration's first draft from a server's list of tools: you write it. Nor does it read a server's resources or prompts, reach a server run as a local process, or speak MCP's stateless envelope of 2026-07-28 ([not yet](../connectors.md#not-yet)).
+a5s doesn't yet read a server's resources or prompts, reach a server run as a local process, or speak MCP's stateless envelope of 2026-07-28 ([not yet](../connectors.md#not-yet)).
