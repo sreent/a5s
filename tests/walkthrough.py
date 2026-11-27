@@ -21,6 +21,7 @@ what came of it, a change held or made, rather than its words.
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import threading
@@ -204,6 +205,73 @@ ANSWERED = """text => {
 }"""
 
 
+# A picture of a page once it has settled: nothing on it loading, its fonts in, and its height
+# still for a dozen frames, so no picture catches a page mid-change, as a short one, half drawn
+SETTLED = """() => new Promise(settled => {
+  let last = -1, still = 0;
+  const look = () => {
+    const height = document.documentElement.scrollHeight;
+    const loading = document.querySelector('.skeleton, [aria-busy="true"]');
+    still = height === last && !loading ? still + 1 : 0;
+    last = height;
+    if (still >= 12) settled(true); else requestAnimationFrame(look);
+  };
+  document.fonts.ready.then(() => requestAnimationFrame(look));
+  setTimeout(() => settled(false), 8000);
+})"""
+# Where a page says what's bound to differ each time a guide is made again: a time or a date of
+# the run's, as the studio's when() and time() and the audit trail's "minutes ago" write them, and
+# the port of an address on the machine the walk-through runs on, as a chat's links name it
+TIMES = r"""() => {
+  const said = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}(?:, \d{1,2}:\d{2}(?::\d{2})?\s?[AP]M)?|\b\d{1,2}:\d{2}(?::\d{2})?\s?[AP]M\b|\b(?:127\.0\.0\.1|localhost):\d+|\bjust now\b|\b\d+ (?:seconds?|minutes?|hours?) ago\b/g;
+  const boxes = [];
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+    for (const found of node.data.matchAll(said)) {
+      const range = document.createRange();
+      range.setStart(node, found.index);
+      range.setEnd(node, found.index + found[0].length);
+      for (const r of range.getClientRects()) boxes.push([r.left, r.top, r.right, r.bottom]);
+    }
+  }
+  return boxes;
+}"""
+# Whether two pictures differ only where the page says what's bound to differ, a few pixels around
+# each, or by no more than drawing the same page twice does: a level or two of a colour, here and there
+SAME = """async ([before, after, times]) => {
+  const pixels = async (png) => {
+    const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], {type: 'image/png'}));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const drawn = canvas.getContext('2d');
+    drawn.drawImage(bitmap, 0, 0);
+    return drawn.getImageData(0, 0, bitmap.width, bitmap.height);
+  };
+  const [a, b] = await Promise.all([pixels(before), pixels(after)]);
+  if (a.width !== b.width || a.height !== b.height) return false;
+  const near = (x, y) => times.some(([l, t, r, u]) => x >= l - 4 && x <= r + 4 && y >= t - 4 && y <= u + 4);
+  for (let i = 0; i < a.data.length; i += 4) {
+    if ((Math.abs(a.data[i] - b.data[i]) > 16 || Math.abs(a.data[i + 1] - b.data[i + 1]) > 16
+         || Math.abs(a.data[i + 2] - b.data[i + 2]) > 16)
+        && !near((i / 4) % a.width, Math.floor(i / 4 / a.width))) return false;
+  }
+  return true;
+}"""
+
+
+def take_picture(page: Any, path: Path) -> None:
+    """The picture of where a step ended, once its page has settled, with nothing on it moving:
+    written only if more than a time on it changed, so a guide made again, on another day, keeps
+    each picture nothing else in has changed."""
+    page.evaluate(SETTLED)
+    shot = page.screenshot(animations="disabled", caret="hide")
+    if path.is_file():
+        before = base64.b64encode(path.read_bytes()).decode()
+        if page.evaluate(SAME, [before, base64.b64encode(shot).decode(), page.evaluate(TIMES)]):
+            return
+    path.write_bytes(shot)
+
+
 def _slug(words: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", words.lower()).strip("-")[:48].rstrip("-")
 
@@ -252,7 +320,7 @@ class Walk:
             folder = Path(GUIDE) / self.name
             folder.mkdir(parents=True, exist_ok=True)
             picture = f"{number:02d}-{_slug(words)}.png"
-            page.screenshot(path=str(folder / picture))
+            take_picture(page, folder / picture)
         self.steps.append((words, picture))
 
     def guide(self, about: str) -> None:
