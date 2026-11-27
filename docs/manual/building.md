@@ -23,7 +23,7 @@ A draft opens on its workbench, with four views: **Design**, **Instructions**, *
 - With nothing chosen, the side panel says where the draft stands, from shaping and trying it to watching it at work, what stops its release, who decides its changes, who puts it to work, who signs its release, and its limits.
 - **Its first instance, as you plan it:** the part it works in, the few people it serves first, and what it may ask. The plan goes with the draft, and is in force nowhere until a version of the settings puts it there.
 - **Instructions** is how it should work, in your words.
-- **Files** holds each of its files as text, its skills' among them ([giving an agent a skill](skills.md)). Its tools are the ones its scenario declares ([adding a tool](tools.md)).
+- **Files** holds each of its files as text, and is where you give it a skill, for one kind of its work ([giving an agent a skill](skills.md)). Its tools are the ones its scenario declares ([adding a tool](tools.md)).
 
 ![Giving it tools from the palette, each said by what it reads, writes or changes](../guides/service-desk/02-from-the-palette-he-gives-it-the-desk-s-tools-th.png)
 

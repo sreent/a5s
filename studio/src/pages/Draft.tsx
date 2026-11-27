@@ -34,19 +34,103 @@ const KEPT = "tests/from-runs.yaml";  // the cases kept from runs, which a run's
 type Kept = "kept" | "keeping" | { problem: string };
 type Said = Pick<Draft, "problems" | "preview" | "signers" | "released" | "at_work">;
 
+// A skill, as Agent Skills name one, and the files a run can read in one (definitions.py)
+const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SKILL_FILES = [".md", ".txt", ".csv", ".json", ".yaml", ".yml"];
+const BESIDE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** The skill a file of the draft's is in, if it's in one: skills/<name>/... */
+const skillOf = (path: string): string | undefined => /^skills\/([^/]+)\//.exec(path)?.[1];
+
+/** A new skill's SKILL.md: its name and what it's for, as Agent Skills begin one, and where its
+ * steps go. What it's for is quoted, so YAML reads it as written, colons and all. */
+const newSkill = (name: string, about: string): string =>
+  `---\nname: ${name}\ndescription: ${JSON.stringify(about)}\n---\n\n`
+  + `# ${name.charAt(0).toUpperCase()}${name.slice(1).replace(/-/g, " ")}\n\n`
+  + `${t("How to do this kind of work, step by step, naming the tools it uses.")}\n`;
+
 function Raw({ files, change, readOnly = false }: { files: Files; change: (f: Files) => void; readOnly?: boolean }) {
   const names = Object.keys(files).sort();
-  const [open, setOpen] = useState(names.includes("agent.yaml") ? "agent.yaml" : names[0]);
+  const first = (among: string[]) => (among.includes("agent.yaml") ? "agent.yaml" : among[0]);
+  const [open, setOpen] = useState(first(names));
+  const [name, setName] = useState("");
+  const [about, setAbout] = useState("");
+  const [beside, setBeside] = useState("");
   const pinned = open === "tools.lock";
+  const skill = skillOf(open);
+  const skills = new Set(names.map(skillOf));
+  const nameSays = !name ? ""
+    : !SKILL_NAME.test(name) || name.length > 64 ? t("Lower-case letters and digits, with single hyphens between, 64 at most.")
+    : skills.has(name) ? t("It has a skill of that name already.") : "";
+  const besidePath = skill ? `skills/${skill}/${beside}` : "";
+  const besideSays = !beside ? ""
+    : !BESIDE.test(beside) || !SKILL_FILES.some((kind) => beside.toLowerCase().endsWith(kind))
+      ? t("A run reads Markdown, text, CSV, JSON or YAML: a name such as reply.md or table.csv.")
+    : besidePath in files ? t("The skill has a file of that name already.") : "";
+  const add = (path: string, text: string) => { change({ ...files, [path]: text }); setOpen(path); };
+  const whole = open.endsWith("/SKILL.md");  // removing it removes the skill
+  const remove = () => {
+    const left = Object.fromEntries(Object.entries(files).filter(([path]) => (whole ? skillOf(path) !== skill : path !== open)));
+    change(left);
+    setOpen(first(Object.keys(left).sort()));
+  };
   return (
     <div className="raw">
-      <ul className="file-list" aria-label={t("Its files")}>
-        {names.map((name) => (
-          <li key={name}><button type="button" className={name === open ? "on" : ""} onClick={() => setOpen(name)}>{name}</button></li>
-        ))}
-      </ul>
+      <div className="file-side">
+        <ul className="file-list" aria-label={t("Its files")}>
+          {names.map((path) => (
+            <li key={path}><button type="button" className={path === open ? "on" : ""} onClick={() => setOpen(path)}>{path}</button></li>
+          ))}
+        </ul>
+        {!readOnly && (
+          <form className="new-skill" onSubmit={(e) => {
+            e.preventDefault();
+            if (!name || !about.trim() || nameSays) return;
+            add(`skills/${name}/SKILL.md`, newSkill(name, about.trim()));
+            setName("");
+            setAbout("");
+          }}>
+            <fieldset>
+              <legend>{t("New skill")}</legend>
+              <p className="note">{t("How it does one kind of its work, which a run reads only when the work is that kind.")}</p>
+              <label>{t("Its name")}
+                <input id="skill-name" value={name} placeholder="sign-in-help" spellCheck={false} aria-invalid={Boolean(nameSays)}
+                       aria-describedby={nameSays ? "skill-name-says" : undefined} onChange={(e) => setName(e.target.value)} />
+              </label>
+              {nameSays && <p id="skill-name-says" className="problem">{nameSays}</p>}
+              <label>{t("What it's for, and when it's needed")}
+                <textarea id="skill-about" rows={3} maxLength={1024} value={about} onChange={(e) => setAbout(e.target.value)} />
+              </label>
+              <button type="submit" id="add-skill" disabled={!name || !about.trim() || Boolean(nameSays)}>{t("Add the skill")}</button>
+            </fieldset>
+          </form>
+        )}
+      </div>
       <div className="raw-file">
         {pinned && <p className="note">{t("a5s pins its tools as the scenario has them each time it's kept, as `a5s pin` does.")}</p>}
+        {!readOnly && skill && (
+          <div className="skill-file">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (!beside || besideSays) return;
+              add(besidePath, "");
+              setBeside("");
+            }}>
+              <label>{t("A file beside it, such as a template or a table")}
+                <input id="skill-beside" value={beside} placeholder="reply.md" spellCheck={false} aria-invalid={Boolean(besideSays)}
+                       aria-describedby={besideSays ? "skill-beside-says" : undefined} onChange={(e) => setBeside(e.target.value)} />
+              </label>
+              <button type="submit" id="add-beside" disabled={!beside || Boolean(besideSays)}>{t("Add the file")}</button>
+            </form>
+            <Confirm small label={whole ? t("Remove the skill") : t("Remove this file")}
+                     title={whole ? t("Remove the skill {name}?", { name: skill }) : t("Remove {file}?", { file: open })}
+                     about={whole ? t("Its SKILL.md and every file beside it go from this draft. The release in force keeps it until another replaces it.")
+                       : t("It goes from this draft. If SKILL.md names it, say so there too, or a run looks for it in vain.")}
+                     confirm={whole ? t("Remove the skill") : t("Remove the file")} onConfirm={remove} />
+            {besideSays && <p id="skill-beside-says" className="problem">{besideSays}</p>}
+            {!whole && <p className="note">{t("Name it in SKILL.md, or no run knows to read it.")}</p>}
+          </div>
+        )}
         <textarea id="file-text" aria-label={open} spellCheck={false} readOnly={pinned || readOnly} value={files[open] ?? ""}
                   onChange={(e) => change({ ...files, [open]: e.target.value })} />
       </div>

@@ -50,7 +50,15 @@ Of the format's other fields, `allowed-tools` gives an agent nothing: its tools 
 
 ## Try it, and keep a test case
 
-A draft of the agent holds its skills among its files: under **Files**, you can change what one says. The studio can't add a new one yet, so add its folder to the agent's in git, in the pull request its release comes from.
+In the studio, a draft's **Files** holds its skills, beside its other files:
+
+- **New skill.** Give its name and what it's for, and choose **Add the skill**. The draft gains the skill's `SKILL.md`, which opens for you to write its steps.
+- **A file beside it.** With one of the skill's files open, give the file's name, such as `reply.md`, and choose **Add the file**.
+- **Remove the skill**, or **Remove this file**, asks you first. The release in force keeps the skill until another replaces it.
+
+The studio checks the draft as you go, as `a5s agent check` does, and its release's pull request carries its skills with the rest of its folder. Outside the studio, a skill is the same folder, under the agent's `skills/` in git.
+
+![Giving a draft a skill, under Files](../guides/service-desk/08-under-files-he-gives-it-a-skill-ticket-questions.png)
 
 Try it as you'd try any change, in the sandbox ([building an agent](building.md#try-it-in-the-sandbox)), and keep a try that needed the skill as a test case: its release's regression suite then shows the skill still does its job.
 

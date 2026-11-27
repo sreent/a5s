@@ -333,8 +333,13 @@ class Walk:
             lines += [f"{number}. {words}", ""]
             if picture:
                 lines += [f"   ![{words}]({picture})", ""]
-        (Path(GUIDE) / self.name).mkdir(parents=True, exist_ok=True)
-        (Path(GUIDE) / self.name / "guide.md").write_text("\n".join(lines))
+        folder = Path(GUIDE) / self.name
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "guide.md").write_text("\n".join(lines))
+        named = {picture for _, picture in self.steps if picture}
+        for gone in sorted(folder.glob("*.png")):  # a step since renamed, renumbered or taken out
+            if gone.name not in named:
+                gone.unlink()
 
 
 # What every walk-through does outside a5s's pages, as the people and systems there do it

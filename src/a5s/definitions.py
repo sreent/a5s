@@ -335,6 +335,7 @@ def load(folder: Path) -> Definition:
 # can run.
 SKILL_FILES = (".md", ".txt", ".csv", ".json", ".yaml", ".yml")
 _FRONT = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)  # as Deep Agents reads it
+SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # as Agent Skills names one: such as sign-in-help
 
 
 def skills_of(folder: Path) -> dict[str, str]:
@@ -343,6 +344,9 @@ def skills_of(folder: Path) -> dict[str, str]:
     until it reads it. Each file in the folder, by its path in a run's files."""
     found: dict[str, str] = {}
     for skill in sorted(p for p in folder.iterdir() if p.is_dir()) if folder.is_dir() else []:
+        if not SKILL_NAME.fullmatch(skill.name) or len(skill.name) > 64:
+            raise ValueError(f"name the skill {skill.name[:64]} as Agent Skills names one: in lower-case "
+                             "letters and digits, with single hyphens between, 64 characters at most")
         told = skill / "SKILL.md"
         if not told.is_file():
             raise ValueError(f"the skill {skill.name} has no SKILL.md")
