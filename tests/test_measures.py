@@ -176,7 +176,7 @@ def test_the_measures_count_questions_agents_asked_and_mentions_in_groups(stack)
                          "reply_to, conversation, members) values (gen_random_uuid(), 'matrix', "
                          "gen_random_uuid()::text, %s, 'assistant', 'Hello', '{}', %s, "
                          "array['ana', 'ben'])", (person, room))
-        found = measures.report(conn, "sample", {}, 30)
+        found = measures.report(conn, "sample", {}, 30, stack.gateway.clock())  # when it was asked
     [question] = found["questions"]
     assert {k: v for k, v in question.items() if k != "answered_seconds_p90"} == {
         "instance": "watcher-finance", "asked": 1, "answered": 1, "unanswered": 0}
