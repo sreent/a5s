@@ -139,6 +139,11 @@
    have more room, and they never touch the line's above or below */
 :root:lang(th) { line-height: 1.7; }
 
+/* A page in Korean breaks its lines between words, at the spaces Korean writes, never inside one:
+   a word (eojeol) split across two lines reads as two. A word longer than its line still breaks,
+   where it must. A piece that sets its own wrapping (an id, code) keeps it. */
+:root:lang(ko) { word-break: keep-all; overflow-wrap: break-word; }
+
 @media (prefers-color-scheme: dark) {
   :root {
     --text: var(--deep-50);

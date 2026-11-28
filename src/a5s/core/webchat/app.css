@@ -6,6 +6,11 @@
 
 /* The chat */
 
+/* Its head, with the agent it's talking to and who's signed in, stays as a long conversation
+   scrolls, below the deployment's band, as its composer stays at its foot (Ocean's footer) */
+body.app .page > header { position: sticky; top: 0; z-index: 2; }
+body.app:has(.env-band) .page > header { top: 2rem; }
+
 #conversation { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 
 #conversation > li {

@@ -231,7 +231,8 @@ SETTLED = """() => new Promise(settled => {
 # Where a page says what's bound to differ each time a guide is made again: a time or a date of
 # the run's, as the studio's when() and time() and the audit trail's "minutes ago" write them, and
 # the port of an address on the machine the walk-through runs on, as a chat's links name it, and
-# how long something took, as a run's steps say it, such as after 0.3 s
+# how long something took, as a run's steps say it, such as after 0.3 s; each with what follows it
+# on its line, which moves as its width does, as 10:02 is wider than 1:37
 TIMES = r"""() => {
   const said = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}(?:, \d{1,2}:\d{2}(?::\d{2})?\s?[AP]M)?|\b\d{1,2}:\d{2}(?::\d{2})?\s?[AP]M\b|\b(?:127\.0\.0\.1|localhost):\d+|\b\d+(?:\.\d+)?\s?(?:ms|s)\b|\bjust now\b|\b\d+ (?:seconds?|minutes?|hours?) ago\b/g;
   const boxes = [];
@@ -241,7 +242,8 @@ TIMES = r"""() => {
       const range = document.createRange();
       range.setStart(node, found.index);
       range.setEnd(node, found.index + found[0].length);
-      for (const r of range.getClientRects()) boxes.push([r.left, r.top, r.right, r.bottom]);
+      const line = node.parentElement ? node.parentElement.getBoundingClientRect().right : 0;
+      for (const r of range.getClientRects()) boxes.push([r.left, r.top, Math.max(r.right, line), r.bottom]);
     }
   }
   return boxes;
