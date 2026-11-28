@@ -21,6 +21,7 @@ what came of it, a change held or made, rather than its words.
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import threading
@@ -204,6 +205,91 @@ ANSWERED = """text => {
 }"""
 
 
+# A picture of a page once it has settled: nothing on it loading, its fonts in, and its height and
+# where it and each part of it are scrolled to still for a dozen frames, so no picture catches a
+# page mid-change, as a short one, half drawn, or mid-scroll; then scrolled to whole pixels, and
+# its sidebar to its top, as it scrolls a pixel or so to show where you are, so what's drawn the
+# same is drawn on the same pixels each time
+SETTLED = """() => new Promise(settled => {
+  let last = '', still = 0;
+  const scrolled = () => [...document.querySelectorAll('*')].filter(e => e.scrollTop || e.scrollLeft);
+  const look = () => {
+    const now = [document.documentElement.scrollHeight, scrollX, scrollY,
+                 ...scrolled().map(e => `${e.scrollTop},${e.scrollLeft}`)].join(';');
+    const loading = document.querySelector('.skeleton, [aria-busy="true"]');
+    still = now === last && !loading ? still + 1 : 0;
+    last = now;
+    if (still < 12) { requestAnimationFrame(look); return; }
+    scrollTo(Math.round(scrollX), Math.round(scrollY));
+    for (const e of document.querySelectorAll('.sidebar, .sidebar *, .wb-rail, .wb-rail *')) e.scrollTop = 0;  // a pixel of it means nothing
+    for (const e of scrolled()) { e.scrollTop = Math.round(e.scrollTop); e.scrollLeft = Math.round(e.scrollLeft); }
+    requestAnimationFrame(() => requestAnimationFrame(() => settled(true)));
+  };
+  document.fonts.ready.then(() => requestAnimationFrame(look));
+  setTimeout(() => settled(false), 8000);
+})"""
+# Where a page says what's bound to differ each time a guide is made again: a time or a date of
+# the run's, as the studio's when() and time() and the audit trail's "minutes ago" write them, and
+# the port of an address on the machine the walk-through runs on, as a chat's links name it, and
+# how long something took, as a run's steps say it, such as after 0.3 s; each with what follows it
+# on its line, which moves as its width does, as 10:02 is wider than 1:37
+TIMES = r"""() => {
+  const said = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}(?:, \d{1,2}:\d{2}(?::\d{2})?\s?[AP]M)?|\b\d{1,2}:\d{2}(?::\d{2})?\s?[AP]M\b|\b(?:127\.0\.0\.1|localhost):\d+|\b\d+(?:\.\d+)?\s?(?:ms|s)\b|\bjust now\b|\b\d+ (?:seconds?|minutes?|hours?) ago\b/g;
+  const boxes = [];
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+    for (const found of node.data.matchAll(said)) {
+      const range = document.createRange();
+      range.setStart(node, found.index);
+      range.setEnd(node, found.index + found[0].length);
+      const line = node.parentElement ? node.parentElement.getBoundingClientRect().right : 0;
+      for (const r of range.getClientRects()) boxes.push([r.left, r.top, Math.max(r.right, line), r.bottom]);
+    }
+  }
+  return boxes;
+}"""
+# Whether two pictures differ only where the page says what's bound to differ, a few pixels around
+# each, or by no more than drawing the same page twice does: a level or two of a colour, here and
+# there, a part drawn a pixel higher or lower, as a sidebar can be, and a speck of a few dozen
+# pixels at most, far fewer than any word changed draws
+SAME = """async ([before, after, times]) => {
+  const pixels = async (png) => {
+    const bytes = Uint8Array.from(atob(png), c => c.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], {type: 'image/png'}));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const drawn = canvas.getContext('2d');
+    drawn.drawImage(bitmap, 0, 0);
+    return drawn.getImageData(0, 0, bitmap.width, bitmap.height);
+  };
+  const [a, b] = await Promise.all([pixels(before), pixels(after)]);
+  if (a.width !== b.width || a.height !== b.height) return false;
+  let stray = 0;
+  const near = (x, y) => times.some(([l, t, r, u]) => x >= l - 4 && x <= r + 4 && y >= t - 4 && y <= u + 4);
+  const row = a.width * 4;
+  const like = (i, j) => j >= 0 && j < b.data.length && Math.abs(a.data[i] - b.data[j]) <= 16
+    && Math.abs(a.data[i + 1] - b.data[j + 1]) <= 16 && Math.abs(a.data[i + 2] - b.data[j + 2]) <= 16;
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (!like(i, i) && !like(i, i - row) && !like(i, i + row)
+        && !near((i / 4) % a.width, Math.floor(i / 4 / a.width)) && ++stray > 50) return false;
+  }
+  return true;
+}"""
+
+
+def take_picture(page: Any, path: Path) -> None:
+    """The picture of where a step ended, once its page has settled, with nothing on it moving:
+    written only if more than a time on it changed, so a guide made again, on another day, keeps
+    each picture nothing else in has changed."""
+    page.evaluate(SETTLED)
+    times = page.evaluate(TIMES)  # where they are as the picture's taken, not after
+    shot = page.screenshot(animations="disabled", caret="hide")
+    if path.is_file():
+        before = base64.b64encode(path.read_bytes()).decode()
+        if page.evaluate(SAME, [before, base64.b64encode(shot).decode(), times]):
+            return
+    path.write_bytes(shot)
+
+
 def _slug(words: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", words.lower()).strip("-")[:48].rstrip("-")
 
@@ -252,7 +338,7 @@ class Walk:
             folder = Path(GUIDE) / self.name
             folder.mkdir(parents=True, exist_ok=True)
             picture = f"{number:02d}-{_slug(words)}.png"
-            page.screenshot(path=str(folder / picture))
+            take_picture(page, folder / picture)
         self.steps.append((words, picture))
 
     def guide(self, about: str) -> None:
@@ -265,8 +351,13 @@ class Walk:
             lines += [f"{number}. {words}", ""]
             if picture:
                 lines += [f"   ![{words}]({picture})", ""]
-        (Path(GUIDE) / self.name).mkdir(parents=True, exist_ok=True)
-        (Path(GUIDE) / self.name / "guide.md").write_text("\n".join(lines))
+        folder = Path(GUIDE) / self.name
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "guide.md").write_text("\n".join(lines))
+        named = {picture for _, picture in self.steps if picture}
+        for gone in sorted(folder.glob("*.png")):  # a step since renamed, renumbered or taken out
+            if gone.name not in named:
+                gone.unlink()
 
 
 # What every walk-through does outside a5s's pages, as the people and systems there do it

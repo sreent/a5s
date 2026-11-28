@@ -51,6 +51,17 @@ DESK = "a5s.service_desk:ServiceDeskScenario"
 TOOLS = ("search_records", "get_record", "get_messages", "search_knowledge", "read_knowledge", "create_draft",
          "get_account", "reset_password", "reset_authenticators", "search_devices", "get_device", "lock_device")
 ABILITIES = ("reminders", "recall", "documents", "digest-time", "how-i-work")
+# The skill Dev gives it in the studio, under Files: how to answer a question about tickets
+SKILL_ABOUT = ("How to answer a question about tickets, step by step: finding them, saying how "
+               "each stands and who has it, and what to say of one you can't see.")
+SKILL_STEPS = """
+1. Find them: `get_record` for a ticket someone names by its key, `search_records` by the words
+   they use for the rest.
+2. For each, say its key, its title, how it stands and who has it, as the ITSM says.
+3. If the ITSM won't show you one, say so, and never guess what it says.
+"""
+
+
 INSTRUCTIONS = """# Desk helper
 
 You're an IT service-desk assistant for employees and resolvers. You're an AI agent, and you say
@@ -156,6 +167,22 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on) -> tuple[dict, str
         kept(page)
         page.click(".wb-bar .modes button:has-text('Design')")
         page.wait_for_selector("#problem-count >> text=No problems", timeout=30000)
+    with walk.step("Under Files, he gives it a skill, ticket-questions: how to answer a question about "
+                   "tickets, which a run reads only when someone asks one.", page):
+        page.click(".wb-bar .modes button:has-text('Files')")
+        page.fill("#skill-name", "Ticket questions")  # not as Agent Skills names one
+        page.wait_for_selector("#skill-name-says >> text=Lower-case letters and digits", timeout=30000)
+        assert page.is_disabled("#add-skill")
+        page.fill("#skill-name", "ticket-questions")
+        page.fill("#skill-about", SKILL_ABOUT)
+        page.click("#add-skill")
+        page.wait_for_selector(".file-list button.on >> text=skills/ticket-questions/SKILL.md", timeout=30000)
+        assert f"name: ticket-questions\ndescription: \"{SKILL_ABOUT}\"" in page.input_value("#file-text")
+        page.fill("#file-text", page.input_value("#file-text").split("\n\n", 2)[0] + "\n\n# Ticket questions\n"
+                  + SKILL_STEPS)
+        kept(page)
+        page.wait_for_selector("#problem-count >> text=No problems", timeout=30000)
+    page.click(".wb-bar .modes button:has-text('Design')")  # where trying it starts
     tried(walk, stack, page, on, "Dev", "sam", "Which tickets are about the VPN?", "search_records",
           {"query": "VPN"}, "INC0000001, Can't reach the VPN, is open, and Rae Kim has it.",
           "INC0000001", "VPN tickets answered from the ITSM")

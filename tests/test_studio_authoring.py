@@ -179,3 +179,61 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     assert page.input_value("#pull-title") == "Add finance-helper"
     assert "## Who must sign its release" in page.input_value("#pull-body")
     assert refused == []
+
+
+def test_an_author_gives_a_draft_a_skill_and_takes_it_out_again(stack, approving, provider, browser):
+    """Under Files, a skill's folder by its name and what it's for, a file beside it, and taking
+    it out, each checked as `a5s agent check` checks it (docs/manual/skills.md)."""
+    from conftest import accessible
+
+    provider.person = "priya"
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page.goto(f"{approving}/studio/agents")
+    page.click("a:has-text('New agent')")
+    page.wait_for_selector(".template >> text=assistant", timeout=30000)
+    page.fill("#agent-name", "refund-helper")
+    page.click(".template:has-text('assistant') >> nth=0")
+    page.click("#make")
+    page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
+    page.click(".modes button:has-text('Files')")
+
+    page.fill("#skill-name", "Refunds due")  # not as Agent Skills names one
+    page.wait_for_selector("#skill-name-says >> text=Lower-case letters and digits", timeout=30000)
+    assert page.is_disabled("#add-skill")
+    page.fill("#skill-name", "refunds")
+    page.fill("#skill-about", "How to answer a question about a refund: when it's paid, step by step.")
+    page.click("#add-skill")
+    page.wait_for_selector(".file-list button.on >> text=skills/refunds/SKILL.md", timeout=30000)
+    told = page.input_value("#file-text")
+    assert told.startswith('---\nname: refunds\ndescription: "How to answer a question about a refund: '
+                           "when it's paid, step by step.\"\n---\n")  # quoted, so its colon reads as written
+    kept(page)
+    page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
+
+    page.fill("#skill-beside", "amounts.py")  # nothing in a skill runs
+    page.wait_for_selector("#skill-beside-says >> text=A run reads Markdown", timeout=30000)
+    assert page.is_disabled("#add-beside")
+    page.fill("#skill-beside", "amounts.csv")
+    page.click("#add-beside")
+    page.wait_for_selector(".file-list button.on >> text=skills/refunds/amounts.csv", timeout=30000)
+    page.fill("#file-text", "over,needs\n500.00,the billing owner\n")
+    kept(page)
+    page.click(".file-list button:has-text('skills/refunds/SKILL.md')")
+    page.fill("#file-text", told.replace("name: refunds", "name: payments"))  # another folder's name
+    page.wait_for_selector("#problems >> text=naming it refunds", timeout=30000)
+    page.fill("#file-text", told + "\nThe amounts it needs a person for are in `amounts.csv`.\n")
+    kept(page)
+    page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
+    accessible(page)
+
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.click(".file-list button:has-text('skills/refunds/SKILL.md')")
+    page.click(".skill-file button:has-text('Remove the skill')")
+    page.click("dialog[open] button:has-text('Remove the skill')")
+    kept(page)
+    page.wait_for_selector(".file-list button >> text=skills/refunds/amounts.csv", state="detached",
+                           timeout=30000)
+    page.reload()  # it was kept without them
+    page.click(".modes button:has-text('Files')")
+    page.wait_for_selector(".file-list button >> text=AGENTS.md", timeout=30000)
+    assert "skills/" not in page.inner_text(".file-list")

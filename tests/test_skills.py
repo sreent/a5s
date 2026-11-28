@@ -103,3 +103,13 @@ def test_what_a_skill_says_is_never_called_the_agents_own(stack):
     stack.model.reply("Refunds over £500.00 need the billing owner's approval first.")
     told = stack.say("Does Contoso's refund need anyone's approval?", person="ben")
     assert "£500.00" in told and "(a5s:" not in told  # approved with its release
+
+
+@pytest.mark.parametrize("name", ["Refunds", "refunds_due", "-refunds", "refunds-", "refunds--due",
+                                  "refunds due", "r" * 65])
+def test_a_skill_is_named_as_agent_skills_names_one(tmp_path, name):
+    folder = tmp_path / "skills" / name
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(SKILL.replace("name: refunds", f"name: {name}"), encoding="utf-8")
+    with pytest.raises(ValueError, match="as Agent Skills names one"):
+        definitions.skills_of(tmp_path / "skills")

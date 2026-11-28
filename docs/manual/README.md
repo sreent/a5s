@@ -12,6 +12,8 @@ How to work with a5s's agents, decide what they ask for, and look after them. Ea
 | Approve a version of the settings, or sign a release | [Approving settings and releases](approving.md) |
 | Own an agent, or run its instances | [Running an agent](running.md) |
 | Build agents in the studio | [Building an agent](building.md) |
+| Write down how an agent does one kind of its work | [Giving an agent a skill](skills.md) |
+| Connect a system to a5s, or give a scenario's agents a tool | [Connecting a system](connecting.md) and [adding a tool](tools.md) |
 | Answer requests for someone's data | [The data protection officer](data-protection-officer.md) |
 | Audit what agents did, or look after who holds which role | [Auditing and administering](oversight.md) |
 

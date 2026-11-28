@@ -10,14 +10,17 @@ from __future__ import annotations
 import math
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 from a5s import db
 from conftest import QUIET, listed_runs
+from walkthrough import take_picture
 
 FOLDER = os.environ.get("A5S_DOC_IMAGES")
 pytestmark = pytest.mark.skipif(not FOLDER, reason="makes the docs' pictures only when asked")
+OUT = Path(FOLDER or ".")  # where they go, when it names a folder
 
 # How many runs on each day, back from the core's: a working pattern, quieter at weekends
 DAYS = [3, 4, 0, 0, 5, 3, 4, 2, 5, 1, 0, 4, 6, 3, 2, 4]
@@ -54,17 +57,17 @@ def test_the_docs_pictures_of_the_studio(stack, approving, provider, browser):
     page.emulate_media(color_scheme="light")
     page.goto(f"{approving}/studio/agents")
     page.wait_for_selector(".agent-card >> text=watcher", timeout=30000)
-    page.screenshot(path=f"{FOLDER}/a5s-studio-catalogue.png")
+    take_picture(page, OUT / "a5s-studio-catalogue.png")
 
     page.click(".agent-card a.agent-name:text-is('assistant')")
     page.wait_for_selector(".agent-map .flow-step >> text=change_due_date", timeout=30000)
-    page.screenshot(path=f"{FOLDER}/a5s-studio-agent.png")
+    take_picture(page, OUT / "a5s-studio-agent.png")
 
     page.click("table.grid-table a:has-text('assistant-finance')")
     page.wait_for_selector(".runs-chart .day", timeout=30000)
-    page.screenshot(path=f"{FOLDER}/a5s-studio-dashboard.png")
+    take_picture(page, OUT / "a5s-studio-dashboard.png")
 
     page.click("table.runs-table a:has-text('Open') >> nth=0")  # the latest
     page.wait_for_selector(".agent-map .flow-state", timeout=30000)
     assert page.locator(".agent-map .flow-step:not(.dim) .flow-state").count() == 2  # it looked a question up, then read it
-    page.screenshot(path=f"{FOLDER}/a5s-studio-run.png")
+    take_picture(page, OUT / "a5s-studio-run.png")

@@ -290,3 +290,37 @@ def test_on_a_phone_the_newest_message_is_above_what_they_write(stack, browser):
         composer = page.locator("footer").bounding_box()
         assert newest is not None and composer is not None
         assert newest["y"] + newest["height"] <= composer["y"] + 1
+
+
+def test_the_chats_head_stays_below_the_band_however_long_the_conversation(stack, browser):
+    """Ocean's shell fits the page to the window below the deployment's band, so a chat that fits
+    never scrolls, and focusing its box slides nothing under the band; and the chat's head stays
+    below the band as a long conversation scrolls (app.css)."""
+    with channels(stack) as url:
+        page = browser.new_page(viewport={"width": 1280, "height": 720})
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector("#compose:not([hidden])", timeout=30000)
+        page.wait_for_selector("#environment", timeout=30000)
+        page.focus("#text")
+        page.wait_for_timeout(200)
+
+        def below() -> bool:  # the head's top at or under the band's foot
+            band = page.locator("#environment").bounding_box()
+            head = page.locator(".page > header").bounding_box()
+            return bool(band and head) and head["y"] >= band["y"] + band["height"] - 1
+
+        assert page.evaluate("document.documentElement.scrollHeight - innerHeight") <= 0
+        assert page.evaluate("scrollY") == 0 and below()
+        page.evaluate("""() => {
+            const said = document.getElementById('conversation');
+            for (let n = 0; n < 80; n++) {
+              const line = document.createElement('li');
+              line.textContent = 'A line of a long conversation';
+              said.append(line);
+            }
+        }""")
+        page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+        page.wait_for_timeout(200)
+        assert page.evaluate("scrollY") > 0 and below()  # it scrolled, and its head stayed

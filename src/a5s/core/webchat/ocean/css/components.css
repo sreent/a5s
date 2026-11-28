@@ -140,7 +140,7 @@ main { flex: 1; width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 
   .sidebar nav { flex-direction: row; gap: 0.15rem; }
   .sidebar .group { display: none; }
   .me { flex: none; padding: 0 0 0 0.4rem; border: 0; }  /* their initials alone, at the row's end, still the way to their own page */
-  .me > a { position: relative; }
+  .me > a { position: relative; justify-content: center; }  /* their initials, in the middle of what a finger taps */
   .me-who { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .sidebar nav a { position: relative; }  /* holds each name below, inside the bar's own scroll */
   .sidebar nav a span {  /* a phone shows each page's icon, and screen readers still say its name */
@@ -1321,6 +1321,15 @@ a.issue-id:hover { text-decoration: underline; }
 .options mark { background: none; color: inherit; font-weight: 650; }
 .options:focus-visible { outline: none; }  /* a listbox that holds the focus rings the option the arrows are on, not itself */
 .options:focus .active { box-shadow: inset 0 0 0 2px var(--focus); }
+
+/* A field that suggests what to type (components/Suggest): its suggestions open under it, as the
+   query's and the composer's do. A suggestion's second words (a customer's domains) can be long, so
+   they wrap beneath its name rather than push the popover past the page */
+.suggests { position: relative; display: grid; min-width: 0; }
+.suggests > :is(input, textarea) { width: 100%; }
+.suggests > .popover.options { position: absolute; top: calc(100% + 0.25rem); inset-inline-start: 0; width: min(26rem, 100%); }
+.suggests .options [role="option"] { flex-wrap: wrap; row-gap: 0; }
+.suggests .option-kind { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 
 /* An issue's fields, beside it: each label in Ocean's label style, each value a control whose edge,
    --line-control, shows under the pointer and on focus. A value an agent worked out that nobody has
@@ -2651,6 +2660,7 @@ body.lone { padding: max(var(--space-6), env(safe-area-inset-top)) max(var(--spa
   :is(button, .button):not(.link) { min-width: 44px; }
   button.link:not(p *) { display: inline-flex; align-items: center; min-height: 44px; }
   .sidebar nav a, .brand { min-width: 44px; min-height: 44px; justify-content: center; }
+  .me > a { min-width: 44px; min-height: 44px; }  /* their own page: on a phone, their initials alone (Shell) */
   .crumbs a { min-width: 44px; min-height: 44px; }
   .meta > a { display: inline-flex; align-items: center; min-height: 44px; }  /* a link among a page's facts stands alone */
   .issue-summary, .board-card-summary, a.inbox-summary { display: inline-block; min-width: 44px; padding-block: 12px; margin-block: -12px; }
@@ -2760,6 +2770,8 @@ button.palette-open kbd { font-size: 0.75em; }
 .env-band.production { border-bottom-color: var(--changes); background: var(--changes); color: var(--surface); }
 .env-band.production > .icon { color: var(--surface); }
 body.app:has(.env-band) .sidebar { top: 2rem; height: calc(100vh - 2rem); }  /* below it, as the page scrolls */
+body.app:has(.env-band) .page { min-height: calc(100vh - 2rem); }  /* the rest of the window, so a page
+   that fits it never scrolls, sliding its head, such as a chat's, under the band */
 body.app.workbench:has(.env-band) .wb.window { height: calc(100vh - 2rem); }
 body.lone .env-band { position: fixed; inset: 0 0 auto; }
 body.lone:has(.env-band) { padding-top: calc(2rem + var(--space-6)); }
